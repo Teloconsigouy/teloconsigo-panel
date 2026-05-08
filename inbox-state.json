@@ -1,0 +1,53 @@
+{
+  "messages": {
+    "tlc:2000012584741055": {
+      "opened": true,
+      "updatedAt": "2026-05-08T22:18:44.414Z",
+      "pending": true,
+      "snapshot": {
+        "_cuenta": "tlc",
+        "_packId": "2000012584741055",
+        "_date": "",
+        "_text": "Pack 2000012584741055 con mensajes sin leer",
+        "_buyerId": ""
+      },
+      "updatedBy": "admin",
+      "updatedByName": "Administrador",
+      "actionLabel": "marcó el mensaje como pendiente"
+    },
+    "topshop:2000016164798340": {
+      "opened": false,
+      "updatedAt": "2026-05-08T22:18:35.758Z",
+      "pending": false,
+      "updatedBy": "admin",
+      "updatedByName": "Administrador"
+    },
+    "topshop:2000012823810409": {
+      "opened": false,
+      "updatedAt": "2026-05-08T22:18:35.763Z",
+      "pending": false,
+      "updatedBy": "admin",
+      "updatedByName": "Administrador"
+    }
+  },
+  "claims": {
+    "tlc:5508943187": {
+      "opened": true,
+      "updatedAt": "2026-05-08T22:18:35.772Z",
+      "snapshot": {
+        "_cuenta": "tlc",
+        "_id": 5508943187,
+        "_date": "2026-05-08T11:13:34.000-04:00",
+        "_orderId": "2000016316935760",
+        "_status": "opened",
+        "reason_id": "PDD9952",
+        "type": "mediations"
+      },
+      "pending": false,
+      "updatedBy": "admin",
+      "updatedByName": "Administrador"
+    }
+  },
+  "questions": {},
+  "updatedAt": "2026-05-08T22:18:44.415Z"
+}

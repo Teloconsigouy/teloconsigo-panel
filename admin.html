@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Administración — Usuarios</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#F0F4F0; --surface:#FFFFFF; --surface2:#F5F8F5;
+  --border:#D4DDD4; --border2:#B8C8B8;
+  --green:#1A5C1A; --green-mid:#2E7D2E;
+  --green-light:rgba(26,92,26,0.08); --green-border:rgba(26,92,26,0.22);
+  --text:#0E1A0E; --muted:#5C7060; --muted2:#9CB09C;
+  --red:#DC2626; --red-bg:rgba(220,38,38,0.06);
+  --pos:#15803D; --pos-bg:rgba(21,128,61,0.08); --pos-border:rgba(21,128,61,0.22);
+  --yellow:#B45309; --yellow-bg:rgba(180,83,9,0.07);
+}
+html,body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-size:14px;min-height:100vh;}
+
+.hdr{background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 24px 0 0;height:60px;}
+.hdr-back{display:flex;align-items:center;gap:8px;height:100%;padding:0 20px;color:var(--muted);text-decoration:none;font-size:13px;font-weight:500;border-right:1px solid var(--border);}
+.hdr-back:hover{background:var(--bg);color:var(--green);}
+.hdr-logo{padding:0 20px;font-family:'Syne',sans-serif;font-weight:800;font-size:1.2rem;letter-spacing:-0.04em;color:var(--green);text-transform:uppercase;border-right:1px solid var(--border);}
+.hdr-path{padding:0 16px;display:flex;align-items:center;gap:8px;font-size:14px;color:var(--muted);}
+.hdr-path strong{color:var(--text);}
+.hdr-right{margin-left:auto;display:flex;align-items:center;gap:14px;font-size:13px;}
+.hdr-user{color:var(--muted);}
+.hdr-user strong{color:var(--text);}
+.logout-btn{padding:7px 14px;border:1px solid var(--border);background:var(--surface);border-radius:5px;color:var(--muted);cursor:pointer;font-family:'Inter',sans-serif;font-size:12px;}
+.logout-btn:hover{border-color:var(--red);color:var(--red);}
+
+.container{max-width:1100px;margin:30px auto;padding:0 24px;}
+.section{background:var(--surface);border:1px solid var(--border);border-radius:8px;margin-bottom:24px;}
+.section-hdr{padding:18px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;}
+.section-title{font-size:16px;font-weight:700;}
+.section-count{font-size:13px;color:var(--muted);}
+.btn-new{margin-left:auto;background:var(--green);color:#fff;border:none;border-radius:5px;padding:9px 16px;font-family:'Inter',sans-serif;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.07em;cursor:pointer;}
+.btn-new:hover{background:var(--green-mid);}
+
+table{width:100%;border-collapse:collapse;}
+table th{padding:12px 18px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--muted);text-align:left;border-bottom:1px solid var(--border);background:var(--surface2);}
+table td{padding:14px 18px;font-size:13px;border-bottom:1px solid var(--border);vertical-align:middle;}
+table tr:last-child td{border-bottom:none;}
+.role-badge{font-size:10px;padding:3px 9px;border-radius:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;}
+.role-admin{background:var(--green-light);color:var(--green);border:1px solid var(--green-border);}
+.role-user{background:var(--surface2);color:var(--muted);border:1px solid var(--border);}
+.must-change{font-size:10px;padding:3px 8px;border-radius:10px;font-weight:600;background:var(--yellow-bg);color:var(--yellow);text-transform:uppercase;letter-spacing:0.05em;}
+.actions{display:flex;gap:6px;justify-content:flex-end;}
+.btn-mini{padding:6px 12px;border:1px solid var(--border);background:var(--surface);color:var(--muted);border-radius:4px;cursor:pointer;font-size:11px;font-family:'Inter',sans-serif;font-weight:500;}
+.btn-mini:hover{color:var(--text);border-color:var(--border2);}
+.btn-mini.danger:hover{color:var(--red);border-color:rgba(220,38,38,0.3);}
+.btn-mini.primary{color:var(--green);border-color:var(--green-border);}
+.btn-mini.primary:hover{background:var(--green-light);}
+
+.modal-overlay{display:none;position:fixed;inset:0;z-index:100;background:rgba(10,20,10,0.5);align-items:center;justify-content:center;}
+.modal-overlay.open{display:flex;}
+.modal-box{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:28px;width:480px;max-width:94vw;}
+.modal-title{font-size:16px;font-weight:700;margin-bottom:8px;}
+.modal-sub{font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:20px;}
+.modal-lbl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted2);margin-bottom:7px;display:block;margin-top:14px;}
+.modal-inp{width:100%;background:var(--surface2);border:1.5px solid var(--border);border-radius:5px;padding:10px 13px;font-family:'Inter',sans-serif;font-size:14px;outline:none;}
+.modal-inp:focus{border-color:var(--green);}
+.modal-row{display:flex;gap:8px;margin-top:14px;}
+.modal-row .modal-radio{flex:1;padding:9px;border:1.5px solid var(--border);border-radius:5px;text-align:center;cursor:pointer;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.07em;color:var(--muted);}
+.modal-row .modal-radio.active{background:var(--green);color:#fff;border-color:var(--green);}
+.modal-footer{display:flex;justify-content:flex-end;gap:8px;margin-top:24px;}
+.modal-cancel{padding:10px 18px;border:1px solid var(--border);border-radius:5px;background:none;color:var(--muted);cursor:pointer;font-family:'Inter',sans-serif;font-size:13px;}
+.modal-save{padding:10px 22px;border:none;border-radius:5px;background:var(--green);color:#fff;font-family:'Inter',sans-serif;font-size:13px;font-weight:600;cursor:pointer;}
+.modal-save:disabled{opacity:0.5;cursor:not-allowed;}
+.modal-err{background:var(--red-bg);color:var(--red);border:1px solid rgba(220,38,38,0.2);border-radius:5px;padding:10px 14px;font-size:12px;margin-top:14px;display:none;}
+.modal-err.show{display:block;}
+
+.toast{position:fixed;bottom:20px;right:20px;padding:11px 16px;border-radius:5px;font-size:13px;z-index:9999;border:1px solid;}
+.t-ok{background:var(--pos-bg);color:var(--pos);border-color:var(--pos-border);}
+.t-err{background:var(--red-bg);color:var(--red);border-color:rgba(220,38,38,0.2);}
+
+.pwd-display{background:var(--green-light);border:1px solid var(--green-border);border-radius:6px;padding:14px;font-size:13px;color:var(--text);margin-top:14px;display:none;}
+.pwd-display.show{display:block;}
+.pwd-display strong{color:var(--green);font-family:monospace;font-size:15px;}
+.pwd-display .copy{margin-top:8px;font-size:11px;color:var(--muted);}
+.perm-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px;}
+.perm-item{display:flex;align-items:center;gap:8px;padding:9px 10px;border:1px solid var(--border);border-radius:5px;background:var(--surface2);font-size:12px;color:var(--text);cursor:pointer;}
+.perm-item input{accent-color:var(--green);}
+.perm-list{display:flex;gap:4px;flex-wrap:wrap;max-width:230px;}
+.perm-pill{font-size:10px;padding:3px 7px;border:1px solid var(--green-border);background:var(--green-light);color:var(--green);border-radius:100px;}
+.audit-list{max-height:430px;overflow:auto;}
+.audit-row{display:grid;grid-template-columns:145px 135px 1fr;gap:10px;padding:10px 18px;border-bottom:1px solid var(--border);font-size:12px;align-items:start;}
+.audit-row:last-child{border-bottom:none;}
+.audit-date{color:var(--muted);font-size:11px;}
+.audit-action{font-weight:700;color:var(--green);}
+.audit-detail{color:var(--muted);word-break:break-word;}
+@media(max-width:800px){.perm-grid{grid-template-columns:1fr}.audit-row{grid-template-columns:1fr;gap:4px}}
+</style>
+</head>
+<body>
+
+<header class="hdr">
+  <a href="index.html" class="hdr-back">
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 2L4 6l4 4"/></svg>
+    Volver al panel
+  </a>
+  <div class="hdr-logo">Teloconsigo</div>
+  <div class="hdr-path"><span>/</span><strong>Administración</strong></div>
+  <div class="hdr-right">
+    <span class="hdr-user">Logueado como <strong id="curr-user">…</strong></span>
+    <button class="logout-btn" onclick="logout()">Cerrar sesión</button>
+  </div>
+</header>
+
+<div class="container">
+  <div class="section">
+    <div class="section-hdr">
+      <span class="section-title">Usuarios del sistema</span>
+      <span class="section-count" id="user-count">…</span>
+      <button class="btn-new" onclick="openCreateModal()">+ Nuevo usuario</button>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>USUARIO</th>
+          <th>NOMBRE</th>
+          <th>EMAIL</th>
+          <th>ROL</th>
+          <th>PERMISOS</th>
+          <th>ESTADO</th>
+          <th>CREADO</th>
+          <th style="text-align:right">ACCIONES</th>
+        </tr>
+      </thead>
+      <tbody id="users-body">
+        <tr><td colspan="8" style="text-align:center;color:var(--muted2);padding:40px">Cargando...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="section-hdr">
+      <span class="section-title">Responsables y últimas acciones</span>
+      <span class="section-count">Última acción importante por mensaje, pregunta o reclamo</span>
+      <button class="btn-new" onclick="loadAudit()">↻ Actualizar</button>
+    </div>
+    <div class="audit-list" id="audit-list">
+      <div style="text-align:center;color:var(--muted2);padding:34px">Cargando historial...</div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Crear Usuario -->
+<div class="modal-overlay" id="create-modal">
+  <div class="modal-box">
+    <div class="modal-title">Nuevo usuario</div>
+    <div class="modal-sub">El usuario va a tener que cambiar su contraseña al primer login.</div>
+
+    <label class="modal-lbl">Usuario (login)</label>
+    <input type="text" class="modal-inp" id="c-username" placeholder="ej: jpbot" autocomplete="off">
+
+    <label class="modal-lbl">Nombre completo</label>
+    <input type="text" class="modal-inp" id="c-name" placeholder="ej: Juan Pablo">
+
+    <label class="modal-lbl">Email (opcional)</label>
+    <input type="email" class="modal-inp" id="c-email" placeholder="usuario@teloconsigo.com.uy">
+
+    <label class="modal-lbl">Contraseña inicial (mín. 6 caracteres)</label>
+    <input type="text" class="modal-inp" id="c-password" placeholder="Anotala para pasársela al usuario">
+
+    <label class="modal-lbl">Rol</label>
+    <div class="modal-row">
+      <div class="modal-radio active" data-role="user" onclick="selectRole(this,'user')">Usuario</div>
+      <div class="modal-radio" data-role="admin" onclick="selectRole(this,'admin')">Administrador</div>
+    </div>
+
+    <label class="modal-lbl">Acceso a módulos</label>
+    <div class="perm-grid" id="c-permissions"></div>
+
+    <div class="modal-err" id="c-err"></div>
+
+    <div class="modal-footer">
+      <button class="modal-cancel" onclick="closeCreateModal()">Cancelar</button>
+      <button class="modal-save" id="c-save" onclick="doCreate()">Crear usuario</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Reset Password -->
+<div class="modal-overlay" id="reset-modal">
+  <div class="modal-box">
+    <div class="modal-title">Resetear contraseña</div>
+    <div class="modal-sub">Ponele una contraseña nueva al usuario <strong id="r-username">...</strong>. Te la mostrará para pasársela. El usuario va a tener que cambiarla al loguearse.</div>
+
+    <label class="modal-lbl">Nueva contraseña (mín. 6 caracteres)</label>
+    <input type="text" class="modal-inp" id="r-password" placeholder="Anotala para pasársela al usuario">
+
+    <div class="pwd-display" id="r-display">
+      Contraseña asignada: <strong id="r-display-pwd"></strong>
+      <div class="copy">Pasale esta contraseña al usuario para que pueda entrar.</div>
+    </div>
+
+    <div class="modal-err" id="r-err"></div>
+
+    <div class="modal-footer">
+      <button class="modal-cancel" onclick="closeResetModal()">Cerrar</button>
+      <button class="modal-save" id="r-save" onclick="doReset()">Resetear</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Editar Usuario -->
+<div class="modal-overlay" id="edit-modal">
+  <div class="modal-box">
+    <div class="modal-title">Editar usuario</div>
+    <div class="modal-sub">Cambiá los datos del usuario. Si cambiás el username (login), la próxima vez que ingrese tendrá que usar el nuevo.</div>
+
+    <label class="modal-lbl">Usuario (login)</label>
+    <input type="text" class="modal-inp" id="e-username" autocomplete="off">
+
+    <label class="modal-lbl">Nombre completo</label>
+    <input type="text" class="modal-inp" id="e-name">
+
+    <label class="modal-lbl">Email</label>
+    <input type="email" class="modal-inp" id="e-email">
+
+    <label class="modal-lbl">Rol</label>
+    <div class="modal-row">
+      <div class="modal-radio" data-role="user" onclick="selectEditRole(this,'user')">Usuario</div>
+      <div class="modal-radio" data-role="admin" onclick="selectEditRole(this,'admin')">Administrador</div>
+    </div>
+
+    <label class="modal-lbl">Acceso a módulos</label>
+    <div class="perm-grid" id="e-permissions"></div>
+
+    <div class="modal-err" id="e-err"></div>
+
+    <div class="modal-footer">
+      <button class="modal-cancel" onclick="closeEditModal()">Cancelar</button>
+      <button class="modal-save" id="e-save" onclick="doUpdate()">Guardar cambios</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let CURRENT_USER = null;
+let SELECTED_ROLE = 'user';
+let RESET_TARGET = null;
+const MODULE_LABELS = {
+  meliads: 'MeLi ADS',
+  inbox: 'Bandeja MeLi',
+  prices: 'Lista de Precios',
+  publications: 'Crear Publicaciones',
+  analytics: 'Analytics General',
+  automation: 'Alertas & Automatización',
+  config: 'Configuración'
+};
+
+function renderPermissionChecks(containerId, selected = []) {
+  const cont = document.getElementById(containerId);
+  const allSelected = selected.includes('all');
+  const sel = new Set(allSelected ? Object.keys(MODULE_LABELS) : selected);
+  cont.innerHTML = Object.entries(MODULE_LABELS).map(([key,label]) => `
+    <label class="perm-item">
+      <input type="checkbox" value="${key}" ${sel.has(key) ? 'checked' : ''}>
+      <span>${label}</span>
+    </label>`).join('');
+}
+
+function getPermissionChecks(containerId, role) {
+  if (role === 'admin') return ['all'];
+  return Array.from(document.querySelectorAll(`#${containerId} input:checked`)).map(x => x.value);
+}
+
+function formatPerms(perms = [], role = 'user') {
+  if (role === 'admin' || perms.includes('all')) return '<span class="perm-pill">Todo</span>';
+  if (!perms.length) return '<span style="color:var(--red)">Sin acceso</span>';
+  return `<div class="perm-list">${perms.map(p => `<span class="perm-pill">${MODULE_LABELS[p] || p}</span>`).join('')}</div>`;
+}
+
+function inferActionLabel(d = {}) {
+  const p = d.patch || {};
+  const explicit = String(d.actionLabel || p.actionLabel || '').trim();
+  if (explicit && explicit !== 'hizo un cambio') return explicit;
+
+  if (d.section === 'questions') {
+    if (p.answered) return 'respondió la pregunta';
+    return '';
+  }
+
+  if (d.section === 'messages') {
+    if (p.dismissedUntil) return 'descartó el mensaje';
+    if (p.opened === false) return 'marcó el mensaje como no leído';
+    if (p.pending === true) return 'marcó el mensaje como pendiente';
+    if (p.pending === false) return 'quitó pendiente del mensaje';
+    if (p.answered || p.replied) return 'respondió el mensaje';
+    return '';
+  }
+
+  if (d.section === 'claims') {
+    if (p.bucket === 'truck') return 'marcó devolución en camión';
+    if (p.bucket === 'solved') return 'pasó el reclamo a solucionado/preparación';
+    if (p.bucket === null || p.bucket === '') return 'recuperó el reclamo';
+    if (p.pending === true) return 'marcó el reclamo como pendiente';
+    if (p.pending === false) return 'quitó pendiente del reclamo';
+    if (p.opened === false) return 'marcó el reclamo como no leído';
+    return '';
+  }
+
+  return explicit;
+}
+
+function itemType(section) {
+  if (section === 'messages') return 'Mensaje';
+  if (section === 'claims') return 'Reclamo';
+  if (section === 'questions') return 'Pregunta';
+  return 'Sistema';
+}
+
+function humanAction(a) {
+  const d = a.detail || {};
+  if (a.action === 'inbox_state_update') {
+    const who = a.name || a.user;
+    const label = inferActionLabel(d);
+    if (!label) return '';
+    return `${who} ${label} · ${itemType(d.section)} ${d.key || ''}`;
+  }
+  if (a.action === 'admin_create_user') return `${a.name || a.user} creó un usuario`;
+  if (a.action === 'admin_update_user') return `${a.name || a.user} modificó permisos/datos de usuario`;
+  if (a.action === 'admin_delete_user') return `${a.name || a.user} eliminó un usuario`;
+  if (a.action === 'admin_reset_password') return `${a.name || a.user} reseteó una contraseña`;
+  return '';
+}
+
+function shouldShowAudit(a) {
+  if (a.action === 'inbox_state_update') return !!inferActionLabel(a.detail || {});
+  return ['admin_create_user','admin_update_user','admin_delete_user','admin_reset_password'].includes(a.action);
+}
+
+function uniqueLatestActions(actions) {
+  const out = [];
+  const seen = new Set();
+  for (const a of actions) {
+    if (!shouldShowAudit(a)) continue;
+    const d = a.detail || {};
+    const key = a.action === 'inbox_state_update' ? `${d.section || ''}:${d.key || ''}` : `${a.action}:${d.username || d.newUsername || a.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(a);
+  }
+  return out;
+}
+
+function toast(msg, cls='t-ok') {
+  const t = document.createElement('div');
+  t.className = `toast ${cls}`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+
+async function logout() {
+  await fetch('/api/logout', { method: 'POST' });
+  window.location.href = '/login.html';
+}
+
+async function loadMe() {
+  try {
+    const r = await fetch('/api/me');
+    if (!r.ok) { window.location.href = '/login.html'; return; }
+    const data = await r.json();
+    CURRENT_USER = data.user;
+    document.getElementById('curr-user').textContent = data.user.name + ' (' + data.user.username + ')';
+    if (data.user.role !== 'admin') {
+      window.location.href = '/index.html';
+    }
+  } catch {
+    window.location.href = '/login.html';
+  }
+}
+
+async function loadUsers() {
+  const r = await fetch('/api/admin/users');
+  if (!r.ok) { toast('Error cargando usuarios', 't-err'); return; }
+  const data = await r.json();
+  const tb = document.getElementById('users-body');
+  document.getElementById('user-count').textContent = `${data.users.length} ${data.users.length === 1 ? 'usuario' : 'usuarios'}`;
+
+  tb.innerHTML = data.users.map(u => {
+    const fecha = u.createdAt ? new Date(u.createdAt).toLocaleDateString('es-UY') : '-';
+    const isMe = u.username === CURRENT_USER?.username;
+    return `
+    <tr>
+      <td><strong>${u.username}</strong>${isMe ? ' <span style="color:var(--muted);font-size:11px">(vos)</span>' : ''}</td>
+      <td>${u.name || '-'}</td>
+      <td style="color:var(--muted)">${u.email || '-'}</td>
+      <td><span class="role-badge role-${u.role}">${u.role === 'admin' ? 'Admin' : 'Usuario'}</span></td>
+      <td>${formatPerms(u.permissions || [], u.role)}</td>
+      <td>${u.mustChange ? '<span class="must-change">Cambiar pwd</span>' : '<span style="color:var(--pos)">●</span> Activo'}</td>
+      <td style="color:var(--muted);font-size:12px">${fecha}</td>
+      <td>
+        <div class="actions">
+          <button class="btn-mini" onclick='openEditModal(${JSON.stringify(u)})'>Editar</button>
+          <button class="btn-mini primary" onclick="openResetModal('${u.username}')">Resetear pwd</button>
+          ${!isMe ? `<button class="btn-mini danger" onclick="doDelete('${u.username}')">Eliminar</button>` : ''}
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// CREATE
+function openCreateModal() {
+  document.getElementById('c-username').value = '';
+  document.getElementById('c-name').value = '';
+  document.getElementById('c-email').value = '';
+  document.getElementById('c-password').value = '';
+  document.getElementById('c-err').classList.remove('show');
+  SELECTED_ROLE = 'user';
+  document.querySelectorAll('#create-modal .modal-radio').forEach(r => r.classList.toggle('active', r.dataset.role === 'user'));
+  renderPermissionChecks('c-permissions', Object.keys(MODULE_LABELS));
+  document.getElementById('create-modal').classList.add('open');
+  document.getElementById('c-username').focus();
+}
+function closeCreateModal() { document.getElementById('create-modal').classList.remove('open'); }
+function selectRole(el, role) {
+  SELECTED_ROLE = role;
+  document.querySelectorAll('#create-modal .modal-radio').forEach(r => r.classList.toggle('active', r === el));
+}
+
+async function doCreate() {
+  const username = document.getElementById('c-username').value.trim();
+  const name = document.getElementById('c-name').value.trim();
+  const email = document.getElementById('c-email').value.trim();
+  const password = document.getElementById('c-password').value;
+  const errEl = document.getElementById('c-err');
+  errEl.classList.remove('show');
+
+  if (!username || !name || !password) {
+    errEl.textContent = 'Completá usuario, nombre y contraseña';
+    errEl.classList.add('show');
+    return;
+  }
+  if (password.length < 6) {
+    errEl.textContent = 'La contraseña debe tener al menos 6 caracteres';
+    errEl.classList.add('show');
+    return;
+  }
+  const btn = document.getElementById('c-save');
+  btn.disabled = true; btn.textContent = 'Creando...';
+  try {
+    const r = await fetch('/api/admin/create-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, name, email, password, role: SELECTED_ROLE, permissions: getPermissionChecks('c-permissions', SELECTED_ROLE) }),
+    });
+    const data = await r.json();
+    if (!r.ok) {
+      errEl.textContent = data.error || 'Error';
+      errEl.classList.add('show');
+      btn.disabled = false; btn.textContent = 'Crear usuario';
+      return;
+    }
+    toast(`✓ Usuario "${username}" creado`);
+    closeCreateModal();
+    loadUsers();
+  } catch (e) {
+    errEl.textContent = 'Error: ' + e.message;
+    errEl.classList.add('show');
+  }
+  btn.disabled = false; btn.textContent = 'Crear usuario';
+}
+
+// RESET
+function openResetModal(username) {
+  RESET_TARGET = username;
+  document.getElementById('r-username').textContent = username;
+  document.getElementById('r-password').value = '';
+  document.getElementById('r-err').classList.remove('show');
+  document.getElementById('r-display').classList.remove('show');
+  document.getElementById('reset-modal').classList.add('open');
+  document.getElementById('r-password').focus();
+}
+function closeResetModal() {
+  document.getElementById('reset-modal').classList.remove('open');
+  loadUsers();
+}
+
+async function doReset() {
+  const newPassword = document.getElementById('r-password').value;
+  const errEl = document.getElementById('r-err');
+  errEl.classList.remove('show');
+  if (newPassword.length < 6) {
+    errEl.textContent = 'Mínimo 6 caracteres';
+    errEl.classList.add('show');
+    return;
+  }
+  const btn = document.getElementById('r-save');
+  btn.disabled = true; btn.textContent = 'Reseteando...';
+  try {
+    const r = await fetch('/api/admin/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: RESET_TARGET, newPassword }),
+    });
+    const data = await r.json();
+    if (!r.ok) {
+      errEl.textContent = data.error || 'Error';
+      errEl.classList.add('show');
+      btn.disabled = false; btn.textContent = 'Resetear';
+      return;
+    }
+    document.getElementById('r-display-pwd').textContent = newPassword;
+    document.getElementById('r-display').classList.add('show');
+    toast(`✓ Contraseña de "${RESET_TARGET}" reseteada`);
+  } catch (e) {
+    errEl.textContent = 'Error: ' + e.message;
+    errEl.classList.add('show');
+  }
+  btn.disabled = false; btn.textContent = 'Resetear';
+}
+
+// DELETE
+async function doDelete(username) {
+  if (!confirm(`¿Eliminar el usuario "${username}"? Esta acción no se puede deshacer.`)) return;
+  try {
+    const r = await fetch('/api/admin/delete-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username }),
+    });
+    const data = await r.json();
+    if (!r.ok) { toast(data.error || 'Error', 't-err'); return; }
+    toast(`✓ Usuario eliminado`);
+    loadUsers();
+  } catch (e) {
+    toast('Error: ' + e.message, 't-err');
+  }
+}
+
+// EDIT
+let EDIT_TARGET = null;
+let EDIT_ROLE = 'user';
+
+function openEditModal(user) {
+  EDIT_TARGET = user.username;
+  EDIT_ROLE = user.role;
+  document.getElementById('e-username').value = user.username;
+  document.getElementById('e-name').value = user.name || '';
+  document.getElementById('e-email').value = user.email || '';
+  document.getElementById('e-err').classList.remove('show');
+  document.querySelectorAll('#edit-modal .modal-radio').forEach(r => r.classList.toggle('active', r.dataset.role === user.role));
+  renderPermissionChecks('e-permissions', user.permissions || []);
+  document.getElementById('edit-modal').classList.add('open');
+  document.getElementById('e-name').focus();
+}
+function closeEditModal() { document.getElementById('edit-modal').classList.remove('open'); }
+function selectEditRole(el, role) {
+  EDIT_ROLE = role;
+  document.querySelectorAll('#edit-modal .modal-radio').forEach(r => r.classList.toggle('active', r === el));
+}
+
+async function doUpdate() {
+  const newUsername = document.getElementById('e-username').value.trim();
+  const name = document.getElementById('e-name').value.trim();
+  const email = document.getElementById('e-email').value.trim();
+  const errEl = document.getElementById('e-err');
+  errEl.classList.remove('show');
+
+  if (!newUsername || !name) {
+    errEl.textContent = 'Usuario y nombre son obligatorios';
+    errEl.classList.add('show');
+    return;
+  }
+  const btn = document.getElementById('e-save');
+  btn.disabled = true; btn.textContent = 'Guardando...';
+  try {
+    const r = await fetch('/api/admin/update-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: EDIT_TARGET,
+        newUsername: newUsername !== EDIT_TARGET ? newUsername : undefined,
+        name, email, role: EDIT_ROLE, permissions: getPermissionChecks('e-permissions', EDIT_ROLE),
+      }),
+    });
+    const data = await r.json();
+    if (!r.ok) {
+      errEl.textContent = data.error || 'Error';
+      errEl.classList.add('show');
+      btn.disabled = false; btn.textContent = 'Guardar cambios';
+      return;
+    }
+    toast(`✓ Usuario actualizado`);
+    closeEditModal();
+    // Si se cambió a sí mismo, recargar el nombre del header
+    if (EDIT_TARGET === CURRENT_USER?.username) {
+      await loadMe();
+    }
+    loadUsers();
+  } catch (e) {
+    errEl.textContent = 'Error: ' + e.message;
+    errEl.classList.add('show');
+  }
+  btn.disabled = false; btn.textContent = 'Guardar cambios';
+}
+
+async function loadAudit() {
+  const el = document.getElementById('audit-list');
+  try {
+    const r = await fetch('/api/admin/audit?limit=200');
+    const data = await r.json();
+    if (!r.ok) { el.innerHTML = '<div style="padding:24px;color:var(--red)">Error cargando historial</div>'; return; }
+    const actions=uniqueLatestActions(data.actions||[]).slice(0, 50);
+    if (!actions.length) { el.innerHTML = '<div style="padding:34px;text-align:center;color:var(--muted2)">Todavía no hay acciones importantes registradas</div>'; return; }
+    el.innerHTML = actions.map(a => `
+      <div class="audit-row">
+        <div class="audit-date">${new Date(a.at).toLocaleString('es-UY')}</div>
+        <div><strong>${a.name || a.user}</strong></div>
+        <div class="audit-detail">${humanAction(a)}</div>
+      </div>`).join('');
+  } catch (e) {
+    el.innerHTML = '<div style="padding:24px;color:var(--red)">Error: '+e.message+'</div>';
+  }
+}
+
+(async () => {
+  await loadMe();
+  loadUsers();
+  loadAudit();
+})();
+</script>
+</body>
+</html>

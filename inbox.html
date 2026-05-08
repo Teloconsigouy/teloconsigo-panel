@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bandeja MeLi — TELOCONSIGO</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+  :root{
+    --bg:#F0F4F0; --surface:#FFFFFF; --border:#D4DDD4; --border2:#B8C8B8;
+    --green:#1A5C1A; --green-mid:#2E7D2E; --green-light:rgba(26,92,26,0.08); --green-border:rgba(26,92,26,0.25);
+    --pink:#B8336A; --pink-light:rgba(184,51,106,0.08); --pink-border:rgba(184,51,106,0.25);
+    --text:#0E1A0E; --muted:#5C7060; --muted2:#9CB09C;
+    --warn:#B45309; --danger:#B91C1C; --yellow:#EAB308; --yellow-light:rgba(234,179,8,0.14); --yellow-border:rgba(234,179,8,0.45);
+  }
+  html,body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;min-height:100vh;}
+
+  header{background:var(--surface);border-bottom:1px solid var(--border);padding:0 48px;height:64px;display:flex;align-items:center;justify-content:space-between;}
+  .logo-text{font-family:'Syne',sans-serif;font-weight:800;font-size:1.4rem;letter-spacing:-0.04em;color:var(--green);text-transform:uppercase;}
+  .header-right{display:flex;align-items:center;gap:20px;font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;}
+  .header-right a{color:var(--muted);text-decoration:none;}
+  .header-right a:hover{color:var(--green);}
+  #clock{font-weight:600;color:var(--green);}
+
+  .page-title-bar{padding:24px 48px;display:flex;align-items:center;gap:16px;border-bottom:1px solid var(--border);background:var(--surface);}
+  .page-title{font-family:'Syne',sans-serif;font-size:1.4rem;font-weight:800;letter-spacing:-0.03em;}
+  .page-title-sub{font-size:0.85rem;color:var(--muted);}
+  .back-link{color:var(--muted);text-decoration:none;font-size:0.85rem;margin-right:8px;}
+  .back-link:hover{color:var(--green);}
+
+  /* Toolbar */
+  .toolbar{padding:18px 48px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+  .filter-group{display:flex;align-items:center;gap:6px;}
+  .filter-label{font-size:0.65rem;text-transform:uppercase;letter-spacing:0.12em;color:var(--muted);margin-right:4px;}
+  .chip{padding:6px 12px;border:1px solid var(--border);background:var(--surface);border-radius:100px;font-size:0.78rem;cursor:pointer;color:var(--text);font-family:'Inter',sans-serif;font-weight:500;transition:all 0.15s;}
+  .chip:hover{border-color:var(--border2);}
+  .chip.active{background:var(--green);color:#fff;border-color:var(--green);}
+  .chip.tlc.active{background:var(--green);color:#fff;border-color:var(--green);}
+  .chip.topshop.active{background:var(--pink);color:#fff;border-color:var(--pink);}
+  .toolbar .spacer{flex:1;}
+  .btn{padding:8px 16px;background:var(--green);color:#fff;border:none;border-radius:5px;font-family:'Inter',sans-serif;font-weight:600;font-size:0.78rem;cursor:pointer;letter-spacing:0.02em;}
+  .btn:hover{background:var(--green-mid);}
+  .btn:disabled{opacity:0.5;cursor:not-allowed;}
+  .btn-ghost{background:transparent;color:var(--text);border:1px solid var(--border);}
+  .btn-ghost:hover{border-color:var(--border2);background:var(--bg);}
+
+  /* Tabs */
+  .tabs{padding:0 48px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;gap:0;}
+  .tab{padding:14px 20px;border:none;background:none;font-family:'Inter',sans-serif;font-size:0.85rem;font-weight:600;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;display:flex;align-items:center;gap:8px;}
+  .tab:hover{color:var(--text);}
+  .tab.active{color:var(--green);border-bottom-color:var(--green);}
+  .tab-count{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:20px;padding:0 6px;background:var(--bg);border:1px solid var(--border);border-radius:100px;font-size:0.7rem;font-weight:700;}
+  .tab.active .tab-count{background:var(--green-light);border-color:var(--green-border);color:var(--green);}
+
+  /* List */
+
+  .subtabs{padding:10px 48px 0;background:var(--bg);display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+  .subtab{padding:6px 12px;border:1px solid var(--border);background:var(--surface);border-radius:100px;font-size:0.72rem;font-weight:600;color:var(--muted);cursor:pointer;}
+  .subtab.active{background:var(--green);border-color:var(--green);color:#fff;}
+  .section-note{margin:10px 0 10px;padding:10px 12px;background:var(--surface);border:1px dashed var(--border2);border-radius:5px;font-size:0.76rem;color:var(--muted);}
+
+  .list-section{padding:0 48px 48px;}
+  .empty,.loading{padding:60px 0;text-align:center;color:var(--muted);font-size:0.9rem;}
+  .err{padding:14px 16px;margin:18px 0 0;border-radius:5px;background:#FEF2F2;border:1px solid #FECACA;color:var(--danger);font-size:0.82rem;}
+
+  .item{background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:16px 20px;margin-top:10px;cursor:pointer;transition:all 0.15s;display:grid;grid-template-columns:80px 1fr auto;gap:16px;align-items:center;}
+  .item:hover{border-color:var(--border2);box-shadow:0 4px 12px rgba(27,27,47,0.05);}
+  .item.pending{border-color:var(--yellow-border);background:linear-gradient(90deg,var(--yellow-light),var(--surface) 22%);}
+  .item.truck{border-color:#93C5FD;background:linear-gradient(90deg,rgba(59,130,246,0.10),var(--surface) 22%);}
+  .item.solved{opacity:0.78;}
+  .section-divider{margin:22px 0 8px;padding:10px 12px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:rgba(255,255,255,.55);font-size:.68rem;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);font-weight:700;}
+  .blue-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#3B82F6;box-shadow:0 0 0 3px rgba(59,130,246,.12);margin-right:7px;vertical-align:middle;}
+  .pending-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--yellow);box-shadow:0 0 0 3px var(--yellow-light);margin-right:7px;vertical-align:middle;}
+  .mini-action{padding:5px 10px;border:1px solid var(--border);background:var(--surface);border-radius:5px;font-size:0.72rem;cursor:pointer;color:var(--muted);}
+  .mini-action:hover{border-color:var(--green);color:var(--green);}
+  .mini-action.danger:hover{border-color:var(--danger);color:var(--danger);} 
+  .item-acc{font-size:0.62rem;text-transform:uppercase;letter-spacing:0.12em;font-weight:700;padding:4px 8px;border-radius:100px;text-align:center;}
+  .item-acc.tlc{background:var(--green-light);color:var(--green);border:1px solid var(--green-border);}
+  .item-acc.topshop{background:var(--pink-light);color:var(--pink);border:1px solid var(--pink-border);}
+  .item-body{min-width:0;}
+  .item-text{font-size:0.92rem;color:var(--text);line-height:1.4;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
+  .item-meta{font-size:0.72rem;color:var(--muted);margin-top:6px;display:flex;gap:14px;flex-wrap:wrap;}
+  .item-meta strong{color:var(--text);font-weight:600;}
+  .action-meta{color:var(--green);font-weight:500;}
+  .action-line{margin-top:10px;padding:8px 10px;border:1px solid var(--green-border);background:var(--green-light);border-radius:5px;color:var(--green);font-size:0.78rem;}
+  .item-age{font-size:0.78rem;color:var(--muted);font-weight:600;text-align:right;}
+  .item-age.warn{color:var(--warn);}
+  .item-age.danger{color:var(--danger);}
+
+  /* Drawer */
+  .drawer-back{position:fixed;inset:0;background:rgba(14,26,14,0.4);opacity:0;pointer-events:none;transition:opacity 0.2s;z-index:50;}
+  .drawer-back.open{opacity:1;pointer-events:auto;}
+  .drawer{position:fixed;top:0;right:0;bottom:0;width:min(620px,100vw);background:var(--surface);box-shadow:-12px 0 40px rgba(14,26,14,0.18);transform:translateX(100%);transition:transform 0.25s ease-out;z-index:51;display:flex;flex-direction:column;}
+  .drawer.open{transform:translateX(0);}
+  .drawer-head{padding:20px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px;}
+  .drawer-head h2{font-family:'Syne',sans-serif;font-size:1.05rem;font-weight:800;letter-spacing:-0.02em;}
+  .drawer-close{background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--muted);line-height:1;padding:4px 8px;}
+  .drawer-close:hover{color:var(--text);}
+  .drawer-body{flex:1;overflow-y:auto;padding:20px 24px;}
+  .drawer-foot{padding:16px 24px;border-top:1px solid var(--border);background:var(--bg);}
+
+  .ticket-info{font-size:0.78rem;color:var(--muted);margin-bottom:16px;display:grid;grid-template-columns:auto 1fr;gap:6px 14px;}
+  .ticket-info strong{color:var(--text);}
+  .ticket-info a{color:var(--green);text-decoration:none;}
+  .ticket-info a:hover{text-decoration:underline;}
+
+  .msg{padding:12px 14px;border-radius:8px;margin-bottom:10px;font-size:0.88rem;line-height:1.5;max-width:85%;}
+  .msg.from-buyer{background:var(--bg);border:1px solid var(--border);}
+  .msg.from-seller{background:var(--green-light);border:1px solid var(--green-border);margin-left:auto;color:var(--green);}
+  .msg-time{font-size:0.7rem;color:var(--muted);margin-top:4px;}
+
+  textarea.reply{width:100%;min-height:90px;padding:12px;border:1px solid var(--border);border-radius:5px;font-family:'Inter',sans-serif;font-size:0.88rem;resize:vertical;background:var(--surface);}
+  textarea.reply:focus{outline:none;border-color:var(--green);}
+  .reply-actions{display:flex;gap:8px;justify-content:space-between;align-items:center;margin-top:10px;}
+  .templates{display:flex;gap:6px;flex-wrap:wrap;}
+  .tpl{padding:5px 10px;border:1px solid var(--border);background:var(--surface);border-radius:100px;font-size:0.72rem;cursor:pointer;color:var(--muted);}
+  .tpl:hover{border-color:var(--green);color:var(--green);}
+
+  .badge{display:inline-block;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.1em;padding:3px 8px;border-radius:100px;font-weight:600;}
+  .badge.opened{background:#FEF3C7;color:#92400E;border:1px solid #FCD34D;}
+  .badge.closed{background:var(--bg);color:var(--muted);border:1px solid var(--border);}
+
+  footer{background:var(--surface);border-top:1px solid var(--border);padding:18px 48px;display:flex;justify-content:space-between;font-size:0.65rem;color:var(--muted2);text-transform:uppercase;letter-spacing:0.1em;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo-text">Teloconsigo</div>
+  <div class="header-right">
+    <a href="index.html">← Volver al panel</a>
+    <span id="clock">—</span>
+  </div>
+</header>
+
+<div class="page-title-bar">
+  <a href="index.html" class="back-link">←</a>
+  <span class="page-title">Bandeja MeLi</span>
+  <span class="page-title-sub">Preguntas, mensajes y reclamos pendientes</span>
+</div>
+
+<div class="toolbar">
+  <div class="filter-group">
+    <span class="filter-label">Cuenta</span>
+    <button class="chip active" data-cuenta="all">Todas</button>
+    <button class="chip tlc" data-cuenta="tlc">TLC</button>
+    <button class="chip topshop" data-cuenta="topshop">TOP SHOP</button>
+  </div>
+  <div class="spacer"></div>
+  <button class="btn btn-ghost" id="btnAuto">Auto-refresh: ON</button>
+  <button class="btn" id="btnReload">↻ Actualizar</button>
+</div>
+
+<div class="tabs">
+  <button class="tab active" data-tab="questions">
+    Preguntas <span class="tab-count" id="cntQ">—</span>
+  </button>
+  <button class="tab" data-tab="messages">
+    Mensajes <span class="tab-count" id="cntM">—</span>
+  </button>
+  <button class="tab" data-tab="claims">
+    Reclamos <span class="tab-count" id="cntC">—</span>
+  </button>
+</div>
+
+<section class="list-section">
+  <div id="errBox"></div>
+  <div id="list"><div class="loading">Cargando...</div></div>
+</section>
+
+<!-- Drawer -->
+<div class="drawer-back" id="drawerBack"></div>
+<aside class="drawer" id="drawer">
+  <div class="drawer-head">
+    <h2 id="drawerTitle">—</h2>
+    <button class="drawer-close" id="drawerClose">×</button>
+  </div>
+  <div class="drawer-body" id="drawerBody"></div>
+  <div class="drawer-foot" id="drawerFoot"></div>
+</aside>
+
+<footer>
+  <div><span>TELOCONSIGO © 2026</span></div>
+  <span>Bandeja MeLi v1.0</span>
+</footer>
+
+<script>
+const SELLER_IDS={tlc:'221081730',topshop:'817844649'};
+const MLU_AGENT_ID='3037204685';
+const state={tab:'questions',messageView:'active',claimView:'active',cuenta:'all',data:{questions:[],messages:[],claims:[],dismissed:[],claimArchive:[]},autoRefresh:true,refreshTimer:null,selected:null};
+const TEMPLATES=[{name:'Saludo',text:'Hola, ¿cómo estás? Gracias por tu consulta.'},{name:'En stock',text:'Hola! Sí, tenemos stock disponible. Saludos!'},{name:'Sin stock',text:'Hola! Por el momento no tenemos stock de ese producto. Saludos!'},{name:'Envío',text:'Hola! Realizamos envíos a todo el país por Mercado Envíos. El costo y tiempo lo ves al ingresar tu CP. Saludos!'},{name:'Garantía',text:'Hola! El producto tiene garantía oficial. Saludos!'},{name:'Despedida',text:'¡Quedamos atentos! Saludos.'}];
+const MESSAGE_STATE_KEY='tlc_meli_message_state_v1';
+const CLAIM_STATE_KEY='tlc_meli_claim_state_v1';
+const SERVER_STATE={messages:{},claims:{},questions:{}};
+let CURRENT_USER={username:'',name:'Usuario'};
+function loadMap(k){
+  if(k===MESSAGE_STATE_KEY)return SERVER_STATE.messages||{};
+  if(k===CLAIM_STATE_KEY)return SERVER_STATE.claims||{};
+  return {};
+}
+function legacyMap(k){try{return JSON.parse(localStorage.getItem(k)||'{}')}catch{return {}}}
+function saveMap(k,m){
+  if(k===MESSAGE_STATE_KEY)SERVER_STATE.messages=m;
+  if(k===CLAIM_STATE_KEY)SERVER_STATE.claims=m;
+}
+async function loadCurrentUser(){
+  try{
+    const r=await fetch('/api/me');
+    if(r.ok){
+      const data=await r.json();
+      CURRENT_USER=data.user||CURRENT_USER;
+    }
+  }catch(e){}
+}
+async function loadServerState(){
+  try{
+    const r=await fetch('/api/state');
+    if(!r.ok)throw new Error('No se pudo cargar memoria');
+    const data=await r.json();
+    SERVER_STATE.messages=data.messages||{};
+    SERVER_STATE.claims=data.claims||{};
+    SERVER_STATE.questions=data.questions||{};
+    await migrateLocalState();
+  }catch(e){console.warn('Memoria JSON no disponible, usando estado local temporal',e)}
+}
+async function persistState(section,key,patch,extra={}){
+  try{
+    await fetch('/api/state',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({section,key,patch,...extra})});
+  }catch(e){console.warn('No se pudo guardar memoria JSON',e)}
+}
+async function migrateLocalState(){
+  const oldMsg=legacyMap(MESSAGE_STATE_KEY),oldClaim=legacyMap(CLAIM_STATE_KEY);
+  for(const [key,st] of Object.entries(oldMsg)){if(!SERVER_STATE.messages[key]){SERVER_STATE.messages[key]=st;persistState('messages',key,st)}}
+  for(const [key,st] of Object.entries(oldClaim)){if(!SERVER_STATE.claims[key]){SERVER_STATE.claims[key]=st;persistState('claims',key,st)}}
+}
+function msgKey(m){return `${m._cuenta}:${m._packId}`}
+function claimKey(c){return `${c._cuenta}:${c._id}`}
+function getMsgState(m){return loadMap(MESSAGE_STATE_KEY)[msgKey(m)]||{}}
+function userStamp(actionLabel){return {actionLabel,updatedBy:CURRENT_USER?.username||'',updatedByName:CURRENT_USER?.name||CURRENT_USER?.username||'Usuario'}}
+function actionInfo(st){if(!st||!st.actionLabel)return '';const who=st.updatedByName||st.updatedBy||'Usuario';const when=st.updatedAt?` · ${fmt(st.updatedAt)}`:'';return `${escapeHtml(st.actionLabel)} por <strong>${escapeHtml(who)}</strong>${when}`}
+function actionMeta(st){const info=actionInfo(st);return info?`<span class="action-meta">${info}</span>`:''}
+function setMsgState(m,patch){const map=loadMap(MESSAGE_STATE_KEY),key=msgKey(m);map[key]={...(map[key]||{}),...patch,updatedAt:new Date().toISOString(),snapshot:patch.snapshot||(map[key]||{}).snapshot};if(map[key].snapshot===undefined)delete map[key].snapshot;saveMap(MESSAGE_STATE_KEY,map);persistState('messages',key,patch);return map[key]}
+function getClaimState(c){return loadMap(CLAIM_STATE_KEY)[claimKey(c)]||{}}
+function setClaimState(c,patch){const map=loadMap(CLAIM_STATE_KEY),key=claimKey(c);map[key]={...(map[key]||{}),...patch,updatedAt:new Date().toISOString(),snapshot:snapshotClaim(c)};saveMap(CLAIM_STATE_KEY,map);persistState('claims',key,{...patch,snapshot:snapshotClaim(c)});return map[key]}
+function restoreClaim(c){const map=loadMap(CLAIM_STATE_KEY),key=claimKey(c);if(map[key]){delete map[key].bucket;map[key].pending=false;map[key].opened=true;map[key].updatedAt=new Date().toISOString();saveMap(CLAIM_STATE_KEY,map);persistState('claims',key,{pending:false,opened:true,...userStamp('recuperó el reclamo')},{removeFields:['bucket']})}}
+function snapshotMessage(m){return{_cuenta:m._cuenta,_packId:m._packId,_date:m._date,_text:m._text,_buyerId:m._buyerId||''}}
+function snapshotClaim(c){return{_cuenta:c._cuenta,_id:c._id,_date:c._date,_orderId:c._orderId,_status:c._status,reason_id:c.reason_id,type:c.type,claim_type:c.claim_type}}
+function isDismissed(m){const st=getMsgState(m);if(!st.dismissedUntil)return false;const until=new Date(st.dismissedUntil).getTime();if(Number.isNaN(until))return false;if(Date.now()<until)return true;const map=loadMap(MESSAGE_STATE_KEY);delete map[msgKey(m)];saveMap(MESSAGE_STATE_KEY,map);persistState('messages',msgKey(m),{}, {delete:true});return false}
+function dismissForFiveDays(m){const until=new Date(Date.now()+5*86400000).toISOString();setMsgState(m,{dismissedUntil:until,pending:false,opened:true,snapshot:snapshotMessage(m),...userStamp('descartó el mensaje')})}
+function restoreMessage(m){const map=loadMap(MESSAGE_STATE_KEY),key=msgKey(m);if(map[key]){delete map[key].dismissedUntil;map[key].updatedAt=new Date().toISOString();saveMap(MESSAGE_STATE_KEY,map);persistState('messages',key,{...userStamp('recuperó el mensaje')},{removeFields:['dismissedUntil']})}}
+function getDismissedFromStorage(){const map=loadMap(MESSAGE_STATE_KEY),out=[];for(const [key,st] of Object.entries(map)){if(!st.dismissedUntil)continue;const until=new Date(st.dismissedUntil).getTime();if(Number.isNaN(until)||Date.now()>=until){delete map[key];persistState('messages',key,{}, {delete:true});continue}if(st.snapshot?.['_cuenta']&&st.snapshot?._packId)out.push({...st.snapshot})}saveMap(MESSAGE_STATE_KEY,map);return out}
+function getClaimArchiveFromStorage(){const map=loadMap(CLAIM_STATE_KEY),out=[];for(const st of Object.values(map)){if((st.bucket==='solved'||st.bucket==='truck')&&st.snapshot?._id)out.push({...st.snapshot})}return out}
+function tick(){document.getElementById('clock').textContent=new Date().toLocaleTimeString('es-UY',{hour:'2-digit',minute:'2-digit'})}tick();setInterval(tick,30000);
+function escapeHtml(str){return String(str??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function fmt(dateStr){if(!dateStr)return '—';const d=new Date(dateStr);if(isNaN(d))return '—';return d.toLocaleString('es-UY',{day:'2-digit',month:'numeric',hour:'2-digit',minute:'2-digit'})}
+function timeAgo(dateStr){if(!dateStr)return '—';const d=new Date(dateStr);if(isNaN(d))return '—';const h=Math.floor((Date.now()-d.getTime())/3600000);if(h<1)return `hace ${Math.max(0,Math.floor((Date.now()-d.getTime())/60000))} min`;if(h<24)return `hace ${h} h`;return `hace ${Math.floor(h/24)} d`}
+function ageClass(dateStr){if(!dateStr)return '';const d=new Date(dateStr);if(isNaN(d))return '';const h=(Date.now()-d.getTime())/3600000;if(h>24)return 'danger';if(h>8)return 'warn';return ''}
+function showErr(msg){document.getElementById('errBox').innerHTML=msg?`<div class="err">${escapeHtml(msg)}</div>`:''}
+function firstArray(r,keys=[]){if(Array.isArray(r))return r;for(const k of keys){if(Array.isArray(r?.[k]))return r[k]}return r?.results||r?.data||r?.messages||r?.questions||r?.claims||[]}
+function valueAt(obj,path){try{return path.split('.').reduce((a,k)=>a?.[k],obj)}catch{return undefined}}
+function findResourceId(obj,names){const arr=obj?.message_resources||obj?.resources||obj?.resource||[];if(Array.isArray(arr)){const f=arr.find(x=>names.includes(String(x.name||x.type||'').toLowerCase()));if(f)return f.id||f.value}return ''}
+function parsePackId(obj){const direct=obj?.pack_id||obj?.packId||obj?.resource_id||obj?.resourceId||findResourceId(obj,['packs','pack']);if(direct)return String(direct).replace(/\D/g,'')||String(direct);const raw=[obj?.resource,obj?.path,obj?.conversation_status?.path,obj?.href,obj?.url].filter(Boolean).join(' ');const m=String(raw).match(/packs?\/(\d+)/i)||String(raw).match(/pack_id[=:](\d+)/i)||String(raw).match(/(\d{10,})/);return m?m[1]:''}
+function parseOrderId(obj){const direct=obj?.order_id||obj?.orderId||obj?.resource_id||obj?.resourceId||obj?.order?.id||findResourceId(obj,['orders','order']);if(direct)return String(direct).replace(/\D/g,'')||String(direct);const raw=[obj?.resource,obj?.path,obj?.href,obj?.url].filter(Boolean).join(' ');const m=String(raw).match(/orders?\/(\d+)/i)||String(raw).match(/(\d{10,})/);return m?m[1]:''}
+function msgDate(m){return valueAt(m,'message_date.received')||valueAt(m,'message_date.created')||m.date_received||m.date_created||m.message_date||m.created_at||m.updated_at||''}
+function msgText(m){return valueAt(m,'text.plain')||m.text||m.subject||m.message||m.snippet||m.title||''}
+function normalizeQuestion(q,c){return{...q,_cuenta:c,_date:q.date_created||q.created_at||q.date||'',_text:q.text||q.question||q.body||'',_id:q.id||q.question_id,_status:String(q.status||q.question_status||'').toUpperCase()}}
+function normalizeMessage(m,c){const packId=parsePackId(m);return{...m,_cuenta:c,_packId:packId,_date:msgDate(m),_text:msgText(m)||(packId?`Pack ${packId} con mensajes sin leer`:'Mensaje pendiente sin detalle'),_buyerId:valueAt(m,'from.user_id')||valueAt(m,'to.user_id')||m.buyer_id||''}}
+function normalizeClaim(cl,c){const orderId=parseOrderId(cl);return{...cl,_cuenta:c,_date:cl.date_created||cl.created_at||cl.last_updated||'',_orderId:orderId,_id:cl.id||cl.claim_id,_status:cl.status||cl.stage||'opened'}}
+const MAX_QUESTION_AGE_DAYS=30;
+function isRecentQuestion(q){const d=new Date(q._date);if(isNaN(d))return false;const age=(Date.now()-d.getTime())/86400000;return age>=0&&age<=MAX_QUESTION_AGE_DAYS}
+async function callApi(cuenta,params,opts={}){const qs=new URLSearchParams({cuenta,...params}).toString();const init={method:opts.method||'GET'};if(opts.body){init.headers={'Content-Type':'application/json'};init.body=JSON.stringify(opts.body)}const r=await fetch(`/api/inbox?${qs}`,init);const data=await r.json().catch(()=>({error:{message:'Respuesta no JSON'}}));if(!r.ok||data?.error)throw new Error(data?.error?.message||data?.message||`Error HTTP ${r.status}`);return data}
+async function cuentasActuales(){return state.cuenta==='all'?['tlc','topshop']:[state.cuenta]}
+function cuentaSort(a,b){const pa=a._cuenta==='tlc'?0:1,pb=b._cuenta==='tlc'?0:1;if(pa!==pb)return pa-pb;return new Date(b._date)-new Date(a._date)}
+async function loadAll(){showErr('');try{await Promise.all([loadQuestions(),loadMessages(),loadClaims()]);render()}catch(e){showErr('Error al cargar: '+e.message)}}
+async function loadQuestions(){const all=[];for(const c of await cuentasActuales()){try{const r=await callApi(c,{action:'questions',status:'UNANSWERED',limit:50});firstArray(r,['questions','results']).map(x=>normalizeQuestion(x,c)).filter(q=>q._id&&q._text&&isRecentQuestion(q)).forEach(q=>all.push(q))}catch(e){console.error('questions',c,e)}}all.sort(cuentaSort);state.data.questions=all;document.getElementById('cntQ').textContent=all.length}
+async function loadMessages(){const all=[];for(const c of await cuentasActuales()){try{const r=await callApi(c,{action:'messages_unread',limit:50});firstArray(r,['results','messages']).map(x=>normalizeMessage(x,c)).filter(m=>m._packId&&!isDismissed(m)).forEach(m=>all.push(m))}catch(e){console.error('messages',c,e)}}all.sort(cuentaSort);state.data.messages=all;state.data.dismissed=getDismissedFromStorage().filter(m=>state.cuenta==='all'||m._cuenta===state.cuenta).sort(cuentaSort);document.getElementById('cntM').textContent=all.length}
+async function loadClaims(){const all=[];for(const c of await cuentasActuales()){try{const r=await callApi(c,{action:'claims',status:'opened',limit:50});firstArray(r,['data','results','claims']).map(x=>normalizeClaim(x,c)).filter(cl=>cl._id).forEach(cl=>all.push(cl))}catch(e){console.error('claims',c,e)}}all.sort(cuentaSort);state.data.claims=all;state.data.claimArchive=getClaimArchiveFromStorage().filter(cl=>state.cuenta==='all'||cl._cuenta===state.cuenta).sort(cuentaSort);document.getElementById('cntC').textContent=all.filter(cl=>getClaimState(cl).bucket!=='solved').length}
+function render(){
+ const list=document.getElementById('list');
+ if(state.tab==='messages'){
+  const active=state.messageView==='active';
+  const items=active?state.data.messages:state.data.dismissed;
+  let html=`<div class="subtabs"><button class="subtab ${active?'active':''}" onclick="setMessageView('active')">Activos <span>${state.data.messages.length}</span></button><button class="subtab ${!active?'active':''}" onclick="setMessageView('dismissed')">Descartados <span>${state.data.dismissed.length}</span></button></div>`;
+  if(!active)html+=`<div class="section-note">Los mensajes descartados quedan guardados acá por si necesitás recuperarlos. Este mensaje se borrará en 5 días desde que fue descartado.</div>`;
+  if(!items.length){list.innerHTML=html+'<div class="empty">No hay ítems pendientes ✓</div>';return}
+  state._renderedMessages=items;
+  list.innerHTML=html+items.map((it,i)=>renderItem(it,i)).join('');
+  return;
+ }
+ if(state.tab==='claims'){
+  const archive=state.claimView==='archive';
+  if(archive){
+   const items=state.data.claimArchive;
+   let html=`<div class="subtabs"><button class="subtab" onclick="setClaimView('active')">Activos <span>${state.data.claims.filter(cl=>getClaimState(cl).bucket!=='solved').length}</span></button><button class="subtab active" onclick="setClaimView('archive')">Solucionados / preparación <span>${state.data.claimArchive.length}</span></button></div>`;
+   if(!items.length){list.innerHTML=html+'<div class="empty">No hay reclamos en esta sección ✓</div>';return}
+   state._renderedClaims=items;
+   list.innerHTML=html+items.map((it,i)=>renderItem(it,i)).join('');
+   return;
+  }
+  let items=state.data.claims.filter(cl=>getClaimState(cl).bucket!=='solved');
+  const normal=items.filter(cl=>getClaimState(cl).bucket!=='truck').sort(cuentaSort);
+  const truck=items.filter(cl=>getClaimState(cl).bucket==='truck').sort(cuentaSort);
+  let html=`<div class="subtabs"><button class="subtab active" onclick="setClaimView('active')">Activos <span>${normal.length+truck.length}</span></button><button class="subtab" onclick="setClaimView('archive')">Solucionados / preparación <span>${state.data.claimArchive.length}</span></button></div>`;
+  if(!normal.length&&!truck.length){list.innerHTML=html+'<div class="empty">No hay ítems pendientes ✓</div>';return}
+  html+=normal.map((it,i)=>renderItem(it,i)).join('')+(truck.length?`<div class="section-divider">🚚 Devolución en camión / preparación</div>`+truck.map((it,i)=>renderItem(it,normal.length+i)).join(''):'');
+  state._renderedClaims=[...normal,...truck];
+  list.innerHTML=html;
+  return;
+ }
+ const items=state.data[state.tab]||[];
+ if(!items.length){list.innerHTML='<div class="empty">No hay ítems pendientes ✓</div>';return}
+ list.innerHTML=items.map((it,i)=>renderItem(it,i)).join('')
+}
+function setMessageView(view){state.messageView=view;render()}
+function setClaimView(view){state.claimView=view;render()}
+function renderItem(it,idx){const accLabel=it._cuenta==='tlc'?'TLC':'TOP SHOP',accClass=it._cuenta;if(state.tab==='questions'){const st=(SERVER_STATE.questions||{})[`${it._cuenta}:${it._id}`]||{};return `<div class="item" onclick="openItem(${idx})"><div class="item-acc ${accClass}">${accLabel}</div><div class="item-body"><div class="item-text">${escapeHtml(it._text)}</div><div class="item-meta"><span>Item: <strong>${escapeHtml(it.item_id||'—')}</strong></span><span>${fmt(it._date)}</span>${actionMeta(st)}</div></div><div class="item-age ${ageClass(it._date)}">${timeAgo(it._date)}</div></div>`;}
+ if(state.tab==='messages'){const st=getMsgState(it),pending=!!st.pending,opened=!!st.opened,dismissed=!!st.dismissedUntil;const title=opened?`Pack ${escapeHtml(it._packId)} abierto`:`Pack ${escapeHtml(it._packId)} con mensaje sin leer`;return `<div class="item ${pending?'pending':''}" onclick="openItem(${idx})"><div class="item-acc ${accClass}">${accLabel}</div><div class="item-body"><div class="item-text">${pending?'<span class="pending-dot"></span>':''}${escapeHtml(title)}</div><div class="item-meta"><span>Pack/Venta: <strong>${escapeHtml(it._packId||'—')}</strong></span>${pending?'<span><strong>Pendiente</strong></span>':''}${dismissed?`<span>Descartado hasta: <strong>${escapeHtml(fmt(st.dismissedUntil))}</strong></span>`:''}<span>${fmt(it._date)}</span>${actionMeta(st)}</div></div><div class="item-age ${ageClass(it._date)}">${timeAgo(it._date)}</div></div>`}
+ const st=getClaimState(it),pending=!!st.pending,truck=st.bucket==='truck',solved=st.bucket==='solved',opened=!!st.opened;const reason=it.reason_id||it.type||it.claim_type||'—';return `<div class="item ${pending?'pending':''} ${truck?'truck':''} ${solved?'solved':''}" onclick="openItem(${idx})"><div class="item-acc ${accClass}">${accLabel}</div><div class="item-body"><div class="item-text">${pending?'<span class="pending-dot"></span>':''}${truck?'<span class="blue-dot"></span>':''}${opened?'':'SIN ABRIR · '}Reclamo #${escapeHtml(it._id)} <span class="badge opened">${escapeHtml(it._status)}</span></div><div class="item-meta"><span>Venta: <strong>${escapeHtml(it._orderId||'—')}</strong></span><span>Motivo: <strong>${escapeHtml(reason)}</strong></span>${pending?'<span><strong>Pendiente de solucionar</strong></span>':''}${truck?'<span><strong>Devolución en camión</strong></span>':''}${solved?'<span><strong>Solucionado / preparación</strong></span>':''}<span>${fmt(it._date)}</span>${actionMeta(st)}</div></div><div class="item-age ${ageClass(it._date)}">${timeAgo(it._date)}</div></div>`}
+function openItem(idx){let it=state.tab==='claims'?(state._renderedClaims||state.data.claims)[idx]:state.tab==='messages'?(state._renderedMessages||state.data.messages)[idx]:state.data[state.tab][idx];state.selected=it;if(state.tab==='messages')setMsgState(it,{opened:true,...userStamp('abrió el mensaje')});if(state.tab==='claims')setClaimState(it,{opened:true,...userStamp('abrió el reclamo')});document.getElementById('drawerBack').classList.add('open');document.getElementById('drawer').classList.add('open');if(state.tab==='questions')renderQuestionDrawer(it);else if(state.tab==='messages')renderMessagesDrawer(it);else renderClaimDrawer(it);render()}
+function closeDrawer(){document.getElementById('drawerBack').classList.remove('open');document.getElementById('drawer').classList.remove('open');state.selected=null}
+document.getElementById('drawerClose').onclick=closeDrawer;document.getElementById('drawerBack').onclick=closeDrawer;
+function renderTemplates(){return `<div class="templates" id="tpls">${TEMPLATES.map((t,i)=>`<button class="tpl" data-tpl="${i}">${t.name}</button>`).join('')}</div>`}
+function bindTemplates(){document.querySelectorAll('#tpls .tpl').forEach(b=>{b.onclick=()=>{const t=TEMPLATES[Number(b.dataset.tpl)],ta=document.getElementById('replyText');ta.value=ta.value?ta.value+' '+t.text:t.text;ta.focus()}})}
+function renderQuestionDrawer(q){const acc=q._cuenta==='tlc'?'TELOCONSIGO':'TOP SHOP';document.getElementById('drawerTitle').textContent=`Pregunta · ${acc}`;document.getElementById('drawerBody').innerHTML=`<div class="ticket-info"><strong>Item:</strong><span><a href="https://articulo.mercadolibre.com.uy/${String(q.item_id||'').replace('MLU','MLU-')}" target="_blank">${escapeHtml(q.item_id||'—')}</a></span><strong>Pregunta:</strong><span>${escapeHtml(q._id)}</span><strong>Fecha:</strong><span>${fmt(q._date)}</span><strong>De:</strong><span>User #${escapeHtml(valueAt(q,'from.id')||'—')}</span></div><div class="msg from-buyer">${escapeHtml(q._text)}<div class="msg-time">${fmt(q._date)}</div></div>`;document.getElementById('drawerFoot').innerHTML=`${renderTemplates()}<textarea class="reply" id="replyText" placeholder="Escribí tu respuesta..." style="margin-top:10px;"></textarea><div class="reply-actions"><span style="font-size:0.72rem;color:var(--muted);">Máx. 2000 caracteres · Sin teléfonos ni mails</span><button class="btn" id="btnSend">Responder</button></div>`;bindTemplates();document.getElementById('btnSend').onclick=async()=>{const text=document.getElementById('replyText').value.trim();if(!text)return;const btn=document.getElementById('btnSend');btn.disabled=true;btn.textContent='Enviando...';try{await callApi(q._cuenta,{action:'answer'},{method:'POST',body:{question_id:q._id,text}});await persistState('questions',`${q._cuenta}:${q._id}`,{answered:true,item_id:q.item_id||'',question_id:q._id,text:q._text||'',answer:text,...userStamp('respondió la pregunta')});SERVER_STATE.questions[`${q._cuenta}:${q._id}`]={answered:true,item_id:q.item_id||'',question_id:q._id,text:q._text||'',answer:text,updatedAt:new Date().toISOString(),...userStamp('respondió la pregunta')};btn.textContent='✓ Respondida';setTimeout(()=>{closeDrawer();loadAll()},700)}catch(e){alert('Error al responder: '+e.message);btn.disabled=false;btn.textContent='Responder'}}}
+function renderMessagesDrawer(m){const acc=m._cuenta==='tlc'?'TELOCONSIGO':'TOP SHOP',packId=m._packId;document.getElementById('drawerTitle').textContent=`Mensaje · ${acc}`;document.getElementById('drawerBody').innerHTML=`<div class="ticket-info"><strong>Pack/Venta:</strong><span>${escapeHtml(packId||'—')}</span><strong>Fecha:</strong><span>${fmt(m._date)}</span><strong>Estado:</strong><span id="msgLocalStatus"></span></div><div id="thread"><div class="loading">Cargando hilo...</div></div>`;document.getElementById('drawerFoot').innerHTML=`${renderTemplates()}<textarea class="reply" id="replyText" placeholder="Escribí tu respuesta..." style="margin-top:10px;"></textarea><div class="reply-actions"><div style="display:flex;gap:6px;flex-wrap:wrap;"><button class="btn btn-ghost" id="btnMarkUnread">Marcar no leído</button><button class="mini-action" id="btnPending">Marcar pendiente</button><button class="mini-action danger" id="btnDismiss">Descartar</button><button class="mini-action" id="btnRestore" style="display:none;">Recuperar</button></div><button class="btn" id="btnSend">Enviar</button></div>`;bindTemplates();function refresh(){const st=getMsgState(m),el=document.getElementById('msgLocalStatus');if(el)el.innerHTML=`${st.opened?'Abierto':'Sin abrir'}${st.pending?' · <span class="pending-dot"></span><strong>Pendiente</strong>':''}${st.dismissedUntil?' · Descartado hasta '+escapeHtml(fmt(st.dismissedUntil)):''}${actionInfo(st)?`<div class="action-line">${actionInfo(st)}</div>`:''}`;document.getElementById('btnPending').textContent=st.pending?'Quitar pendiente':'Marcar pendiente';document.getElementById('btnRestore').style.display=st.dismissedUntil?'inline-block':'none';document.getElementById('btnDismiss').style.display=st.dismissedUntil?'none':'inline-block'}refresh();document.getElementById('btnPending').onclick=()=>{const st=getMsgState(m);setMsgState(m,{pending:!st.pending,opened:true,...userStamp(!st.pending?'marcó el mensaje como pendiente':'quitó pendiente del mensaje')});refresh();render()};document.getElementById('btnMarkUnread').onclick=()=>{setMsgState(m,{opened:false,pending:false,...userStamp('marcó el mensaje como no leído')});refresh();render()};document.getElementById('btnRestore').onclick=()=>{restoreMessage(m);closeDrawer();loadAll()};document.getElementById('btnDismiss').onclick=()=>{if(confirm('¿Ocultar este mensaje del panel? Se borrará automáticamente en 5 días.')){dismissForFiveDays(m);closeDrawer();loadAll()}};let threadMsgs=[];(async()=>{try{const r=await callApi(m._cuenta,{action:'messages_pack',pack_id:packId,mark_as_read:'false'});threadMsgs=firstArray(r,['messages','results']).map(x=>({...x,_date:msgDate(x),_text:msgText(x),_from:valueAt(x,'from.user_id')||''}));const sellerId=SELLER_IDS[m._cuenta];document.getElementById('thread').innerHTML=threadMsgs.length?threadMsgs.map(mm=>{const isSeller=String(mm._from)===String(sellerId);return `<div class="msg ${isSeller?'from-seller':'from-buyer'}">${escapeHtml(mm._text||'(sin texto)')}<div class="msg-time">${fmt(mm._date)}</div></div>`}).join(''):'<div class="empty">No se pudo cargar el hilo</div>'}catch(e){document.getElementById('thread').innerHTML=`<div class="err">No se pudo cargar el hilo: ${escapeHtml(e.message)}</div>`}})();document.getElementById('btnSend').onclick=async()=>{const text=document.getElementById('replyText').value.trim();if(!text)return;const sellerId=SELLER_IDS[m._cuenta];const buyerId=(threadMsgs.find(mm=>String(mm._from)!==String(sellerId))?._from)||m._buyerId||MLU_AGENT_ID;const btn=document.getElementById('btnSend');btn.disabled=true;btn.textContent='Enviando...';try{await callApi(m._cuenta,{action:'send_message'},{method:'POST',body:{pack_id:packId,buyer_id:buyerId,text}});setMsgState(m,{opened:true,pending:false,...userStamp('respondió el mensaje')});btn.textContent='✓ Enviado';await callApi(m._cuenta,{action:'messages_pack',pack_id:packId,mark_as_read:'true'}).catch(()=>{});setTimeout(()=>{closeDrawer();loadAll()},700)}catch(e){alert('Error al enviar: '+e.message);btn.disabled=false;btn.textContent='Enviar'}}}
+function renderClaimDrawer(cl){const acc=cl._cuenta==='tlc'?'TELOCONSIGO':'TOP SHOP',orderId=cl._orderId;document.getElementById('drawerTitle').textContent=`Reclamo · ${acc}`;document.getElementById('drawerBody').innerHTML=`<div class="ticket-info"><strong>Reclamo:</strong><span>#${escapeHtml(cl._id)}</span><strong>Estado:</strong><span><span class="badge opened">${escapeHtml(cl._status)}</span></span><strong>Venta:</strong><span>${escapeHtml(orderId||'—')}</span><strong>Motivo:</strong><span>${escapeHtml(cl.reason_id||cl.type||'—')}</span><strong>Fecha:</strong><span>${fmt(cl._date)}</span><strong>Estado local:</strong><span id="claimLocalStatus"></span></div><p style="font-size:0.85rem;color:var(--muted);margin-top:14px;">Este botón abre MercadoLibre por número de venta, no por número de reclamo.</p>`;const url=orderId?`https://www.mercadolibre.com.uy/ventas/${orderId}/detalle`:`https://www.mercadolibre.com.uy/ventas`;document.getElementById('drawerFoot').innerHTML=`<div class="reply-actions"><div style="display:flex;gap:6px;flex-wrap:wrap;"><button class="btn btn-ghost" id="btnClaimUnread">Marcar no leído</button><button class="mini-action" id="btnClaimPending">Marcar pendiente de solucionar</button><button class="mini-action" id="btnClaimTruck">Devolución en camión</button><button class="mini-action" id="btnClaimSolved">Reclamo solucionado / preparación</button><button class="mini-action" id="btnClaimRestore" style="display:none;">Recuperar</button></div><a class="btn" href="${url}" target="_blank" style="text-decoration:none;display:inline-block;">Abrir venta ↗</a></div>`;function refresh(){const st=getClaimState(cl),el=document.getElementById('claimLocalStatus');let label=st.opened?'Abierto':'SIN ABRIR';if(st.pending)label+=' · Pendiente de solucionar';if(st.bucket==='truck')label+=' · Devolución en camión';if(st.bucket==='solved')label+=' · Solucionado / preparación';if(el)el.innerHTML=escapeHtml(label)+(actionInfo(st)?`<div class="action-line">${actionInfo(st)}</div>`:'');document.getElementById('btnClaimPending').textContent=st.pending?'Quitar pendiente':'Marcar pendiente de solucionar';document.getElementById('btnClaimRestore').style.display=st.bucket?'inline-block':'none'}refresh();document.getElementById('btnClaimUnread').onclick=()=>{setClaimState(cl,{opened:false,pending:false,...userStamp('marcó el reclamo como no leído')});refresh();render()};document.getElementById('btnClaimPending').onclick=()=>{const st=getClaimState(cl);setClaimState(cl,{pending:!st.pending,opened:true,bucket:st.bucket,...userStamp(!st.pending?'marcó el reclamo como pendiente':'quitó pendiente del reclamo')});refresh();render()};document.getElementById('btnClaimTruck').onclick=()=>{setClaimState(cl,{bucket:'truck',opened:true,pending:false,...userStamp('marcó devolución en camión')});refresh();loadAll()};document.getElementById('btnClaimSolved').onclick=()=>{setClaimState(cl,{bucket:'solved',opened:true,pending:false,...userStamp('pasó el reclamo a solucionado/preparación')});refresh();loadAll()};document.getElementById('btnClaimRestore').onclick=()=>{restoreClaim(cl);closeDrawer();loadAll()}}
+document.querySelectorAll('.tab').forEach(t=>{t.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));t.classList.add('active');state.tab=t.dataset.tab;if(state.tab==='messages')state.messageView='active';if(state.tab==='claims')state.claimView='active';render()}});
+document.querySelectorAll('.chip[data-cuenta]').forEach(c=>{c.onclick=()=>{document.querySelectorAll('.chip[data-cuenta]').forEach(x=>x.classList.remove('active'));c.classList.add('active');state.cuenta=c.dataset.cuenta;document.getElementById('list').innerHTML='<div class="loading">Cargando...</div>';loadAll()}});
+document.getElementById('btnReload').onclick=()=>{document.getElementById('list').innerHTML='<div class="loading">Cargando...</div>';loadAll()};
+document.getElementById('btnAuto').onclick=()=>{state.autoRefresh=!state.autoRefresh;document.getElementById('btnAuto').textContent=`Auto-refresh: ${state.autoRefresh?'ON':'OFF'}`;setupAutoRefresh()};
+function setupAutoRefresh(){if(state.refreshTimer)clearInterval(state.refreshTimer);if(state.autoRefresh)state.refreshTimer=setInterval(loadAll,60000)}
+(async()=>{await loadCurrentUser();await loadServerState();await loadAll();setupAutoRefresh();})();
+</script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+TELOCONSIGO PANEL - VERSION CORREGIDA V9
+
+Correccion principal:
+- Las preguntas ahora responden correctamente.
+- El servidor convierte las acciones POST de la bandeja MeLi a GET para los webhooks de n8n, porque esos webhooks estan registrados como GET.
+- Se corrige el error: "This webhook is not registered for POST requests".
+
+Uso:
+1. Ejecutar INICIAR.bat
+2. Abrir http://localhost:8080
+3. Entrar con usuario y contraseña
+
+
+VERSION V10 - MEMORIA JSON
+- Los estados de Bandeja MeLi se guardan en /data/inbox-state.json.
+- Se conservan: mensajes leidos/no leidos, pendientes, descartados, reclamos pendientes, devolucion en camion y solucionados/preparacion.
+- Esto permite reiniciar el servidor o subir nuevas versiones sin perder el seguimiento.
+- IMPORTANTE: al subir online, conservar la carpeta /data para no perder la memoria.
+
+VERSION V11 - PERMISOS Y AUDITORIA
+- Administracion permite elegir a que modulos accede cada usuario.
+- El administrador siempre tiene acceso total.
+- Se agrego historial de acciones en Administracion.
+- Se registra login, logout, cambios de bandeja, llamadas a inbox/ads y cambios administrativos.
+- Los archivos de datos quedan en /data y no se pueden abrir desde el navegador.
+
+
+VERSION v13
+- Administración muestra solo la última acción importante por item.
+- No se muestran aperturas, pasos intermedios ni logs técnicos.
+- Cada mensaje/reclamo/pregunta mantiene estado actual, responsable y última acción.

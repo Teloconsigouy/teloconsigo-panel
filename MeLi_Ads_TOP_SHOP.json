@@ -1,0 +1,123 @@
+{
+  "name": "MeLi Ads TOP SHOP",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "meli-ads-topshop",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "c6cbb9d0-b733-4997-9fa8-5993b1d1c1c9",
+      "webhookId": "6d21e6e4-6a2a-4e4d-848d-2a3953198c27"
+    },
+    {
+      "parameters": {
+        "functionCode": "const action = $json.query.action || 'campaigns';\nconst advertiserId = $json.query.advertiser_id || '50727';\nconst campaignId = $json.query.campaign_id || '';\nconst dateFrom = $json.query.date_from || '';\nconst dateTo = $json.query.date_to || '';\nconst limit = $json.query.limit || '50';\nconst offset = $json.query.offset || '0';\n\nconst METRICS = 'clicks,prints,ctr,cost,cpc,acos,roas,direct_amount,indirect_amount,total_amount,direct_units_quantity,indirect_units_quantity,units_quantity,cvr';\nconst metricsParams = (dateFrom && dateTo) \n  ? `&date_from=${dateFrom}&date_to=${dateTo}&metrics=${METRICS}&metrics_summary=true`\n  : '';\n\nlet url = '';\nif (action === 'advertiser') {\n  url = `https://api.mercadolibre.com/advertising/advertisers?product_id=PADS`;\n}\nelse if (action === 'campaigns') {\n  url = `https://api.mercadolibre.com/advertising/advertisers/${advertiserId}/product_ads/campaigns?limit=${limit}&offset=${offset}${metricsParams}`;\n}\nelse if (action === 'ads') {\n  const campaignFilter = campaignId ? `&filters%5Bcampaign_id%5D=${campaignId}` : '';\n  url = `https://api.mercadolibre.com/advertising/advertisers/${advertiserId}/product_ads/items?limit=${limit}&offset=${offset}${metricsParams}${campaignFilter}`;\n}\nelse if (action === 'metrics') {\n  url = `https://api.mercadolibre.com/advertising/advertisers/${advertiserId}/product_ads/campaigns?limit=${limit}&date_from=${dateFrom}&date_to=${dateTo}&metrics=${METRICS}&metrics_summary=true`;\n}\n\nreturn [{ json: { action, url, advertiserId, campaignId, dateFrom, dateTo } }];"
+      },
+      "name": "Armar URL",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        224,
+        0
+      ],
+      "id": "5db8ac74-87c2-45ab-ac86-c16e5ee80e08"
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "url": "={{ $json.url }}",
+        "jsonParameters": true,
+        "options": {
+          "fullResponse": false,
+          "ignoreResponseCode": true
+        }
+      },
+      "name": "Mercado Libre Ads",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        448,
+        0
+      ],
+      "id": "2349823b-a752-4826-bc13-224f8dcf10ce",
+      "credentials": {
+        "oAuth2Api": {
+          "id": "b34aWWqF6fKOWMNR",
+          "name": "MeLi Top Shop"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "name": "Respuesta",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        672,
+        0
+      ],
+      "id": "510d6a62-e71b-4f7e-937c-732aae792348"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Armar URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar URL": {
+      "main": [
+        [
+          {
+            "node": "Mercado Libre Ads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mercado Libre Ads": {
+      "main": [
+        [
+          {
+            "node": "Respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "911b56fc-9700-4cb7-9a68-7d48604273c0",
+  "meta": {
+    "instanceId": "28c317b99ab98cf75648397ebfa4ed87012abb048409399ffd25a2868eaa7829"
+  },
+  "id": "ckoPpvYXxbS8OXAl",
+  "tags": []
+}
