@@ -33,6 +33,35 @@ function writeJSON(name, data) {
   fs.writeFileSync(filePath(name), JSON.stringify(data, null, 2), "utf8");
 }
 
+function getAdsData(account) {
+  const cuenta = String(account || "tlc").toLowerCase();
+  const file = cuenta.includes("top")
+    ? "MeLi_Ads_TOP_SHOP.json"
+    : "MeLi_Ads_TLC.json";
+
+  return readJSON(file, {
+    campaigns: [],
+    campanas: [],
+    anuncios: [],
+    ads: []
+  });
+}
+
+function getInboxData(account) {
+  const cuenta = String(account || "all").toLowerCase();
+
+  const tlc = readJSON("MeLi_Inbox_TLC.json", {});
+  const top = readJSON("MeLi_Inbox_TOP_SHOP.json", {});
+
+  if (cuenta.includes("top")) return { cuenta: "topshop", ...top };
+  if (cuenta.includes("tlc")) return { cuenta: "tlc", ...tlc };
+
+  return {
+    tlc,
+    topshop: top
+  };
+}
+
 app.post("/api/login", (req, res) => {
   return res.json({
     ok: true,
@@ -52,60 +81,67 @@ app.post("/api/logout", (req, res) => {
   return res.json({ ok: true });
 });
 
-app.get("/api/meliads", (req, res) => {
-  const cuenta = String(req.query.cuenta || req.query.account || "tlc").toLowerCase();
+app.get("/api/state", (req, res) => {
+  const state = readJSON("inbox-state.json", {
+    messages: {},
+    questions: {},
+    claims: {}
+  });
 
-  const file =
-    cuenta.includes("top")
-      ? "MeLi_Ads_TOP_SHOP.json"
-      : "MeLi_Ads_TLC.json";
+  return res.json({
+    ok: true,
+    user: ADMIN_USER,
+    state
+  });
+});
 
-  const data = readJSON(file, { campaigns: [], anuncios: [], ads: [] });
+app.post("/api/state", (req, res) => {
+  const state = req.body || {};
+  writeJSON("inbox-state.json", state);
+
+  return res.json({
+    ok: true,
+    state
+  });
+});
+
+app.get("/api/meli", (req, res) => {
+  const cuenta = req.query.cuenta || req.query.account || "tlc";
+  const ads = getAdsData(cuenta);
 
   return res.json({
     ok: true,
     cuenta,
-    data
+    ...ads,
+    data: ads
+  });
+});
+
+app.get("/api/meliads", (req, res) => {
+  const cuenta = req.query.cuenta || req.query.account || "tlc";
+  const ads = getAdsData(cuenta);
+
+  return res.json({
+    ok: true,
+    cuenta,
+    ...ads,
+    data: ads
   });
 });
 
 app.get("/api/ads", (req, res) => {
-  const cuenta = String(req.query.cuenta || req.query.account || "tlc").toLowerCase();
-
-  const file =
-    cuenta.includes("top")
-      ? "MeLi_Ads_TOP_SHOP.json"
-      : "MeLi_Ads_TLC.json";
-
-  const data = readJSON(file, { campaigns: [], anuncios: [], ads: [] });
-
-  return res.json(data);
+  const cuenta = req.query.cuenta || req.query.account || "tlc";
+  return res.json(getAdsData(cuenta));
 });
 
 app.get("/api/inbox", (req, res) => {
-  const cuenta = String(req.query.cuenta || req.query.account || "all").toLowerCase();
+  const cuenta = req.query.cuenta || req.query.account || "all";
   const action = String(req.query.action || req.query.type || "").toLowerCase();
-
-  const tlc = readJSON("MeLi_Inbox_TLC.json", {});
-  const top = readJSON("MeLi_Inbox_TOP_SHOP.json", {});
-
-  let data;
-
-  if (cuenta.includes("top")) {
-    data = { cuenta: "topshop", ...top };
-  } else if (cuenta.includes("tlc")) {
-    data = { cuenta: "tlc", ...tlc };
-  } else {
-    data = {
-      tlc,
-      topshop: top
-    };
-  }
 
   return res.json({
     ok: true,
     action,
-    data
+    data: getInboxData(cuenta)
   });
 });
 
