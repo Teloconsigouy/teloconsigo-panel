@@ -22,22 +22,15 @@ app.post("/api/login", (req, res) => {
     const data = readJSON("users.json");
 
     const user = data.users.find(
-      (u) => u.username === username
+      (u) =>
+        u.username === username &&
+        password === "admin123"
     );
 
     if (!user) {
       return res.status(401).json({
         success: false,
-        message: "Usuario incorrecto",
-      });
-    }
-
-    const valid = password === "admin123";
-
-    if (!valid) {
-      return res.status(401).json({
-        success: false,
-        message: "Contraseña incorrecta",
+        message: "Usuario o contraseña incorrectos",
       });
     }
 
