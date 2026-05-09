@@ -88,20 +88,36 @@ async function fetchMeliFromN8N(req) {
   const offset = req.query.offset || "0";
 
   const url = new URL(getN8nUrl(account));
+
   url.searchParams.set("action", action);
   url.searchParams.set("limit", limit);
   url.searchParams.set("offset", offset);
 
-  if (dateFrom) url.searchParams.set("date_from", dateFrom);
-  if (dateTo) url.searchParams.set("date_to", dateTo);
-  if (req.query.campaign_id) url.searchParams.set("campaign_id", req.query.campaign_id);
+  if (dateFrom) {
+    url.searchParams.set("date_from", dateFrom);
+  }
+
+  if (dateTo) {
+    url.searchParams.set("date_to", dateTo);
+  }
+
+  if (req.query.campaign_id) {
+    url.searchParams.set(
+      "campaign_id",
+      req.query.campaign_id
+    );
+  }
 
   const response = await fetch(url.toString());
+
   const raw = await response.json();
 
   let normalized;
 
-  if (action === "campaigns" || action === "metrics") {
+  if (
+    action === "campaigns" ||
+    action === "metrics"
+  ) {
     normalized = normalizeCampaigns(raw);
   } else {
     const results =
@@ -123,30 +139,32 @@ async function fetchMeliFromN8N(req) {
 
   normalized.account = account;
   normalized.action = action;
-  normalized.updatedAt = new Date().toISOString();
+  normalized.updatedAt =
+    new Date().toISOString();
 
-  writeJSON(cacheFile(account, action), normalized);
+  writeJSON(
+    cacheFile(account, action),
+    normalized
+  );
 
   return normalized;
 }
 
 function getMeliCache(req) {
   const account = getAccount(req);
-  const action = req.query.action || "campaigns";
+  const action =
+    req.query.action || "campaigns";
 
-  return readJSON(cacheFile(account, action), {
-    ok: true,
-    success: true,
-    account,
-    action,
-    campaigns: [],
-    campanas: [],
-    results: [],
-    data: [],
-    total: 0,
-    cached: true,
-    empty: true
-  });
+  const cached = readJSON(
+    cacheFile(account, action),
+    null
+  );
+
+  if (!cached) {
+    return null;
+  }
+
+  return cached;
 }
 
 app.post("/api/login", (req, res) => {
@@ -166,15 +184,21 @@ app.get("/api/me", (req, res) => {
 });
 
 app.post("/api/logout", (req, res) => {
-  return res.json({ ok: true, success: true });
+  return res.json({
+    ok: true,
+    success: true
+  });
 });
 
 app.get("/api/state", (req, res) => {
-  const state = readJSON("inbox-state.json", {
-    messages: {},
-    questions: {},
-    claims: {}
-  });
+  const state = readJSON(
+    "inbox-state.json",
+    {
+      messages: {},
+      questions: {},
+      claims: {}
+    }
+  );
 
   return res.json({
     ok: true,
@@ -187,104 +211,119 @@ app.get("/api/state", (req, res) => {
 });
 
 app.post("/api/state", (req, res) => {
-  writeJSON("inbox-state.json", req.body || {});
-  return res.json({ ok: true, success: true });
+  writeJSON(
+    "inbox-state.json",
+    req.body || {}
+  );
+
+  return res.json({
+    ok: true,
+    success: true
+  });
 });
+
+async function handleMeliRequest(
+  req,
+  res,
+  routeName
+) {
+  try {
+    const refresh = String(
+      req.query.refresh || ""
+    ).toLowerCase();
+
+    const cached = getMeliCache(req);
+
+    if (
+      refresh === "1" ||
+      refresh === "true" ||
+      refresh === "yes" ||
+      !cached
+    ) {
+      const fresh =
+        await fetchMeliFromN8N(req);
+
+      return res.json(fresh);
+    }
+
+    return res.json(cached);
+  } catch (err) {
+    console.error(
+      `Error ${routeName}:`,
+      err
+    );
+
+    const cached = getMeliCache(req);
+
+    if (cached) {
+      return res.json(cached);
+    }
+
+    return res.status(500).json({
+      ok: false,
+      success: false,
+      message:
+        "Error obteniendo datos de MeLi ADS"
+    });
+  }
+}
 
 app.get("/api/meli", async (req, res) => {
-  try {
-    const refresh = String(req.query.refresh || "").toLowerCase();
-
-    if (refresh === "1" || refresh === "true" || refresh === "yes") {
-      const fresh = await fetchMeliFromN8N(req);
-      return res.json(fresh);
-    }
-
-    const cached = getMeliCache(req);
-    return res.json(cached);
-  } catch (err) {
-    console.error("Error /api/meli:", err);
-
-    const cached = getMeliCache(req);
-    if (!cached.empty) return res.json(cached);
-
-    return res.status(500).json({
-      ok: false,
-      success: false,
-      message: "Error obteniendo datos de MeLi ADS"
-    });
-  }
+  return handleMeliRequest(
+    req,
+    res,
+    "/api/meli"
+  );
 });
 
-app.get("/api/meliads", async (req, res) => {
-  try {
-    const refresh = String(req.query.refresh || "").toLowerCase();
-
-    if (refresh === "1" || refresh === "true" || refresh === "yes") {
-      const fresh = await fetchMeliFromN8N(req);
-      return res.json(fresh);
-    }
-
-    const cached = getMeliCache(req);
-    return res.json(cached);
-  } catch (err) {
-    console.error("Error /api/meliads:", err);
-
-    const cached = getMeliCache(req);
-    if (!cached.empty) return res.json(cached);
-
-    return res.status(500).json({
-      ok: false,
-      success: false,
-      message: "Error obteniendo datos de MeLi ADS"
-    });
+app.get(
+  "/api/meliads",
+  async (req, res) => {
+    return handleMeliRequest(
+      req,
+      res,
+      "/api/meliads"
+    );
   }
-});
+);
 
 app.get("/api/ads", async (req, res) => {
-  try {
-    const refresh = String(req.query.refresh || "").toLowerCase();
+  return handleMeliRequest(
+    req,
+    res,
+    "/api/ads"
+  );
+});
 
-    if (refresh === "1" || refresh === "true" || refresh === "yes") {
-      const fresh = await fetchMeliFromN8N(req);
+app.post(
+  "/api/meli/refresh",
+  async (req, res) => {
+    try {
+      req.query = {
+        ...req.query,
+        ...req.body,
+        refresh: "true"
+      };
+
+      const fresh =
+        await fetchMeliFromN8N(req);
+
       return res.json(fresh);
+    } catch (err) {
+      console.error(
+        "Error /api/meli/refresh:",
+        err
+      );
+
+      return res.status(500).json({
+        ok: false,
+        success: false,
+        message:
+          "Error actualizando datos"
+      });
     }
-
-    const cached = getMeliCache(req);
-    return res.json(cached);
-  } catch (err) {
-    console.error("Error /api/ads:", err);
-
-    const cached = getMeliCache(req);
-    if (!cached.empty) return res.json(cached);
-
-    return res.status(500).json({
-      ok: false,
-      success: false,
-      message: "Error obteniendo datos de MeLi ADS"
-    });
   }
-});
-
-app.post("/api/meli/refresh", async (req, res) => {
-  try {
-    req.query = {
-      ...req.query,
-      ...req.body,
-      refresh: "true"
-    };
-
-    const fresh = await fetchMeliFromN8N(req);
-    return res.json(fresh);
-  } catch (err) {
-    console.error("Error /api/meli/refresh:", err);
-    return res.status(500).json({
-      ok: false,
-      success: false,
-      message: "Error actualizando datos"
-    });
-  }
-});
+);
 
 app.get("/api/inbox", (req, res) => {
   const account = getAccount(req);
@@ -304,86 +343,145 @@ app.get("/api/inbox", (req, res) => {
   });
 });
 
-app.get("/api/inbox-state", (req, res) => {
-  const state = readJSON("inbox-state.json", {
-    messages: {},
-    questions: {},
-    claims: {}
-  });
+app.get(
+  "/api/inbox-state",
+  (req, res) => {
+    const state = readJSON(
+      "inbox-state.json",
+      {
+        messages: {},
+        questions: {},
+        claims: {}
+      }
+    );
 
-  return res.json({
-    ok: true,
-    success: true,
-    state
-  });
-});
-
-app.post("/api/inbox-state", (req, res) => {
-  writeJSON("inbox-state.json", req.body || {});
-  return res.json({ ok: true, success: true });
-});
-
-app.post("/api/inbox-state/update", (req, res) => {
-  const current = readJSON("inbox-state.json", {
-    messages: {},
-    questions: {},
-    claims: {}
-  });
-
-  const { section, key, patch } = req.body;
-
-  if (!section || !key) {
-    return res.status(400).json({
-      ok: false,
-      success: false,
-      message: "Falta section o key"
+    return res.json({
+      ok: true,
+      success: true,
+      state
     });
   }
+);
 
-  if (!current[section]) current[section] = {};
-  if (!current[section][key]) current[section][key] = {};
+app.post(
+  "/api/inbox-state",
+  (req, res) => {
+    writeJSON(
+      "inbox-state.json",
+      req.body || {}
+    );
 
-  current[section][key] = {
-    ...current[section][key],
-    ...patch,
-    updatedAt: new Date().toISOString(),
-    updatedBy: ADMIN_USER.name
-  };
+    return res.json({
+      ok: true,
+      success: true
+    });
+  }
+);
 
-  writeJSON("inbox-state.json", current);
+app.post(
+  "/api/inbox-state/update",
+  (req, res) => {
+    const current = readJSON(
+      "inbox-state.json",
+      {
+        messages: {},
+        questions: {},
+        claims: {}
+      }
+    );
 
-  return res.json({
-    ok: true,
-    success: true,
-    state: current
-  });
-});
+    const {
+      section,
+      key,
+      patch
+    } = req.body;
+
+    if (!section || !key) {
+      return res.status(400).json({
+        ok: false,
+        success: false,
+        message:
+          "Falta section o key"
+      });
+    }
+
+    if (!current[section]) {
+      current[section] = {};
+    }
+
+    if (!current[section][key]) {
+      current[section][key] = {};
+    }
+
+    current[section][key] = {
+      ...current[section][key],
+      ...patch,
+      updatedAt:
+        new Date().toISOString(),
+      updatedBy:
+        ADMIN_USER.name
+    };
+
+    writeJSON(
+      "inbox-state.json",
+      current
+    );
+
+    return res.json({
+      ok: true,
+      success: true,
+      state: current
+    });
+  }
+);
 
 app.post("/api/reply", (req, res) => {
-  return res.json({ ok: true, success: true });
+  return res.json({
+    ok: true,
+    success: true
+  });
 });
 
 app.post("/api/respond", (req, res) => {
-  return res.json({ ok: true, success: true });
+  return res.json({
+    ok: true,
+    success: true
+  });
 });
 
-app.post("/api/question/reply", (req, res) => {
-  return res.json({ ok: true, success: true });
-});
+app.post(
+  "/api/question/reply",
+  (req, res) => {
+    return res.json({
+      ok: true,
+      success: true
+    });
+  }
+);
 
-app.post("/api/message/reply", (req, res) => {
-  return res.json({ ok: true, success: true });
-});
+app.post(
+  "/api/message/reply",
+  (req, res) => {
+    return res.json({
+      ok: true,
+      success: true
+    });
+  }
+);
 
 app.use("/api", (req, res) => {
   return res.status(404).json({
     ok: false,
     success: false,
-    message: "API no encontrada",
+    message:
+      "API no encontrada",
     path: req.path
   });
 });
 
 app.listen(PORT, () => {
-  console.log("Servidor iniciado en puerto " + PORT);
+  console.log(
+    "Servidor iniciado en puerto " +
+      PORT
+  );
 });
