@@ -15,6 +15,9 @@ const ADMIN_USER = {
   permissions: ["all"]
 };
 
+const N8N_TLC = "https://teloconsigo.app.n8n.cloud/webhook/meli-ads-live";
+const N8N_TOP = "https://teloconsigo.app.n8n.cloud/webhook/meli-ads-topshop";
+
 function filePath(name) {
   return path.join(__dirname, name);
 }
@@ -23,8 +26,7 @@ function readJSON(name, fallback = null) {
   try {
     if (!fs.existsSync(filePath(name))) return fallback;
     return JSON.parse(fs.readFileSync(filePath(name), "utf8"));
-  } catch (err) {
-    console.error("Error leyendo", name, err.message);
+  } catch {
     return fallback;
   }
 }
@@ -33,32 +35,38 @@ function writeJSON(name, data) {
   fs.writeFileSync(filePath(name), JSON.stringify(data, null, 2), "utf8");
 }
 
-function getAdsData(account) {
-  const cuenta = String(account || "tlc").toLowerCase();
-  const file = cuenta.includes("top")
-    ? "MeLi_Ads_TOP_SHOP.json"
-    : "MeLi_Ads_TLC.json";
+function getAccount(req) {
+  const raw = String(
+    req.query.account ||
+    req.query.cuenta ||
+    req.query.store ||
+    "tlc"
+  ).toLowerCase();
 
-  return readJSON(file, {
-    campaigns: [],
-    campanas: [],
-    anuncios: [],
-    ads: []
-  });
+  if (raw.includes("top")) return "topshop";
+  return "tlc";
 }
 
-function getInboxData(account) {
-  const cuenta = String(account || "all").toLowerCase();
+function getN8nUrl(account) {
+  return account === "topshop" ? N8N_TOP : N8N_TLC;
+}
 
-  const tlc = readJSON("MeLi_Inbox_TLC.json", {});
-  const top = readJSON("MeLi_Inbox_TOP_SHOP.json", {});
-
-  if (cuenta.includes("top")) return { cuenta: "topshop", ...top };
-  if (cuenta.includes("tlc")) return { cuenta: "tlc", ...tlc };
+function normalizeCampaigns(data) {
+  const campaigns =
+    data?.results ||
+    data?.campaigns ||
+    data?.campanas ||
+    [];
 
   return {
-    tlc,
-    topshop: top
+    ok: true,
+    success: true,
+    campaigns: campaigns,
+    campanas: campaigns,
+    results: campaigns,
+    paging: data?.paging || {},
+    total: campaigns.length,
+    data: campaigns
   };
 }
 
@@ -73,12 +81,13 @@ app.post("/api/login", (req, res) => {
 app.get("/api/me", (req, res) => {
   return res.json({
     ok: true,
+    success: true,
     user: ADMIN_USER
   });
 });
 
 app.post("/api/logout", (req, res) => {
-  return res.json({ ok: true });
+  return res.json({ ok: true, success: true });
 });
 
 app.get("/api/state", (req, res) => {
@@ -90,58 +99,166 @@ app.get("/api/state", (req, res) => {
 
   return res.json({
     ok: true,
+    success: true,
+    online: true,
+    apiKey: true,
     user: ADMIN_USER,
     state
   });
 });
 
 app.post("/api/state", (req, res) => {
-  const state = req.body || {};
-  writeJSON("inbox-state.json", state);
-
-  return res.json({
-    ok: true,
-    state
-  });
+  writeJSON("inbox-state.json", req.body || {});
+  return res.json({ ok: true, success: true });
 });
 
-app.get("/api/meli", (req, res) => {
-  const cuenta = req.query.cuenta || req.query.account || "tlc";
-  const ads = getAdsData(cuenta);
+app.get("/api/meli", async (req, res) => {
+  try {
+    const account = getAccount(req);
+    const action = req.query.action || "campaigns";
+    const dateFrom = req.query.date_from || "";
+    const dateTo = req.query.date_to || "";
+    const limit = req.query.limit || "50";
+    const offset = req.query.offset || "0";
 
-  return res.json({
-    ok: true,
-    cuenta,
-    ...ads,
-    data: ads
-  });
+    const url = new URL(getN8nUrl(account));
+    url.searchParams.set("action", action);
+    url.searchParams.set("limit", limit);
+    url.searchParams.set("offset", offset);
+
+    if (dateFrom) url.searchParams.set("date_from", dateFrom);
+    if (dateTo) url.searchParams.set("date_to", dateTo);
+    if (req.query.campaign_id) {
+      url.searchParams.set("campaign_id", req.query.campaign_id);
+    }
+
+    const response = await fetch(url.toString());
+    const data = await response.json();
+
+    if (action === "campaigns" || action === "metrics") {
+      return res.json(normalizeCampaigns(data));
+    }
+
+    return res.json({
+      ok: true,
+      success: true,
+      data,
+      results: data?.results || data?.items || []
+    });
+
+  } catch (err) {
+    console.error("Error /api/meli:", err);
+    return res.status(500).json({
+      ok: false,
+      success: false,
+      message: "Error obteniendo datos de MeLi ADS"
+    });
+  }
 });
 
-app.get("/api/meliads", (req, res) => {
-  const cuenta = req.query.cuenta || req.query.account || "tlc";
-  const ads = getAdsData(cuenta);
+app.get("/api/meliads", async (req, res) => {
+  try {
+    const account = getAccount(req);
+    const action = req.query.action || "campaigns";
+    const dateFrom = req.query.date_from || "";
+    const dateTo = req.query.date_to || "";
+    const limit = req.query.limit || "50";
+    const offset = req.query.offset || "0";
 
-  return res.json({
-    ok: true,
-    cuenta,
-    ...ads,
-    data: ads
-  });
+    const url = new URL(getN8nUrl(account));
+    url.searchParams.set("action", action);
+    url.searchParams.set("limit", limit);
+    url.searchParams.set("offset", offset);
+
+    if (dateFrom) url.searchParams.set("date_from", dateFrom);
+    if (dateTo) url.searchParams.set("date_to", dateTo);
+    if (req.query.campaign_id) {
+      url.searchParams.set("campaign_id", req.query.campaign_id);
+    }
+
+    const response = await fetch(url.toString());
+    const data = await response.json();
+
+    if (action === "campaigns" || action === "metrics") {
+      return res.json(normalizeCampaigns(data));
+    }
+
+    return res.json({
+      ok: true,
+      success: true,
+      data,
+      results: data?.results || data?.items || []
+    });
+
+  } catch (err) {
+    console.error("Error /api/meliads:", err);
+    return res.status(500).json({
+      ok: false,
+      success: false,
+      message: "Error obteniendo datos de MeLi ADS"
+    });
+  }
 });
 
-app.get("/api/ads", (req, res) => {
-  const cuenta = req.query.cuenta || req.query.account || "tlc";
-  return res.json(getAdsData(cuenta));
+app.get("/api/ads", async (req, res) => {
+  try {
+    const account = getAccount(req);
+    const action = req.query.action || "campaigns";
+    const dateFrom = req.query.date_from || "";
+    const dateTo = req.query.date_to || "";
+    const limit = req.query.limit || "50";
+    const offset = req.query.offset || "0";
+
+    const url = new URL(getN8nUrl(account));
+    url.searchParams.set("action", action);
+    url.searchParams.set("limit", limit);
+    url.searchParams.set("offset", offset);
+
+    if (dateFrom) url.searchParams.set("date_from", dateFrom);
+    if (dateTo) url.searchParams.set("date_to", dateTo);
+    if (req.query.campaign_id) {
+      url.searchParams.set("campaign_id", req.query.campaign_id);
+    }
+
+    const response = await fetch(url.toString());
+    const data = await response.json();
+
+    if (action === "campaigns" || action === "metrics") {
+      return res.json(normalizeCampaigns(data));
+    }
+
+    return res.json({
+      ok: true,
+      success: true,
+      data,
+      results: data?.results || data?.items || []
+    });
+
+  } catch (err) {
+    console.error("Error /api/ads:", err);
+    return res.status(500).json({
+      ok: false,
+      success: false,
+      message: "Error obteniendo datos de MeLi ADS"
+    });
+  }
 });
 
 app.get("/api/inbox", (req, res) => {
-  const cuenta = req.query.cuenta || req.query.account || "all";
-  const action = String(req.query.action || req.query.type || "").toLowerCase();
+  const account = getAccount(req);
+
+  const file =
+    account === "topshop"
+      ? "MeLi_Inbox_TOP_SHOP.json"
+      : "MeLi_Inbox_TLC.json";
+
+  const data = readJSON(file, {});
 
   return res.json({
     ok: true,
-    action,
-    data: getInboxData(cuenta)
+    success: true,
+    data,
+    ...data
   });
 });
 
@@ -154,18 +271,14 @@ app.get("/api/inbox-state", (req, res) => {
 
   return res.json({
     ok: true,
+    success: true,
     state
   });
 });
 
 app.post("/api/inbox-state", (req, res) => {
-  const state = req.body || {};
-  writeJSON("inbox-state.json", state);
-
-  return res.json({
-    ok: true,
-    state
-  });
+  writeJSON("inbox-state.json", req.body || {});
+  return res.json({ ok: true, success: true });
 });
 
 app.post("/api/inbox-state/update", (req, res) => {
@@ -180,6 +293,7 @@ app.post("/api/inbox-state/update", (req, res) => {
   if (!section || !key) {
     return res.status(400).json({
       ok: false,
+      success: false,
       message: "Falta section o key"
     });
   }
@@ -198,45 +312,31 @@ app.post("/api/inbox-state/update", (req, res) => {
 
   return res.json({
     ok: true,
+    success: true,
     state: current
   });
 });
 
 app.post("/api/reply", (req, res) => {
-  return res.json({
-    ok: true,
-    success: true,
-    message: "Respuesta registrada"
-  });
+  return res.json({ ok: true, success: true });
 });
 
 app.post("/api/respond", (req, res) => {
-  return res.json({
-    ok: true,
-    success: true,
-    message: "Respuesta registrada"
-  });
+  return res.json({ ok: true, success: true });
 });
 
 app.post("/api/question/reply", (req, res) => {
-  return res.json({
-    ok: true,
-    success: true,
-    message: "Respuesta registrada"
-  });
+  return res.json({ ok: true, success: true });
 });
 
 app.post("/api/message/reply", (req, res) => {
-  return res.json({
-    ok: true,
-    success: true,
-    message: "Respuesta registrada"
-  });
+  return res.json({ ok: true, success: true });
 });
 
 app.use("/api", (req, res) => {
   return res.status(404).json({
     ok: false,
+    success: false,
     message: "API no encontrada",
     path: req.path
   });
