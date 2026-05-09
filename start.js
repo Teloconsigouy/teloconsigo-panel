@@ -51,23 +51,102 @@ function getN8nUrl(account) {
   return account === "topshop" ? N8N_TOP : N8N_TLC;
 }
 
+function cacheFile(account, action) {
+  return account === "topshop"
+    ? `meli-ads-cache-topshop-${action}.json`
+    : `meli-ads-cache-tlc-${action}.json`;
+}
+
 function normalizeCampaigns(data) {
   const campaigns =
     data?.results ||
     data?.campaigns ||
     data?.campanas ||
+    data?.data?.results ||
+    data?.data?.campaigns ||
     [];
 
   return {
     ok: true,
     success: true,
-    campaigns: campaigns,
+    campaigns,
     campanas: campaigns,
     results: campaigns,
     paging: data?.paging || {},
     total: campaigns.length,
-    data: campaigns
+    data: campaigns,
+    raw: data
   };
+}
+
+async function fetchMeliFromN8N(req) {
+  const account = getAccount(req);
+  const action = req.query.action || "campaigns";
+  const dateFrom = req.query.date_from || "";
+  const dateTo = req.query.date_to || "";
+  const limit = req.query.limit || "50";
+  const offset = req.query.offset || "0";
+
+  const url = new URL(getN8nUrl(account));
+  url.searchParams.set("action", action);
+  url.searchParams.set("limit", limit);
+  url.searchParams.set("offset", offset);
+
+  if (dateFrom) url.searchParams.set("date_from", dateFrom);
+  if (dateTo) url.searchParams.set("date_to", dateTo);
+  if (req.query.campaign_id) url.searchParams.set("campaign_id", req.query.campaign_id);
+
+  const response = await fetch(url.toString());
+  const raw = await response.json();
+
+  let normalized;
+
+  if (action === "campaigns" || action === "metrics") {
+    normalized = normalizeCampaigns(raw);
+  } else {
+    const results =
+      raw?.results ||
+      raw?.items ||
+      raw?.data?.results ||
+      raw?.data?.items ||
+      [];
+
+    normalized = {
+      ok: true,
+      success: true,
+      results,
+      items: results,
+      data: results,
+      raw
+    };
+  }
+
+  normalized.account = account;
+  normalized.action = action;
+  normalized.updatedAt = new Date().toISOString();
+
+  writeJSON(cacheFile(account, action), normalized);
+
+  return normalized;
+}
+
+function getMeliCache(req) {
+  const account = getAccount(req);
+  const action = req.query.action || "campaigns";
+
+  return readJSON(cacheFile(account, action), {
+    ok: true,
+    success: true,
+    account,
+    action,
+    campaigns: [],
+    campanas: [],
+    results: [],
+    data: [],
+    total: 0,
+    cached: true,
+    empty: true
+  });
 }
 
 app.post("/api/login", (req, res) => {
@@ -114,40 +193,21 @@ app.post("/api/state", (req, res) => {
 
 app.get("/api/meli", async (req, res) => {
   try {
-    const account = getAccount(req);
-    const action = req.query.action || "campaigns";
-    const dateFrom = req.query.date_from || "";
-    const dateTo = req.query.date_to || "";
-    const limit = req.query.limit || "50";
-    const offset = req.query.offset || "0";
+    const refresh = String(req.query.refresh || "").toLowerCase();
 
-    const url = new URL(getN8nUrl(account));
-    url.searchParams.set("action", action);
-    url.searchParams.set("limit", limit);
-    url.searchParams.set("offset", offset);
-
-    if (dateFrom) url.searchParams.set("date_from", dateFrom);
-    if (dateTo) url.searchParams.set("date_to", dateTo);
-    if (req.query.campaign_id) {
-      url.searchParams.set("campaign_id", req.query.campaign_id);
+    if (refresh === "1" || refresh === "true" || refresh === "yes") {
+      const fresh = await fetchMeliFromN8N(req);
+      return res.json(fresh);
     }
 
-    const response = await fetch(url.toString());
-    const data = await response.json();
-
-    if (action === "campaigns" || action === "metrics") {
-      return res.json(normalizeCampaigns(data));
-    }
-
-    return res.json({
-      ok: true,
-      success: true,
-      data,
-      results: data?.results || data?.items || []
-    });
-
+    const cached = getMeliCache(req);
+    return res.json(cached);
   } catch (err) {
     console.error("Error /api/meli:", err);
+
+    const cached = getMeliCache(req);
+    if (!cached.empty) return res.json(cached);
+
     return res.status(500).json({
       ok: false,
       success: false,
@@ -158,40 +218,21 @@ app.get("/api/meli", async (req, res) => {
 
 app.get("/api/meliads", async (req, res) => {
   try {
-    const account = getAccount(req);
-    const action = req.query.action || "campaigns";
-    const dateFrom = req.query.date_from || "";
-    const dateTo = req.query.date_to || "";
-    const limit = req.query.limit || "50";
-    const offset = req.query.offset || "0";
+    const refresh = String(req.query.refresh || "").toLowerCase();
 
-    const url = new URL(getN8nUrl(account));
-    url.searchParams.set("action", action);
-    url.searchParams.set("limit", limit);
-    url.searchParams.set("offset", offset);
-
-    if (dateFrom) url.searchParams.set("date_from", dateFrom);
-    if (dateTo) url.searchParams.set("date_to", dateTo);
-    if (req.query.campaign_id) {
-      url.searchParams.set("campaign_id", req.query.campaign_id);
+    if (refresh === "1" || refresh === "true" || refresh === "yes") {
+      const fresh = await fetchMeliFromN8N(req);
+      return res.json(fresh);
     }
 
-    const response = await fetch(url.toString());
-    const data = await response.json();
-
-    if (action === "campaigns" || action === "metrics") {
-      return res.json(normalizeCampaigns(data));
-    }
-
-    return res.json({
-      ok: true,
-      success: true,
-      data,
-      results: data?.results || data?.items || []
-    });
-
+    const cached = getMeliCache(req);
+    return res.json(cached);
   } catch (err) {
     console.error("Error /api/meliads:", err);
+
+    const cached = getMeliCache(req);
+    if (!cached.empty) return res.json(cached);
+
     return res.status(500).json({
       ok: false,
       success: false,
@@ -202,44 +243,45 @@ app.get("/api/meliads", async (req, res) => {
 
 app.get("/api/ads", async (req, res) => {
   try {
-    const account = getAccount(req);
-    const action = req.query.action || "campaigns";
-    const dateFrom = req.query.date_from || "";
-    const dateTo = req.query.date_to || "";
-    const limit = req.query.limit || "50";
-    const offset = req.query.offset || "0";
+    const refresh = String(req.query.refresh || "").toLowerCase();
 
-    const url = new URL(getN8nUrl(account));
-    url.searchParams.set("action", action);
-    url.searchParams.set("limit", limit);
-    url.searchParams.set("offset", offset);
-
-    if (dateFrom) url.searchParams.set("date_from", dateFrom);
-    if (dateTo) url.searchParams.set("date_to", dateTo);
-    if (req.query.campaign_id) {
-      url.searchParams.set("campaign_id", req.query.campaign_id);
+    if (refresh === "1" || refresh === "true" || refresh === "yes") {
+      const fresh = await fetchMeliFromN8N(req);
+      return res.json(fresh);
     }
 
-    const response = await fetch(url.toString());
-    const data = await response.json();
-
-    if (action === "campaigns" || action === "metrics") {
-      return res.json(normalizeCampaigns(data));
-    }
-
-    return res.json({
-      ok: true,
-      success: true,
-      data,
-      results: data?.results || data?.items || []
-    });
-
+    const cached = getMeliCache(req);
+    return res.json(cached);
   } catch (err) {
     console.error("Error /api/ads:", err);
+
+    const cached = getMeliCache(req);
+    if (!cached.empty) return res.json(cached);
+
     return res.status(500).json({
       ok: false,
       success: false,
       message: "Error obteniendo datos de MeLi ADS"
+    });
+  }
+});
+
+app.post("/api/meli/refresh", async (req, res) => {
+  try {
+    req.query = {
+      ...req.query,
+      ...req.body,
+      refresh: "true"
+    };
+
+    const fresh = await fetchMeliFromN8N(req);
+    return res.json(fresh);
+  } catch (err) {
+    console.error("Error /api/meli/refresh:", err);
+    return res.status(500).json({
+      ok: false,
+      success: false,
+      message: "Error actualizando datos"
     });
   }
 });
