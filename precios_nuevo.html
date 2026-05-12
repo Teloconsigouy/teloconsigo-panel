@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TLC Panel Control - Lista de precios</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#F0F4F0;--surface:#fff;--border:#D4DDD4;--green:#1A5C1A;--green2:#0f4f1d;
+    --text:#101910;--muted:#667466;--danger:#b91c1c;--blue:#2563eb;--dark:#0f172a;
+  }
+  body{font-family:Inter,Arial,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+  .top{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:20px 28px;background:var(--surface);border-bottom:1px solid var(--border)}
+  .brand{font-family:Syne,Inter,sans-serif;font-size:24px;color:var(--green);letter-spacing:.04em}
+  .back{background:var(--green);color:#fff;text-decoration:none;border-radius:12px;padding:10px 14px;font-weight:800}
+  .wrap{padding:24px}
+  .bar{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+  h1{font-family:Syne,Inter,sans-serif;font-size:28px}
+  .muted{color:var(--muted);font-size:13px;margin-top:6px}
+  .actions{display:flex;gap:10px;flex-wrap:wrap}
+  button,.btn{border:1px solid var(--border);background:#fff;border-radius:10px;padding:10px 14px;font-weight:800;cursor:pointer}
+  button:disabled{opacity:.55;cursor:not-allowed}
+  .btn-green{background:var(--green);color:#fff;border-color:var(--green)}
+  .btn-blue{background:var(--blue);color:#fff;border-color:var(--blue)}
+  .btn-danger{background:var(--danger);color:#fff;border-color:var(--danger)}
+  .btn-small{padding:7px 10px;border-radius:8px;font-size:12px}
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden;box-shadow:0 10px 25px rgba(15,23,42,.05)}
+  .filters{display:none;padding:14px;border-bottom:1px solid var(--border);gap:10px;grid-template-columns:2fr 1fr 1fr 1fr}
+  .filters.open{display:grid}
+  input,select,textarea{border:1px solid var(--border);border-radius:10px;padding:10px 12px;font:inherit;background:#fff;width:100%}
+  textarea{min-height:86px;resize:vertical}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th{background:#0f172a;color:#fff;text-align:left;padding:12px 10px;position:sticky;top:0}
+  td{padding:10px;border-bottom:1px solid #e5e7eb;vertical-align:middle}
+  tr:hover{background:#f8faf8}
+  .table-wrap{height:calc(100vh - 230px);overflow:auto}
+  .money{font-weight:800}
+  .good{color:#15803d;font-weight:800}.bad{color:#b91c1c;font-weight:800}.warn{color:#c2410c;font-weight:800}
+  .status{padding:14px;color:var(--muted)}
+  .error{background:#fee2e2;color:#991b1b;border:1px solid #fecaca;padding:12px;border-radius:12px;margin-bottom:14px;display:none}
+  .success{background:#dcfce7;color:#166534;border:1px solid #bbf7d0;padding:12px;border-radius:12px;margin-bottom:14px;display:none}
+  .loading{padding:20px;color:var(--muted)}
+  .pill{display:inline-flex;border-radius:999px;padding:4px 8px;font-size:12px;background:#eef6ee;color:var(--green);font-weight:800}
+  .row-actions{display:flex;gap:8px;flex-wrap:wrap}
+  .modal-backdrop{display:none;position:fixed;inset:0;background:rgba(15,23,42,.48);z-index:50;align-items:center;justify-content:center;padding:18px}
+  .modal-backdrop.open{display:flex}
+  .modal{width:min(760px,100%);max-height:92vh;overflow:auto;background:#fff;border:1px solid var(--border);border-radius:18px;box-shadow:0 24px 70px rgba(15,23,42,.28)}
+  .modal-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border)}
+  .modal-title{font-family:Syne,Inter,sans-serif;font-size:22px}
+  .modal-body{padding:20px}
+  .modal-foot{display:flex;justify-content:flex-end;gap:10px;padding:16px 20px;border-top:1px solid var(--border);background:#f8faf8}
+  .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .form-grid .full{grid-column:1/-1}
+  label{display:block;font-size:12px;font-weight:800;color:var(--muted);margin-bottom:6px}
+  .calc-box{margin-top:14px;padding:14px;border:1px solid var(--border);border-radius:14px;background:#f8faf8;display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  .calc-item{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:12px}
+  .calc-label{font-size:12px;color:var(--muted);font-weight:800}
+  .calc-value{font-size:18px;font-weight:900;margin-top:4px}
+  @media(max-width:760px){
+    .filters{grid-template-columns:1fr}
+    .form-grid{grid-template-columns:1fr}
+    .calc-box{grid-template-columns:1fr 1fr}
+    .table-wrap{height:calc(100vh - 300px)}
+  }
+</style>
+</head>
+<body>
+  <header class="top">
+    <div>
+      <div class="brand">TELOCONSIGO</div>
+      <div class="muted">TLC Panel Control · Lista de precios</div>
+    </div>
+    <a class="back" href="/index.html">← Volver al panel</a>
+  </header>
+
+  <main class="wrap">
+    <div class="bar">
+      <div>
+        <h1>Lista de Precios App</h1>
+        <div class="muted" id="counter">Cargando productos...</div>
+      </div>
+      <div class="actions">
+        <button onclick="toggleFilters()">▼ Filtros</button>
+        <button class="btn-blue" onclick="openSimulator()">Simulador</button>
+        <button class="btn-green" onclick="openProductModal()">Nuevo</button>
+        <button onclick="loadProducts()">Actualizar</button>
+      </div>
+    </div>
+
+    <div id="successBox" class="success"></div>
+    <div id="errorBox" class="error"></div>
+
+    <section class="panel">
+      <div class="filters" id="filters">
+        <input id="searchInput" placeholder="Buscar artículo, código o proveedor..." oninput="renderProducts()">
+        <select id="proveedorFilter" onchange="renderProducts()"><option value="">Todos los proveedores</option></select>
+        <select id="margenFilter" onchange="renderProducts()">
+          <option value="">Todos los márgenes</option>
+          <option value="good">Margen bueno</option>
+          <option value="warn">Margen bajo</option>
+          <option value="bad">Pérdida / negativo</option>
+        </select>
+        <select id="estadoFilter" onchange="renderProducts()">
+          <option value="">Todos</option>
+          <option value="completo">Completos</option>
+          <option value="incompleto">Incompletos</option>
+        </select>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Artículo</th>
+              <th>Código TLC</th>
+              <th>Proveedor</th>
+              <th>Código Proveedor</th>
+              <th>Costo</th>
+              <th>PVP</th>
+              <th>Ganancia</th>
+              <th>Margen</th>
+              <th>Estado</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="productsBody">
+            <tr><td colspan="10" class="loading">Cargando productos...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div class="modal-backdrop" id="productModal">
+    <div class="modal">
+      <div class="modal-head">
+        <div>
+          <div class="modal-title" id="productModalTitle">Nuevo producto</div>
+          <div class="muted" id="productModalHint">Los cambios se guardan en Google Sheets mediante /api/precios.</div>
+        </div>
+        <button onclick="closeProductModal()">✕</button>
+      </div>
+
+      <form id="productForm" onsubmit="saveProduct(event)">
+        <div class="modal-body">
+          <input type="hidden" id="formMode" value="create">
+          <input type="hidden" id="rowNumber" value="">
+          <input type="hidden" id="originalProductJson" value="">
+
+          <div class="form-grid">
+            <div class="full">
+              <label>Artículo</label>
+              <input id="articulo" required placeholder="Nombre del producto">
+            </div>
+
+            <div>
+              <label>Código TLC</label>
+              <input id="codigoTLC" placeholder="Código interno TLC">
+            </div>
+
+            <div>
+              <label>Código fábrica</label>
+              <input id="codigoFabrica" placeholder="Código de fábrica">
+            </div>
+
+            <div>
+              <label>Proveedor</label>
+              <input id="proveedor" placeholder="Proveedor">
+            </div>
+
+            <div>
+              <label>Código proveedor</label>
+              <input id="codigoProveedor" placeholder="Código del proveedor">
+            </div>
+
+            <div>
+              <label>Costo</label>
+              <input id="precioProveedor" type="number" step="0.01" min="0" placeholder="0" oninput="updateFormCalc()">
+            </div>
+
+            <div>
+              <label>PVP</label>
+              <input id="pvp" type="number" step="0.01" min="0" placeholder="0" oninput="updateFormCalc()">
+            </div>
+
+            <div>
+              <label>Moneda</label>
+              <select id="moneda" onchange="updateFormCalc()">
+                <option value="UYU">UYU</option>
+                <option value="USD">USD</option>
+              </select>
+            </div>
+
+            <div>
+              <label>Estado</label>
+              <select id="incompleto">
+                <option value="false">Completo</option>
+                <option value="true">Incompleto</option>
+              </select>
+            </div>
+
+            <div class="full">
+              <label>Nota</label>
+              <textarea id="nota" placeholder="Notas internas"></textarea>
+            </div>
+          </div>
+
+          <div class="calc-box">
+            <div class="calc-item">
+              <div class="calc-label">Ganancia</div>
+              <div class="calc-value" id="formGanancia">$0</div>
+            </div>
+            <div class="calc-item">
+              <div class="calc-label">Margen</div>
+              <div class="calc-value" id="formMargen">0%</div>
+            </div>
+            <div class="calc-item">
+              <div class="calc-label">Markup</div>
+              <div class="calc-value" id="formMarkup">0%</div>
+            </div>
+            <div class="calc-item">
+              <div class="calc-label">Estado margen</div>
+              <div class="calc-value" id="formEstadoMargen">-</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-foot">
+          <button type="button" onclick="closeProductModal()">Cancelar</button>
+          <button type="submit" class="btn-green" id="saveProductBtn">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="simulatorModal">
+    <div class="modal">
+      <div class="modal-head">
+        <div>
+          <div class="modal-title">Simulador de precios</div>
+          <div class="muted">Calcula precio, margen y ganancia sin guardar cambios.</div>
+        </div>
+        <button onclick="closeSimulator()">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="form-grid">
+          <div>
+            <label>Costo</label>
+            <input id="simCosto" type="number" step="0.01" min="0" placeholder="0" oninput="calculateSimulator()">
+          </div>
+          <div>
+            <label>PVP</label>
+            <input id="simPvp" type="number" step="0.01" min="0" placeholder="0" oninput="calculateSimulator()">
+          </div>
+          <div>
+            <label>Moneda</label>
+            <select id="simMoneda" onchange="calculateSimulator()">
+              <option value="UYU">UYU</option>
+              <option value="USD">USD</option>
+            </select>
+          </div>
+          <div>
+            <label>Margen objetivo (%)</label>
+            <input id="simMargenObjetivo" type="number" step="0.01" min="0" max="99" placeholder="Ej: 30" oninput="calculatePriceFromMargin()">
+          </div>
+        </div>
+
+        <div class="calc-box">
+          <div class="calc-item">
+            <div class="calc-label">Ganancia</div>
+            <div class="calc-value" id="simGanancia">$0</div>
+          </div>
+          <div class="calc-item">
+            <div class="calc-label">Margen</div>
+            <div class="calc-value" id="simMargen">0%</div>
+          </div>
+          <div class="calc-item">
+            <div class="calc-label">Markup</div>
+            <div class="calc-value" id="simMarkup">0%</div>
+          </div>
+          <div class="calc-item">
+            <div class="calc-label">Precio sugerido</div>
+            <div class="calc-value" id="simSugerido">$0</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-foot">
+        <button onclick="clearSimulator()">Limpiar</button>
+        <button class="btn-blue" onclick="closeSimulator()">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+let allProducts = [];
+
+function money(n, moneda){
+  const value = Number(n || 0);
+  const symbol = (moneda || 'UYU') === 'USD' ? 'USD ' : '$';
+  return symbol + value.toLocaleString('es-UY', { maximumFractionDigits: 2 });
+}
+
+function pct(n){
+  return Number(n || 0).toLocaleString('es-UY', { maximumFractionDigits: 2 }) + '%';
+}
+
+function numberValue(v){
+  if (typeof v === 'number') return v;
+  const cleaned = String(v ?? '').replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, '');
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function escapeHtml(v){
+  return String(v ?? '').replace(/[&<>"']/g, s => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[s]));
+}
+
+function marginClass(product){
+  const gan = Number(product.gananciaReal || 0);
+  const m = Number(product.margenReal || 0);
+  if (gan < 0 || m < 0) return 'bad';
+  if (m < 15) return 'warn';
+  return 'good';
+}
+
+function calcValues(costo, pvp){
+  const c = numberValue(costo);
+  const v = numberValue(pvp);
+  const ganancia = v - c;
+  const margen = v > 0 ? (ganancia / v) * 100 : 0;
+  const markup = c > 0 ? (ganancia / c) * 100 : 0;
+  return { costo:c, pvp:v, ganancia, margen, markup };
+}
+
+function toggleFilters(){
+  document.getElementById('filters').classList.toggle('open');
+}
+
+function showError(msg){
+  const errorBox = document.getElementById('errorBox');
+  errorBox.textContent = msg || 'Error inesperado';
+  errorBox.style.display = 'block';
+  document.getElementById('successBox').style.display = 'none';
+}
+
+function showSuccess(msg){
+  const successBox = document.getElementById('successBox');
+  successBox.textContent = msg || 'Operación realizada';
+  successBox.style.display = 'block';
+  document.getElementById('errorBox').style.display = 'none';
+  setTimeout(() => { successBox.style.display = 'none'; }, 4500);
+}
+
+function clearMessages(){
+  document.getElementById('errorBox').style.display = 'none';
+  document.getElementById('successBox').style.display = 'none';
+}
+
+async function apiPrices(action, payload = {}){
+
+  if(action === 'getProducts'){
+    const res = await fetch('/api/precios', {
+      method: 'GET',
+      credentials: 'same-origin'
+    });
+
+    const text = await res.text();
+    let json;
+    try { json = JSON.parse(text); }
+    catch(e){ throw new Error('Respuesta inválida: ' + text.slice(0,250)); }
+
+    if (!res.ok || json.ok === false) {
+      throw new Error(json.message || json.error || 'Error al cargar lista de precios');
+    }
+
+    return Object.prototype.hasOwnProperty.call(json, 'data') ? json.data : json;
+  }
+
+  const res = await fetch('/api/precios', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    credentials: 'same-origin',
+    body: JSON.stringify({ action, payload })
+  });
+
+  const text = await res.text();
+  let json;
+  try { json = JSON.parse(text); }
+  catch(e){ throw new Error('Respuesta inválida: ' + text.slice(0,250)); }
+
+  if (!res.ok || json.ok === false) {
+    throw new Error(json.message || json.error || 'Error en lista de precios');
+  }
+
+  return Object.prototype.hasOwnProperty.call(json, 'data') ? json.data : json;
+}
+
+async function loadProducts(){
+  const tbody = document.getElementById('productsBody');
+  clearMessages();
+  tbody.innerHTML = '<tr><td colspan="10" class="loading">Cargando productos desde Google Sheets...</td></tr>';
+  document.getElementById('counter').textContent = 'Cargando productos...';
+
+  try {
+    const data = await apiPrices('getProducts');
+    allProducts = Array.isArray(data) ? data : [];
+    populateProveedorFilter();
+    renderProducts();
+  } catch (err) {
+    console.error(err);
+    showError(err.message || String(err));
+    tbody.innerHTML = '<tr><td colspan="10" class="loading">No se pudieron cargar los productos.</td></tr>';
+    document.getElementById('counter').textContent = 'Mostrando 0 de 0 artículos';
+  }
+}
+
+function populateProveedorFilter(){
+  const select = document.getElementById('proveedorFilter');
+  const current = select.value;
+  const proveedores = [...new Set(allProducts.map(p => p.proveedor).filter(Boolean))].sort();
+  select.innerHTML = '<option value="">Todos los proveedores</option>' + proveedores.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
+  select.value = proveedores.includes(current) ? current : '';
+}
+
+function getFiltered(){
+  const s = document.getElementById('searchInput').value.toLowerCase().trim();
+  const proveedor = document.getElementById('proveedorFilter').value;
+  const margen = document.getElementById('margenFilter').value;
+  const estado = document.getElementById('estadoFilter').value;
+
+  return allProducts.filter(p => {
+    const text = [p.articulo,p.codigoTLC,p.proveedor,p.codigoProveedor,p.codigoFabrica].join(' ').toLowerCase();
+    if (s && !text.includes(s)) return false;
+    if (proveedor && p.proveedor !== proveedor) return false;
+    if (estado === 'completo' && p.incompleto) return false;
+    if (estado === 'incompleto' && !p.incompleto) return false;
+    if (margen && marginClass(p) !== margen) return false;
+    return true;
+  });
+}
+
+function getProductKey(p, index){
+  return String(p.rowNumber ?? p.originalRowNumber ?? p.id ?? p.codigoTLC ?? p.codigoProveedor ?? index);
+}
+
+function renderProducts(){
+  const tbody = document.getElementById('productsBody');
+  const items = getFiltered();
+  document.getElementById('counter').textContent = `Mostrando ${items.length} de ${allProducts.length} artículos`;
+
+  if (!items.length) {
+    tbody.innerHTML = '<tr><td colspan="10" class="loading">No hay productos para mostrar.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = items.map((p, index) => {
+    const cls = marginClass(p);
+    const key = getProductKey(p, index);
+    return `<tr>
+      <td><strong>${escapeHtml(p.articulo)}</strong><br><span class="muted">${escapeHtml(p.codigoFabrica || '')}</span></td>
+      <td>${escapeHtml(p.codigoTLC)}</td>
+      <td>${escapeHtml(p.proveedor)}</td>
+      <td>${escapeHtml(p.codigoProveedor)}</td>
+      <td class="money">${money(p.precioProveedor, p.moneda)}</td>
+      <td class="money">${money(p.pvp, p.moneda)}</td>
+      <td class="${cls}">${money(p.gananciaReal, p.moneda)}</td>
+      <td class="${cls}">${pct(p.margenReal)}</td>
+      <td>${p.incompleto ? '<span class="pill" style="background:#fff7ed;color:#c2410c">Incompleto</span>' : '<span class="pill">Completo</span>'}</td>
+      <td>
+        <div class="row-actions">
+          <button class="btn-small" onclick="editProductByKey('${escapeHtml(key)}')">Editar</button>
+          <button class="btn-small btn-danger" onclick="deleteProductByKey('${escapeHtml(key)}')">Eliminar</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function findProductByKey(key){
+  return allProducts.find((p, index) => getProductKey(p, index) === String(key));
+}
+
+function normalizeProductForCompare(product){
+  return {
+    articulo: String(product.articulo || '').trim(),
+    codigoTLC: String(product.codigoTLC || '').trim(),
+    codigoFabrica: String(product.codigoFabrica || '').trim(),
+    proveedor: String(product.proveedor || '').trim(),
+    codigoProveedor: String(product.codigoProveedor || '').trim(),
+    precioProveedor: numberValue(product.precioProveedor),
+    pvp: numberValue(product.pvp),
+    moneda: String(product.moneda || 'UYU').trim(),
+    incompleto: Boolean(product.incompleto),
+    nota: String(product.nota || '').trim()
+  };
+}
+
+function collectFormProduct(){
+  const values = calcValues(document.getElementById('precioProveedor').value, document.getElementById('pvp').value);
+  return {
+    rowNumber: document.getElementById('rowNumber').value || '',
+    articulo: document.getElementById('articulo').value.trim(),
+    codigoTLC: document.getElementById('codigoTLC').value.trim(),
+    codigoFabrica: document.getElementById('codigoFabrica').value.trim(),
+    proveedor: document.getElementById('proveedor').value.trim(),
+    codigoProveedor: document.getElementById('codigoProveedor').value.trim(),
+    precioProveedor: values.costo,
+    pvp: values.pvp,
+    moneda: document.getElementById('moneda').value || 'UYU',
+    incompleto: document.getElementById('incompleto').value === 'true',
+    nota: document.getElementById('nota').value.trim(),
+    gananciaReal: values.ganancia,
+    margenReal: values.margen
+  };
+}
+
+function openProductModal(product = null){
+  clearMessages();
+  const modal = document.getElementById('productModal');
+  const form = document.getElementById('productForm');
+  form.reset();
+
+  if(product){
+    document.getElementById('productModalTitle').textContent = 'Editar producto';
+    document.getElementById('formMode').value = 'edit';
+    document.getElementById('rowNumber').value = product.rowNumber || product.originalRowNumber || '';
+    document.getElementById('originalProductJson').value = JSON.stringify(normalizeProductForCompare(product));
+
+    document.getElementById('articulo').value = product.articulo || '';
+    document.getElementById('codigoTLC').value = product.codigoTLC || '';
+    document.getElementById('codigoFabrica').value = product.codigoFabrica || '';
+    document.getElementById('proveedor').value = product.proveedor || '';
+    document.getElementById('codigoProveedor').value = product.codigoProveedor || '';
+    document.getElementById('precioProveedor').value = product.precioProveedor ?? '';
+    document.getElementById('pvp').value = product.pvp ?? '';
+    document.getElementById('moneda').value = product.moneda || 'UYU';
+    document.getElementById('incompleto').value = product.incompleto ? 'true' : 'false';
+    document.getElementById('nota').value = product.nota || '';
+  } else {
+    document.getElementById('productModalTitle').textContent = 'Nuevo producto';
+    document.getElementById('formMode').value = 'create';
+    document.getElementById('rowNumber').value = '';
+    document.getElementById('originalProductJson').value = '';
+    document.getElementById('moneda').value = 'UYU';
+    document.getElementById('incompleto').value = 'false';
+  }
+
+  updateFormCalc();
+  modal.classList.add('open');
+  setTimeout(() => document.getElementById('articulo').focus(), 80);
+}
+
+function closeProductModal(){
+  document.getElementById('productModal').classList.remove('open');
+}
+
+function editProductByKey(key){
+  const product = findProductByKey(key);
+  if(!product){
+    showError('No se encontró el producto para editar.');
+    return;
+  }
+  openProductModal(product);
+}
+
+async function deleteProductByKey(key){
+  const product = findProductByKey(key);
+  if(!product){
+    showError('No se encontró el producto para eliminar.');
+    return;
+  }
+
+  const label = product.articulo || product.codigoTLC || 'este producto';
+  if(!confirm(`¿Eliminar "${label}"?`)) return;
+
+  try{
+    const payload = {
+      rowNumber: product.rowNumber || product.originalRowNumber || '',
+      originalRowNumber: product.rowNumber || product.originalRowNumber || '',
+      codigoTLC: product.codigoTLC || '',
+      originalCodigoTLC: product.codigoTLC || '',
+      articulo: product.articulo || ''
+    };
+
+    await apiPrices('deleteProduct', payload);
+    showSuccess('Producto eliminado correctamente.');
+    await loadProducts();
+  }catch(err){
+    console.error(err);
+    showError(err.message || String(err));
+  }
+}
+
+function updateFormCalc(){
+  const moneda = document.getElementById('moneda').value || 'UYU';
+  const values = calcValues(document.getElementById('precioProveedor').value, document.getElementById('pvp').value);
+  document.getElementById('formGanancia').textContent = money(values.ganancia, moneda);
+  document.getElementById('formMargen').textContent = pct(values.margen);
+  document.getElementById('formMarkup').textContent = pct(values.markup);
+
+  let estado = 'Bueno';
+  let cls = 'good';
+  if(values.ganancia < 0 || values.margen < 0){ estado = 'Pérdida'; cls = 'bad'; }
+  else if(values.margen < 15){ estado = 'Bajo'; cls = 'warn'; }
+
+  const node = document.getElementById('formEstadoMargen');
+  node.textContent = estado;
+  node.className = 'calc-value ' + cls;
+}
+
+async function saveProduct(event){
+  event.preventDefault();
+
+  const btn = document.getElementById('saveProductBtn');
+  const mode = document.getElementById('formMode').value;
+  const product = collectFormProduct();
+
+  if(!product.articulo){
+    showError('El artículo es obligatorio.');
+    return;
+  }
+
+  if(mode === 'edit'){
+    const originalRaw = document.getElementById('originalProductJson').value;
+    const original = originalRaw ? JSON.parse(originalRaw) : {};
+    const current = normalizeProductForCompare(product);
+
+    if(JSON.stringify(original) === JSON.stringify(current)){
+      showSuccess('No se guardó nada porque no hubo cambios reales.');
+      closeProductModal();
+      return;
+    }
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Guardando...';
+
+  try{
+    const action = mode === 'edit' ? 'updateProduct' : 'createProduct';
+
+    const payload = {
+      ...product,
+      originalRowNumber: product.rowNumber || '',
+      originalCodigoTLC: product.codigoTLC || ''
+    };
+
+    await apiPrices(action, payload);
+
+    closeProductModal();
+    showSuccess(mode === 'edit' ? 'Producto actualizado correctamente.' : 'Producto creado correctamente.');
+    await loadProducts();
+
+  }catch(err){
+    console.error(err);
+    showError(err.message || String(err));
+  }finally{
+    btn.disabled = false;
+    btn.textContent = 'Guardar';
+  }
+}
+
+function openSimulator(){
+  clearMessages();
+  document.getElementById('simulatorModal').classList.add('open');
+  calculateSimulator();
+  setTimeout(() => document.getElementById('simCosto').focus(), 80);
+}
+
+function closeSimulator(){
+  document.getElementById('simulatorModal').classList.remove('open');
+}
+
+function clearSimulator(){
+  document.getElementById('simCosto').value = '';
+  document.getElementById('simPvp').value = '';
+  document.getElementById('simMargenObjetivo').value = '';
+  document.getElementById('simMoneda').value = 'UYU';
+  calculateSimulator();
+}
+
+function calculateSimulator(){
+  const moneda = document.getElementById('simMoneda').value || 'UYU';
+  const values = calcValues(document.getElementById('simCosto').value, document.getElementById('simPvp').value);
+  document.getElementById('simGanancia').textContent = money(values.ganancia, moneda);
+  document.getElementById('simMargen').textContent = pct(values.margen);
+  document.getElementById('simMarkup').textContent = pct(values.markup);
+
+  const objetivo = numberValue(document.getElementById('simMargenObjetivo').value);
+  const sugerido = objetivo > 0 && objetivo < 100 && values.costo > 0 ? values.costo / (1 - objetivo / 100) : 0;
+  document.getElementById('simSugerido').textContent = money(sugerido, moneda);
+}
+
+function calculatePriceFromMargin(){
+  calculateSimulator();
+}
+
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape'){
+    closeProductModal();
+    closeSimulator();
+  }
+});
+
+document.addEventListener('DOMContentLoaded', loadProducts);
+</script>
+</body>
+</html>
