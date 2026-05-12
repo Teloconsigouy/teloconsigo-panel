@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lista de Precios · TLC Panel Control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Syne:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#07110d;--panel:#0c1913;--panel2:#10251b;--card:#0f2018;--line:rgba(255,255,255,.09);--text:#f4fff9;--muted:#9bb3a7;--green:#38e07b;--green2:#1fbf63;--warn:#ffc857;--danger:#ff6b6b;--shadow:0 20px 70px rgba(0,0,0,.36)}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 20% 0%,rgba(56,224,123,.16),transparent 28%),linear-gradient(135deg,#050907,#0a1510 50%,#06100b);color:var(--text);font-family:Inter,system-ui,sans-serif;min-height:100vh}.wrap{max-width:1460px;margin:0 auto;padding:28px}.top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:24px}.brand{display:flex;gap:14px;align-items:center}.logo{width:46px;height:46px;border-radius:16px;background:linear-gradient(135deg,var(--green),#a8ffbf);box-shadow:0 0 30px rgba(56,224,123,.25)}h1{font-family:Syne,Inter,sans-serif;margin:0;font-size:2rem;letter-spacing:-.03em}.sub{color:var(--muted);margin-top:4px}.back{color:var(--muted);text-decoration:none;font-weight:800}.btn{border:0;border-radius:14px;padding:12px 16px;background:linear-gradient(135deg,var(--green),var(--green2));color:#031008;font-weight:800;cursor:pointer;box-shadow:0 10px 25px rgba(56,224,123,.18);white-space:nowrap}.btn:hover{filter:brightness(1.05)}.btn.secondary{background:rgba(255,255,255,.06);color:var(--text);border:1px solid var(--line);box-shadow:none}.btn.danger{background:rgba(255,107,107,.12);color:#ffd3d3;border:1px solid rgba(255,107,107,.28);box-shadow:none}.topActions{display:flex;gap:10px;flex-wrap:wrap}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}.metric{background:rgba(255,255,255,.045);border:1px solid var(--line);border-radius:20px;padding:15px}.metric small{color:var(--muted);display:block}.metric strong{font-size:1.35rem;display:block;margin-top:5px}.panel{background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.025));border:1px solid var(--line);border-radius:24px;padding:18px;box-shadow:var(--shadow)}.panel h2{font-family:Syne;margin:0 0 14px;font-size:1.15rem}.toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}.toolbar input{flex:1;min-width:260px}input,select,textarea{border:1px solid var(--line);background:rgba(0,0,0,.22);color:var(--text);border-radius:14px;padding:12px;outline:none;font-family:inherit;width:100%}textarea{min-height:78px;resize:vertical}.tablewrap{overflow:auto;border-radius:20px;border:1px solid var(--line)}table{width:100%;border-collapse:collapse;min-width:1120px;background:rgba(0,0,0,.13)}th,td{text-align:left;padding:12px;border-bottom:1px solid var(--line);font-size:.88rem;vertical-align:middle}th{color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;background:rgba(255,255,255,.04)}tr:hover td{background:rgba(56,224,123,.035)}.pill{display:inline-flex;align-items:center;border-radius:999px;padding:5px 9px;font-size:.75rem;font-weight:800}.ok{background:rgba(56,224,123,.12);color:#9dffbf}.bad{background:rgba(255,107,107,.13);color:#ffc2c2}.warn{background:rgba(255,200,87,.13);color:#ffe4a3}.rowActions{display:flex;gap:8px;flex-wrap:wrap}.rowbtn{border:1px solid var(--line);background:rgba(255,255,255,.055);color:var(--text);border-radius:11px;padding:8px 10px;cursor:pointer;font-weight:700}.muted{color:var(--muted)}.empty{text-align:center;color:var(--muted);padding:28px}.modal{position:fixed;inset:0;background:rgba(0,0,0,.66);display:none;align-items:center;justify-content:center;padding:18px;z-index:50}.modal.show{display:flex}.modalCard{width:min(900px,100%);max-height:92vh;overflow:auto;background:linear-gradient(180deg,#10251b,#08120d);border:1px solid var(--line);border-radius:26px;box-shadow:0 30px 100px rgba(0,0,0,.55);padding:20px}.modalHead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}.modalHead h2{font-family:Syne;margin:0}.form{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.field{display:flex;flex-direction:column;gap:7px}.field label{font-size:.78rem;color:var(--muted);font-weight:700}.full{grid-column:1/-1}.actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}.result{border:1px solid var(--line);border-radius:20px;padding:16px;background:linear-gradient(180deg,rgba(56,224,123,.08),rgba(255,255,255,.03));margin-top:12px}.result strong{font-size:1.8rem;display:block}.toast{position:fixed;right:18px;bottom:18px;background:#10251b;border:1px solid var(--line);padding:13px 15px;border-radius:16px;box-shadow:var(--shadow);display:none;max-width:360px;z-index:80}.toast.show{display:block}.loading{opacity:.72;pointer-events:none}@media(max-width:1000px){.cards{grid-template-columns:1fr 1fr}.form{grid-template-columns:1fr}.wrap{padding:18px}.top{align-items:flex-start;flex-direction:column}.topActions{width:100%}.topActions .btn{flex:1}.full{grid-column:auto}}@media(max-width:620px){.cards{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div class="brand"><div class="logo"></div><div><a class="back" href="index.html">← Volver al panel</a><h1>Lista de Precios</h1><div class="sub">Precios conectados a Google Sheets mediante Apps Script + Railway.</div></div></div>
+    <div class="topActions"><button class="btn secondary" id="btnSimulator" type="button">SIMULADOR DE PRECIOS</button><button class="btn" id="btnNew" type="button">+ NUEVO PRODUCTO</button></div>
+  </div>
+
+  <div class="cards">
+    <div class="metric"><small>Artículos cargados</small><strong id="mCount">0</strong></div>
+    <div class="metric"><small>Margen promedio</small><strong id="mMargin">0%</strong></div>
+    <div class="metric"><small>Ganancia promedio</small><strong id="mProfit">$ 0</strong></div>
+    <div class="metric"><small>Última actualización</small><strong id="mUpdated">—</strong></div>
+  </div>
+
+  <section class="panel">
+    <div class="toolbar"><input id="q" placeholder="Buscar por SKU, artículo, proveedor, categoría o código..."><select id="sort" style="max-width:230px"><option value="updated">Últimos editados</option><option value="title">Nombre</option><option value="margin">Mejor margen</option><option value="cost">Mayor costo</option></select><button class="btn secondary" id="btnReload" type="button">Actualizar</button></div>
+    <div class="tablewrap"><table><thead><tr><th>SKU</th><th>Artículo</th><th>Proveedor</th><th>Costo</th><th>Precio</th><th>Margen</th><th>Ganancia</th><th>Última acción</th><th>Acciones</th></tr></thead><tbody id="rows"></tbody></table></div>
+  </section>
+</div>
+
+<div class="modal" id="productModal" aria-hidden="true">
+  <div class="modalCard">
+    <div class="modalHead"><div><h2 id="productModalTitle">Nuevo producto</h2><div class="muted">Crear o editar precios. Solo se guarda si hay cambios reales.</div></div><button class="rowbtn" type="button" data-close="productModal">Cerrar</button></div>
+    <form id="productForm">
+      <input type="hidden" id="id">
+      <div class="form">
+        <div class="field"><label>SKU / Código</label><input id="sku" autocomplete="off"></div>
+        <div class="field"><label>Proveedor</label><input id="supplier" autocomplete="off"></div>
+        <div class="field full"><label>Artículo / Producto</label><input id="title" required autocomplete="off"></div>
+        <div class="field"><label>Categoría</label><input id="category" autocomplete="off"></div>
+        <div class="field"><label>Costo producto</label><input id="cost" type="number" step="0.01" inputmode="decimal"></div>
+        <div class="field"><label>Costo envío / logística</label><input id="shipping" type="number" step="0.01" inputmode="decimal"></div>
+        <div class="field"><label>Comisión MeLi %</label><input id="meliFeePct" type="number" step="0.01" inputmode="decimal"></div>
+        <div class="field"><label>Comisión tarjeta %</label><input id="cardFeePct" type="number" step="0.01" inputmode="decimal"></div>
+        <div class="field"><label>IVA / impuestos %</label><input id="taxPct" type="number" step="0.01" inputmode="decimal"></div>
+        <div class="field"><label>Precio de venta</label><input id="price" type="number" step="0.01" inputmode="decimal"></div>
+        <div class="field full"><label>Notas</label><textarea id="notes"></textarea></div>
+      </div>
+      <div class="actions"><button class="btn secondary" type="button" data-close="productModal">Cancelar</button><button class="btn" type="submit">Guardar producto</button></div>
+    </form>
+  </div>
+</div>
+
+<div class="modal" id="simModal" aria-hidden="true">
+  <div class="modalCard" style="max-width:760px">
+    <div class="modalHead"><div><h2>Simulador de precios</h2><div class="muted">Calcula precio, margen y ganancia sin guardar cambios ni registrar auditoría.</div></div><button class="rowbtn" type="button" data-close="simModal">Cerrar</button></div>
+    <div class="form">
+      <div class="field"><label>Costo</label><input id="simCost" type="number" step="0.01" value="0"></div>
+      <div class="field"><label>Envío / logística</label><input id="simShipping" type="number" step="0.01" value="0"></div>
+      <div class="field"><label>Precio de venta</label><input id="simPrice" type="number" step="0.01" value="0"></div>
+      <div class="field"><label>Comisión MeLi %</label><input id="simMeli" type="number" step="0.01" value="13"></div>
+      <div class="field"><label>Tarjeta %</label><input id="simCard" type="number" step="0.01" value="0"></div>
+      <div class="field"><label>IVA / impuestos %</label><input id="simTax" type="number" step="0.01" value="0"></div>
+      <div class="field"><label>Margen deseado %</label><input id="simTargetMargin" type="number" step="0.01" value="30"></div>
+      <div class="field"><label>&nbsp;</label><button class="btn secondary" id="btnCalcTarget" type="button">Calcular precio sugerido</button></div>
+    </div>
+    <div class="result"><span class="muted">Ganancia estimada</span><strong id="simProfit">$ 0</strong><div id="simDetail" class="muted">Margen: 0% · Comisiones: $ 0 · Costo total: $ 0</div></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script>
+const API_URL='/api/precios';
+let PRODUCTS=[]; let UPDATED=''; let ORIGINAL=null;
+const $=id=>document.getElementById(id);
+const money=n=>new Intl.NumberFormat('es-UY',{style:'currency',currency:'UYU',maximumFractionDigits:0}).format(Number(n||0));
+const pct=n=>(Number.isFinite(Number(n))?Number(n):0).toFixed(1)+'%';
+function num(id){return Number(String($(id).value||'0').replace(',','.'))||0}
+function esc(s){return String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
+function toast(msg){$('toast').textContent=msg;$('toast').classList.add('show');setTimeout(()=>$('toast').classList.remove('show'),3300)}
+function openModal(id){$(id).classList.add('show');$(id).setAttribute('aria-hidden','false')}
+function closeModal(id){$(id).classList.remove('show');$(id).setAttribute('aria-hidden','true')}
+function normKey(v){return String(v??'').trim()}
+function getAny(o,keys,def=''){for(const k of keys){if(o && o[k]!==undefined && o[k]!==null && o[k]!== '')return o[k]}return def}
+function normalizeRow(raw,idx){const id=String(getAny(raw,['id','ID','Id','_id','codigo','Código','SKU','sku'],idx));return {raw,id,sku:String(getAny(raw,['sku','SKU','codigo','Código','CODIGO','code'],'')).trim(),title:String(getAny(raw,['title','titulo','Título','producto','Producto','articulo','Artículo','nombre','Nombre','descripcion','Descripción'],'')).trim(),supplier:String(getAny(raw,['supplier','proveedor','Proveedor','marca','Marca'],'')).trim(),category:String(getAny(raw,['category','categoria','Categoría','rubro','Rubro'],'')).trim(),cost:Number(getAny(raw,['cost','costo','Costo','precioCosto','Precio costo'],0))||0,shipping:Number(getAny(raw,['shipping','envio','Envío','logistica','Logística'],0))||0,meliFeePct:Number(getAny(raw,['meliFeePct','comisionMeli','Comisión MeLi','meli_pct'],13))||0,cardFeePct:Number(getAny(raw,['cardFeePct','comisionTarjeta','Tarjeta %','tarjeta_pct'],0))||0,taxPct:Number(getAny(raw,['taxPct','iva','IVA','impuestos','Impuestos'],0))||0,price:Number(getAny(raw,['price','precio','Precio','precioVenta','Precio venta','precioTlc','priceTlc'],0))||0,notes:String(getAny(raw,['notes','notas','Notas','observaciones','Observaciones'],'')).trim(),updatedAt:String(getAny(raw,['updatedAt','actualizado','Última actualización','ultimaActualizacion'],'')),updatedByName:String(getAny(raw,['updatedByName','updatedBy','usuario','Usuario','última acción','Ultima accion'],''))};}
+function denormalizeProduct(p){return {...(p.raw||{}),id:p.id,sku:p.sku,SKU:p.sku,title:p.title,producto:p.title,Producto:p.title,supplier:p.supplier,proveedor:p.supplier,category:p.category,categoria:p.category,cost:p.cost,costo:p.cost,shipping:p.shipping,meliFeePct:p.meliFeePct,cardFeePct:p.cardFeePct,taxPct:p.taxPct,price:p.price,precio:p.price,notes:p.notes};}
+function calc(price,p){const gross=Number(price||0); const base=Number(p.cost||0)+Number(p.shipping||0); const feePct=Number(p.meliFeePct||0)+Number(p.cardFeePct||0)+Number(p.taxPct||0); const fees=gross*(feePct/100); const profit=gross-base-fees; const margin=gross?profit/gross*100:0; return {profit,margin,fees,totalCost:base+fees};}
+function arraysFromResponse(d){if(Array.isArray(d))return d;if(Array.isArray(d.products))return d.products;if(Array.isArray(d.precios))return d.precios;if(Array.isArray(d.data))return d.data;if(d.result&&Array.isArray(d.result))return d.result;if(d.result&&Array.isArray(d.result.products))return d.result.products;return []}
+async function load(){document.body.classList.add('loading');try{const r=await fetch(API_URL,{credentials:'same-origin',headers:{'Accept':'application/json'}});if(r.status===401||r.status===403){location.href='login.html';return}const d=await r.json();PRODUCTS=arraysFromResponse(d).map(normalizeRow).filter(p=>p.title||p.sku);UPDATED=d.updatedAt||d.actualizado||d.timestamp||new Date().toISOString();render();}catch(e){toast('No se pudo cargar la lista de precios: '+e.message)}finally{document.body.classList.remove('loading')}}
+async function sendAction(action,product,id){const body={action,accion:action,product:product?denormalizeProduct(product):undefined,producto:product?denormalizeProduct(product):undefined,id};const r=await fetch(API_URL,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(body)});let d={};try{d=await r.json()}catch{}if(!r.ok)throw new Error(d.error||d.message||'Error guardando en /api/precios');return d}
+function formProduct(){return {raw:ORIGINAL?.raw||{},id:$('id').value||'',sku:normKey($('sku').value),title:normKey($('title').value),supplier:normKey($('supplier').value),category:normKey($('category').value),cost:num('cost'),shipping:num('shipping'),meliFeePct:num('meliFeePct'),cardFeePct:num('cardFeePct'),taxPct:num('taxPct'),price:num('price'),notes:normKey($('notes').value)}}
+function comparable(p){return JSON.stringify({sku:p.sku,title:p.title,supplier:p.supplier,category:p.category,cost:p.cost,shipping:p.shipping,meliFeePct:p.meliFeePct,cardFeePct:p.cardFeePct,taxPct:p.taxPct,price:p.price,notes:p.notes})}
+function fillForm(p){ORIGINAL=p?{...p}:null;$('id').value=p?.id||'';$('sku').value=p?.sku||'';$('supplier').value=p?.supplier||'';$('title').value=p?.title||'';$('category').value=p?.category||'';$('cost').value=p?.cost??0;$('shipping').value=p?.shipping??0;$('meliFeePct').value=p?.meliFeePct??13;$('cardFeePct').value=p?.cardFeePct??0;$('taxPct').value=p?.taxPct??0;$('price').value=p?.price??0;$('notes').value=p?.notes||'';$('productModalTitle').textContent=p?'Editar producto':'Nuevo producto';openModal('productModal');setTimeout(()=>$('title').focus(),100)}
+async function saveProduct(ev){ev.preventDefault();const p=formProduct();if(!p.title){toast('Falta el nombre del producto');return}if(ORIGINAL && comparable(ORIGINAL)===comparable(p)){toast('No hubo cambios para guardar');closeModal('productModal');return}try{await sendAction(ORIGINAL?'update':'create',p,p.id);toast(ORIGINAL?'Producto editado':'Producto creado');closeModal('productModal');await load();}catch(e){toast(e.message)}}
+function editProduct(id){const p=PRODUCTS.find(x=>String(x.id)===String(id));if(!p){toast('No encontré ese producto');return}fillForm(p)}
+async function deleteProduct(id){const p=PRODUCTS.find(x=>String(x.id)===String(id));if(!p){toast('El producto ya no está en la lista');return}if(!confirm('¿Eliminar este producto de la lista de precios?'))return;try{await sendAction('delete',null,id);toast('Producto eliminado');await load();}catch(e){toast(e.message)}}
+function copyToSim(id){const p=PRODUCTS.find(x=>String(x.id)===String(id));if(!p)return;$('simCost').value=p.cost||0;$('simShipping').value=p.shipping||0;$('simPrice').value=p.price||0;$('simMeli').value=p.meliFeePct||13;$('simCard').value=p.cardFeePct||0;$('simTax').value=p.taxPct||0;calcSim();openModal('simModal')}
+function pill(m){const c=m>=25?'ok':m>=10?'warn':'bad';return `<span class="pill ${c}">${pct(m)}</span>`}
+function render(){let list=[...PRODUCTS];const q=$('q').value.toLowerCase().trim();if(q)list=list.filter(p=>[p.sku,p.title,p.supplier,p.category].join(' ').toLowerCase().includes(q));const sort=$('sort').value;list.sort((a,b)=>sort==='title'?a.title.localeCompare(b.title):sort==='margin'?calc(b.price,b).margin-calc(a.price,a).margin:sort==='cost'?b.cost-a.cost:new Date(b.updatedAt||0)-new Date(a.updatedAt||0));const rows=$('rows');if(!list.length){rows.innerHTML='<tr><td colspan="9" class="empty">No hay artículos para mostrar.</td></tr>'}else{rows.innerHTML=list.map(p=>{const r=calc(p.price,p);return `<tr><td>${esc(p.sku||'—')}</td><td><strong>${esc(p.title||'—')}</strong><br><span class="muted">${esc(p.category||'')}</span></td><td>${esc(p.supplier||'—')}</td><td>${money(p.cost)}</td><td>${money(p.price)}</td><td>${pill(r.margin)}</td><td>${money(r.profit)}</td><td><span class="muted">${esc(p.updatedByName||'—')}<br>${p.updatedAt?new Date(p.updatedAt).toLocaleString('es-UY'):'—'}</span></td><td><div class="rowActions"><button class="rowbtn" type="button" onclick="editProduct('${esc(p.id)}')">Editar</button><button class="rowbtn" type="button" onclick="copyToSim('${esc(p.id)}')">Simular</button><button class="rowbtn" type="button" onclick="deleteProduct('${esc(p.id)}')">Eliminar</button></div></td></tr>`}).join('')}const avg=arr=>arr.length?arr.reduce((a,b)=>a+b,0)/arr.length:0;const calcs=PRODUCTS.map(p=>calc(p.price,p));$('mCount').textContent=PRODUCTS.length;$('mMargin').textContent=pct(avg(calcs.map(x=>x.margin)));$('mProfit').textContent=money(avg(calcs.map(x=>x.profit)));$('mUpdated').textContent=UPDATED?new Date(UPDATED).toLocaleDateString('es-UY'):'—'}
+function calcSim(){const p={cost:num('simCost'),shipping:num('simShipping'),meliFeePct:num('simMeli'),cardFeePct:num('simCard'),taxPct:num('simTax')};const r=calc(num('simPrice'),p);$('simProfit').textContent=money(r.profit);$('simDetail').textContent=`Margen: ${pct(r.margin)} · Comisiones: ${money(r.fees)} · Costo total: ${money(r.totalCost)}`}
+function calcTarget(){const base=num('simCost')+num('simShipping');const feePct=(num('simMeli')+num('simCard')+num('simTax'))/100;const target=num('simTargetMargin')/100;const denom=1-feePct-target;if(denom<=0){toast('El margen objetivo y las comisiones dejan el precio imposible');return}const suggested=base/denom;$('simPrice').value=suggested.toFixed(2);calcSim()}
+document.addEventListener('click',e=>{const close=e.target.getAttribute('data-close');if(close)closeModal(close)});
+$('btnNew').addEventListener('click',()=>fillForm(null));$('btnSimulator').addEventListener('click',()=>{calcSim();openModal('simModal')});$('btnReload').addEventListener('click',load);$('productForm').addEventListener('submit',saveProduct);$('q').addEventListener('input',render);$('sort').addEventListener('change',render);['simCost','simShipping','simPrice','simMeli','simCard','simTax'].forEach(id=>$(id).addEventListener('input',calcSim));$('btnCalcTarget').addEventListener('click',calcTarget);load();
+</script>
+</body>
+</html>
