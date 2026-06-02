@@ -1,0 +1,14 @@
+{
+  "users": [
+    {
+      "username": "admin",
+      "name": "Administrador",
+      "email": "admin@teloconsigo.com.uy",
+      "role": "admin",
+      "salt": "fb3d9686e2da3ef82fc16c8e03d41929",
+      "hash": "e82769d15e5ec2f3faf8a8ba0d5bcc2bbe2087748e845d8ce5a86c8df7e87e89e8664c5eb97f2ca8c14b857bfecb66e0dcc70e61eb332d0f97b55562b6c76a06",
+      "mustChange": false,
+      "createdAt": "2026-06-02T17:59:44.327Z"
+    }
+  ]
+}
