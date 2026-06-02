@@ -102,7 +102,7 @@
 </header>
 <main class="wrap">
   <div class="title-row">
-    <div><h1>Publicaciones</h1><p class="sub">Listado operativo de publicaciones reales de TELOCONSIGO y TOP SHOP. Al guardar, se actualiza solo esa fila y no se recarga todo el listado.</p></div>
+    <div><h1>Publicaciones</h1><p class="sub">Listado operativo de publicaciones reales de TELOCONSIGO y TOP SHOP. Al entrar se cargan los datos guardados; solo se sincroniza con Mercado Libre cuando tocás el botón.</p></div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end"><button class="btn primary" onclick="loadPublications(true)">↻ Sincronizar publicaciones</button><button class="btn" onclick="syncLinkedStock()">⇄ Sincronizar vinculados</button></div>
   </div>
   <section class="cards">
@@ -205,6 +205,26 @@ let CURRENT_PAGE = 1;
 let PAGE_SIZE = 50;
 let FILTERED_ROWS = [];
 const SELECTED = new Set();
+const UI_STATE_KEY = 'tlc_publicaciones_ui_state_v35';
+function saveUiState(){
+  try{localStorage.setItem(UI_STATE_KEY, JSON.stringify({
+    search:document.getElementById('search')?.value||'',
+    accountFilter:document.getElementById('accountFilter')?.value||'all',
+    linkFilter:document.getElementById('linkFilter')?.value||'all',
+    statusFilter:document.getElementById('statusFilter')?.value||'all',
+    page:CURRENT_PAGE
+  }));}catch{}
+}
+function restoreUiState(){
+  try{
+    const st=JSON.parse(localStorage.getItem(UI_STATE_KEY)||'{}');
+    if(document.getElementById('search')) document.getElementById('search').value=st.search||'';
+    if(document.getElementById('accountFilter')) document.getElementById('accountFilter').value=st.accountFilter||'all';
+    if(document.getElementById('linkFilter')) document.getElementById('linkFilter').value=st.linkFilter||'all';
+    if(document.getElementById('statusFilter')) document.getElementById('statusFilter').value=st.statusFilter||'all';
+    CURRENT_PAGE=Number(st.page||1)||1;
+  }catch{}
+}
 
 let PROGRESS_STARTED_AT = 0;
 let PROGRESS_TIMER = null;
@@ -281,7 +301,7 @@ async function loadPublications(refresh=false){
     if(!r.ok){document.getElementById('rows').innerHTML='<tr><td colspan="11" class="empty">No se pudieron cargar las publicaciones.</td></tr>';return;}
     DATA=await r.json();
     if(!Array.isArray(DATA.publications)) DATA.publications=[];
-    CURRENT_PAGE=1;
+    if(refresh){CURRENT_PAGE=1;saveUiState();}else{restoreUiState();}
     render();
     updateProgress(1,1,'Publicaciones cargadas correctamente.',false);
   }catch(e){
@@ -290,7 +310,7 @@ async function loadPublications(refresh=false){
     hideProgress();
   }
 }
-function resetPageAndRender(){CURRENT_PAGE=1;render();}
+function resetPageAndRender(){CURRENT_PAGE=1;saveUiState();render();}
 function filteredRows(){
   const q=document.getElementById('search').value.toLowerCase().trim();
   const accountFilter=document.getElementById('accountFilter').value;
@@ -321,7 +341,7 @@ function renderPager(total){
   const html=`<div><strong>${from}-${to}</strong> de <strong>${total}</strong> publicaciones filtradas · 50 por página</div><div class="pager-actions"><button class="btn" onclick="goPage(-1)" ${CURRENT_PAGE<=1?'disabled':''}>← Anterior</button><span>Página <strong>${CURRENT_PAGE}</strong> / ${pages}</span><button class="btn" onclick="goPage(1)" ${CURRENT_PAGE>=pages?'disabled':''}>Siguiente →</button></div>`;
   document.getElementById('pager-top').innerHTML=html;document.getElementById('pager-bottom').innerHTML=html;
 }
-function goPage(delta){CURRENT_PAGE+=delta;render();window.scrollTo({top:document.querySelector('.sticky-tools').offsetTop-70,behavior:'smooth'});}
+function goPage(delta){CURRENT_PAGE+=delta;saveUiState();render();window.scrollTo({top:document.querySelector('.sticky-tools').offsetTop-70,behavior:'smooth'});}
 function togglePageSelection(checked){
   const pageRows=getPageRows();
   pageRows.forEach(r=>checked?SELECTED.add(rowKey(r)):SELECTED.delete(rowKey(r)));
@@ -601,8 +621,9 @@ async function syncLinkedStock(){
     const data = await postPublicationAction({action:'sync_linked_values'});
     if(Array.isArray(data.publications)) DATA.publications=data.publications;
     if(Array.isArray(data.linked)) DATA.linked=data.linked;
+    if(Array.isArray(data.movements)) DATA.movements=data.movements;
     if(!Array.isArray(DATA.movements)) DATA.movements=[];
-    DATA.movements.unshift({at:new Date().toISOString(),message:data.message||'Vinculados sincronizados desde TLC.',user:'admin'});
+    if(!data.movements) DATA.movements.unshift({at:new Date().toISOString(),message:data.message||'Vinculados sincronizados desde TLC.',user:'admin'});
     render();
     updateProgress(1,1,data.message||'Vinculados sincronizados.',false);
     hideProgress();
@@ -713,7 +734,7 @@ async function saveRow(key){
     if(btn){btn.disabled=false;btn.textContent='Guardar';}
   }
 }
-loadPublications(true);
+loadPublications(false);
 </script>
 </body>
 </html>
