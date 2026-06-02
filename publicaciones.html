@@ -98,7 +98,7 @@
 <body>
 <header>
   <div class="logo-text">Teloconsigo</div>
-  <div class="header-right"><a href="/index.html" class="btn">← Panel</a><button class="btn" onclick="logout()">Salir</button></div>
+  <div class="header-right"><a href="/index.html" class="btn">← Panel</a></div>
 </header>
 <main class="wrap">
   <div class="title-row">
@@ -291,7 +291,7 @@ function linkActionHtml(r,key){
   if(r.skuMatch) return '<span class="muted" style="font-size:.72rem">Revisar duplicados</span>';
   return '';
 }
-async function logout(){await fetch('/api/logout',{method:'POST'});location.href='/login.html';}
+async function logout(){location.href='/index.html';}
 
 async function loadPublications(refresh=false){
   document.getElementById('rows').innerHTML='<tr><td colspan="11" class="empty">Cargando publicaciones...</td></tr>';

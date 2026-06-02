@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════
 //  TELOCONSIGO + TOP SHOP — Panel de Control
-//  v4 — con login y administración de usuarios
+//  v36 — login desactivado temporalmente
 // ═══════════════════════════════════════════════
 
 const http   = require('http');
@@ -781,7 +781,9 @@ const server = http.createServer((req, res) => {
 
   const u = new URL(req.url, `http://localhost:${PORT}`);
   const pathName = u.pathname;
-  const session = validateSession(getCookieToken(req));
+  // Login desactivado temporalmente: todas las rutas operan como admin local.
+  const session = { username: 'admin', name: 'Admin', role: 'admin', permissions: ['all'] };
+
 
   // ───────────────────────────────────────────────
   //  RUTAS PÚBLICAS (sin login)
@@ -793,67 +795,34 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // LOGIN
+  // LOGIN DESACTIVADO TEMPORALMENTE
+  // Se mantiene compatibilidad de endpoints para que el frontend no rompa,
+  // pero no se exige usuario ni contraseña hasta nuevo aviso.
   if (req.method === 'POST' && pathName === '/api/login') {
-    (async () => {
-      const body = await readBody(req);
-      const { username, password } = body;
-      const user = checkPassword(username, password);
-      if (!user) {
-        jsonResp(res, 401, { error: 'Usuario o contraseña incorrectos' });
-        return;
-      }
-      const token = createSession(user);
-      audit({ username: user.username, name: user.name, role: user.role }, 'login', { ok: true });
-      jsonResp(res, 200, {
-        ok: true,
-        user: publicUser(user),
-      }, {
-        'Set-Cookie': `auth=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${7*24*60*60}`,
-      });
-    })();
-    return;
-  }
-
-  // LOGOUT
-  if (req.method === 'POST' && pathName === '/api/logout') {
-    const token = getCookieToken(req);
-    if (session) audit(session, 'logout', {});
-    if (token) SESSIONS.delete(token);
-    jsonResp(res, 200, { ok: true }, {
-      'Set-Cookie': 'auth=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
+    jsonResp(res, 200, { ok: true, user: session }, {
+      'Set-Cookie': 'auth=disabled; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000',
     });
     return;
   }
 
-  // CHECK SESIÓN ACTUAL
+  if (req.method === 'POST' && pathName === '/api/logout') {
+    jsonResp(res, 200, { ok: true, loginDisabled: true });
+    return;
+  }
+
   if (pathName === '/api/me') {
-    if (!session) { jsonResp(res, 401, { error: 'No autenticado' }); return; }
-    jsonResp(res, 200, { user: session });
+    jsonResp(res, 200, { user: session, loginDisabled: true });
     return;
   }
 
-  // Permitir login.html sin sesión
+  // Si alguien entra al login, enviarlo directo al panel.
   if (pathName === '/login.html' || pathName === '/login') {
-    serveStatic(res, 'login.html');
+    res.writeHead(302, { 'Location': '/index.html' });
+    res.end();
     return;
   }
 
-  // ───────────────────────────────────────────────
-  //  TODO LO DE ABAJO REQUIERE LOGIN
-  // ───────────────────────────────────────────────
-  if (!session) {
-    // Si pide HTML o es la raíz → redirigir a login
-    if (pathName === '/' || pathName.endsWith('.html')) {
-      res.writeHead(302, { 'Location': '/login.html' });
-      res.end();
-      return;
-    }
-    // Si pide API → 401
-    jsonResp(res, 401, { error: 'No autenticado' });
-    return;
-  }
-
+  // Desde acá ya NO se requiere login.
 
   const requestedModule = moduleForPath(pathName);
   if (requestedModule && !hasPermission(session, requestedModule)) {
@@ -1523,7 +1492,7 @@ server.listen(PORT, '0.0.0.0', () => {
   if (autoMs > 0) setInterval(runAutoLinkedSync, autoMs);
   console.log('');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('  TELOCONSIGO + TOP SHOP — Panel v4 (con login)');
+  console.log('  TELOCONSIGO + TOP SHOP — Panel v36 (login desactivado)');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
   console.log(`  ✓ Servidor activo: http://localhost:${PORT}`);

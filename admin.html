@@ -105,7 +105,7 @@ table tr:last-child td{border-bottom:none;}
   <div class="hdr-path"><span>/</span><strong>Administración</strong></div>
   <div class="hdr-right">
     <span class="hdr-user">Logueado como <strong id="curr-user">…</strong></span>
-    <button class="logout-btn" onclick="logout()">Cerrar sesión</button>
+    <a class="logout-btn" href="/index.html" style="text-decoration:none">← Panel</a>
   </div>
 </header>
 
@@ -356,15 +356,12 @@ function toast(msg, cls='t-ok') {
   setTimeout(() => t.remove(), 3000);
 }
 
-async function logout() {
-  await fetch('/api/logout', { method: 'POST' });
-  window.location.href = '/login.html';
-}
+async function logout() { window.location.href = '/index.html'; }
 
 async function loadMe() {
   try {
     const r = await fetch('/api/me');
-    if (!r.ok) { window.location.href = '/login.html'; return; }
+    if (!r.ok) { return; }
     const data = await r.json();
     CURRENT_USER = data.user;
     document.getElementById('curr-user').textContent = data.user.name + ' (' + data.user.username + ')';
@@ -372,7 +369,7 @@ async function loadMe() {
       window.location.href = '/index.html';
     }
   } catch {
-    window.location.href = '/login.html';
+    window.location.href = '/index.html';
   }
 }
 

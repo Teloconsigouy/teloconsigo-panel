@@ -254,7 +254,7 @@ textarea#chat-in::placeholder{color:var(--muted2);}
     <span class="status-dot"><span class="dot"></span> En línea</span>
     <span id="hdr-clock"></span>
     <span id="hdr-user-name" style="color:var(--muted);font-size:12px;border-left:1px solid var(--border);padding-left:14px;margin-left:6px"></span>
-    <button onclick="logout()" style="padding:5px 11px;border:1px solid var(--border);background:transparent;border-radius:4px;color:var(--muted);cursor:pointer;font-family:'Inter',sans-serif;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;">Salir</button>
+    
   </div>
 </header>
 
@@ -1317,21 +1317,15 @@ tick(); setInterval(tick, 30000);
 // ═══════════════════════════════════════════════
 //  SESIÓN
 // ═══════════════════════════════════════════════
-async function logout() {
-  if (!confirm('¿Cerrar sesión?')) return;
-  await fetch('/api/logout', { method: 'POST' });
-  window.location.href = '/login.html';
-}
+async function logout() { window.location.href = '/index.html'; }
 
 async function loadCurrentUser() {
   try {
     const r = await fetch('/api/me');
-    if (!r.ok) { window.location.href = '/login.html'; return; }
+    if (!r.ok) { return; }
     const data = await r.json();
     document.getElementById('hdr-user-name').textContent = data.user.name || data.user.username;
-  } catch {
-    window.location.href = '/login.html';
-  }
+  } catch { } 
 }
 
 // ═══════════════════════════════════════════════

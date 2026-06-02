@@ -73,9 +73,8 @@
   <div class="header-right">
     <div class="status-dot"><span class="dot"></span> Sistema activo</div>
     <span id="clock">—</span>
-    <span class="hdr-user">Hola, <strong id="curr-user">…</strong></span>
+    <span class="hdr-user">Modo sin login</span>
     <a href="/admin.html" class="admin-btn" id="admin-link">⚙ Administración</a>
-    <button class="logout-btn" onclick="logout()">Salir</button>
   </div>
 </header>
 
@@ -161,15 +160,12 @@
   function tick(){document.getElementById('clock').textContent=new Date().toLocaleTimeString('es-UY',{hour:'2-digit',minute:'2-digit'});}
   tick();setInterval(tick,30000);
 
-  async function logout() {
-    await fetch('/api/logout', { method: 'POST' });
-    window.location.href = '/login.html';
-  }
+  async function logout() { window.location.href = '/index.html'; }
 
   (async () => {
     try {
       const r = await fetch('/api/me');
-      if (!r.ok) { window.location.href = '/login.html'; return; }
+      if (!r.ok) { return; }
       const data = await r.json();
       document.getElementById('curr-user').textContent = data.user.name || data.user.username;
       const perms = data.user.permissions || [];
@@ -181,9 +177,7 @@
       if (data.user.role === 'admin') {
         document.getElementById('admin-link').classList.add('show');
       }
-    } catch {
-      window.location.href = '/login.html';
-    }
+    } catch { } 
   })();
 </script>
 </body>
