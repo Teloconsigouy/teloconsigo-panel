@@ -1,0 +1,15 @@
+{
+  "name": "teloconsigo-panel",
+  "version": "1.0.0",
+  "description": "Panel online TLC / TOP SHOP en Railway",
+  "main": "start.js",
+  "scripts": {
+    "start": "node start.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
