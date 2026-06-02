@@ -93,6 +93,17 @@
   @keyframes spin{to{transform:rotate(360deg)}}
   @keyframes progressSlide{0%{transform:translateX(-120%)}100%{transform:translateX(280%)}}
   @media(max-width:1000px){.cards{grid-template-columns:repeat(2,1fr)}.title-row,.toolbar{flex-direction:column;align-items:stretch}.counter{justify-content:space-between}.wrap{padding:22px 16px 60px}header{padding:0 16px}.sticky-tools{top:64px}}
+
+
+/* v37 - Tipografía más legible en todo el panel.
+   Se mantiene la fuente especial solo en el logo TELOCONSIGO. */
+html, body, body *:not(.logo-text):not(.hdr-logo):not(.brand):not(.brand-logo):not(.logo):not(.logo-text *) {
+  font-family: 'Inter', 'Segoe UI', Arial, sans-serif !important;
+}
+.logo-text, .hdr-logo, .brand, .brand-logo, .logo {
+  font-family: 'Syne', 'Inter', sans-serif !important;
+}
+
 </style>
 </head>
 <body>

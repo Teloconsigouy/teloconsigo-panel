@@ -64,6 +64,17 @@
   footer{background:var(--surface);border-top:1px solid var(--border);padding:18px 48px;display:flex;justify-content:space-between;font-size:0.65rem;color:var(--muted2);text-transform:uppercase;letter-spacing:0.1em;}
   footer a{color:var(--muted2);text-decoration:none;}
   footer a:hover{color:var(--green);}
+
+
+/* v37 - Tipografía más legible en todo el panel.
+   Se mantiene la fuente especial solo en el logo TELOCONSIGO. */
+html, body, body *:not(.logo-text):not(.hdr-logo):not(.brand):not(.brand-logo):not(.logo):not(.logo-text *) {
+  font-family: 'Inter', 'Segoe UI', Arial, sans-serif !important;
+}
+.logo-text, .hdr-logo, .brand, .brand-logo, .logo {
+  font-family: 'Syne', 'Inter', sans-serif !important;
+}
+
 </style>
 </head>
 <body>

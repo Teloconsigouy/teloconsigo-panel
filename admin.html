@@ -92,6 +92,17 @@ table tr:last-child td{border-bottom:none;}
 .audit-action{font-weight:700;color:var(--green);}
 .audit-detail{color:var(--muted);word-break:break-word;}
 @media(max-width:800px){.perm-grid{grid-template-columns:1fr}.audit-row{grid-template-columns:1fr;gap:4px}}
+
+
+/* v37 - Tipografía más legible en todo el panel.
+   Se mantiene la fuente especial solo en el logo TELOCONSIGO. */
+html, body, body *:not(.logo-text):not(.hdr-logo):not(.brand):not(.brand-logo):not(.logo):not(.logo-text *) {
+  font-family: 'Inter', 'Segoe UI', Arial, sans-serif !important;
+}
+.logo-text, .hdr-logo, .brand, .brand-logo, .logo {
+  font-family: 'Syne', 'Inter', sans-serif !important;
+}
+
 </style>
 </head>
 <body>
