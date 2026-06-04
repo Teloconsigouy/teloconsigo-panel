@@ -297,7 +297,11 @@ function linkBadge(r){
   return '<span class="pill warn">No vinculada</span>';
 }
 function linkActionHtml(r,key){
-  if(r.linked) return '<span class="muted" style="font-size:.72rem">Gestionar en ventana</span>';
+  if(r.linked){
+    return accountKey(r)==='tlc'
+      ? '<span class="muted" style="font-size:.72rem">Maestro: copia precio/stock a TOP SHOP al guardar</span>'
+      : '<span class="muted" style="font-size:.72rem">Espejo: recibe precio/stock desde TLC</span>';
+  }
   if(r.suggestedPeerId) return '<span class="muted" style="font-size:.72rem">Sugerida para vincular</span>';
   if(r.skuMatch) return '<span class="muted" style="font-size:.72rem">Revisar duplicados</span>';
   return '';
@@ -306,7 +310,7 @@ async function logout(){location.href='/index.html';}
 
 async function loadPublications(refresh=false){
   document.getElementById('rows').innerHTML='<tr><td colspan="11" class="empty">Cargando publicaciones...</td></tr>';
-  showProgress(refresh?'Sincronizando publicaciones':'Cargando publicaciones', refresh?'Leyendo TLC y TOP SHOP directo desde Mercado Libre. Esto puede demorar.':'Cargando datos guardados.', {indeterminate:true});
+  showProgress(refresh?'Sincronizando publicaciones':'Cargando publicaciones', refresh?'Leyendo TLC y TOP SHOP desde n8n/Mercado Libre. Esto puede demorar.':'Cargando datos guardados.', {indeterminate:true});
   try{
     const r=await fetch('/api/publications?action=list'+(refresh?'&refresh=1':''));
     if(!r.ok){document.getElementById('rows').innerHTML='<tr><td colspan="11" class="empty">No se pudieron cargar las publicaciones.</td></tr>';return;}
@@ -506,7 +510,11 @@ function renderLinkManager(){
   const st=document.getElementById('suggestions-table');
   if(st) st.innerHTML=suggestions.length?`<table><thead><tr><th><input type="checkbox" onchange="selectAllModal('suggestions',this.checked)"></th><th>SKU</th><th>TLC</th><th>TOP SHOP</th><th>Precio TLC</th><th>Precio TS</th><th>Stock TLC</th><th>Stock TS</th></tr></thead><tbody>${suggestions.map(p=>`<tr><td><input type="checkbox" class="modal-suggestion" data-tlc="${esc(p.tlc.id||p.tlc.mlu)}" data-topshop="${esc(p.top.id||p.top.mlu)}" data-sku="${esc(p.tlc.sku||p.top.sku||'')}"></td><td class="sku">${esc(p.tlc.sku||p.top.sku||'')}</td><td>${esc(p.tlc.title||'')}<br><a target="_blank" href="${esc(p.tlc.permalink||'#')}">${esc(p.tlc.id||p.tlc.mlu)}</a></td><td>${esc(p.top.title||'')}<br><a target="_blank" href="${esc(p.top.permalink||'#')}">${esc(p.top.id||p.top.mlu)}</a></td><td>${money(p.tlc.price,p.tlc.currency_id||p.tlc.currency)}</td><td>${money(p.top.price,p.top.currency_id||p.top.currency)}</td><td>${esc(p.tlc.stock??p.tlc.available_quantity??0)}</td><td>${esc(p.top.stock??p.top.available_quantity??0)}</td></tr>`).join('')}</tbody></table>`:'<div class="empty">No hay coincidencias únicas por SKU para vincular.</div>';
   const lt=document.getElementById('linked-table');
-  if(lt) lt.innerHTML=links.length?`<table><thead><tr><th><input type="checkbox" onchange="selectAllModal('linked',this.checked)"></th><th>SKU</th><th>TLC</th><th>TOP SHOP</th><th>Último estado</th></tr></thead><tbody>${links.map(p=>`<tr><td><input type="checkbox" class="modal-linked" data-linkid="${esc(p.linkId)}" data-tlc="${esc(p.tlc.id||p.tlc.mlu)}"></td><td class="sku">${esc(p.tlc.sku||p.top?.sku||'')}</td><td>${esc(p.tlc.title||'')}<br>${esc(p.tlc.id||p.tlc.mlu)}</td><td>${p.top?esc(p.top.title||'')+'<br>'+esc(p.top.id||p.top.mlu):'<span class="pill bad">No encontrada</span>'}</td><td>${p.top?'<span class="pill ok">Vinculada real</span>':'<span class="pill warn">Revisar</span>'}</td></tr>`).join('')}</tbody></table>`:'<div class="empty">Todavía no hay vínculos reales guardados.</div>';
+  if(lt) lt.innerHTML=links.length?`<table><thead><tr><th><input type="checkbox" onchange="selectAllModal('linked',this.checked)"></th><th>SKU</th><th>TLC maestro</th><th>TOP SHOP espejo</th><th>Precio</th><th>Stock</th><th>Estado</th></tr></thead><tbody>${links.map(p=>{
+    const samePrice=p.top && Number(p.tlc.price||0)===Number(p.top.price||0);
+    const sameStock=p.top && Number(p.tlc.stock??p.tlc.available_quantity??0)===Number(p.top.stock??p.top.available_quantity??0);
+    return `<tr><td><input type="checkbox" class="modal-linked" data-linkid="${esc(p.linkId)}" data-tlc="${esc(p.tlc.id||p.tlc.mlu)}"></td><td class="sku">${esc(p.tlc.sku||p.top?.sku||'')}</td><td>${esc(p.tlc.title||'')}<br>${esc(p.tlc.id||p.tlc.mlu)}</td><td>${p.top?esc(p.top.title||'')+'<br>'+esc(p.top.id||p.top.mlu):'<span class="pill bad">No encontrada</span>'}</td><td>${p.top?(samePrice?'<span class="pill ok">Igual</span>':'<span class="pill warn">Difiere</span>'):'—'}<br><span class="muted">TLC ${money(p.tlc.price,p.tlc.currency_id||p.tlc.currency)}${p.top?' · TS '+money(p.top.price,p.top.currency_id||p.top.currency):''}</span></td><td>${p.top?(sameStock?'<span class="pill ok">Igual</span>':'<span class="pill warn">Difiere</span>'):'—'}<br><span class="muted">TLC ${esc(p.tlc.stock??p.tlc.available_quantity??0)}${p.top?' · TS '+esc(p.top.stock??p.top.available_quantity??0):''}</span></td><td>${p.top?'<span class="pill ok">Vinculada real</span>':'<span class="pill warn">Revisar</span>'}</td></tr>`;
+  }).join('')}</tbody></table>`:'<div class="empty">Todavía no hay vínculos reales guardados.</div>';
 }
 function selectAllModal(type,checked){document.querySelectorAll(type==='linked'?'.modal-linked':'.modal-suggestion').forEach(cb=>cb.checked=checked);}
 async function postPublicationAction(body){
@@ -577,7 +585,7 @@ async function linkSuggested(key){
     if(Array.isArray(data.publications)) DATA.publications=data.publications;
     if(Array.isArray(data.linked)) DATA.linked=data.linked;
     render();
-    alert('Publicaciones vinculadas. Desde ahora, al guardar precio/stock en una se enviará también a la vinculada.');
+    alert('Publicaciones vinculadas. Regla activa: TLC es maestro y TOP SHOP copia precio/stock cuando guardás cambios desde TLC.');
   }catch(e){alert('No se pudo vincular: '+e.message);}
 }
 
@@ -720,11 +728,15 @@ async function saveRow(key){
 
     let mirrorMessage = '';
     if(row.linked && (('price' in body) || ('stock' in body))){
-      try{
-        await mirrorLinkedRow(row, body, partial);
-        mirrorMessage = ' También se envió precio/stock a la publicación vinculada.';
-      }catch(e){
-        mirrorMessage = ' Ojo: la publicación principal se guardó, pero la vinculada no se pudo actualizar: '+e.message;
+      if(accountKey(row)==='tlc'){
+        try{
+          await mirrorLinkedRow(row, body, partial);
+          mirrorMessage = ' También se envió precio/stock a TOP SHOP porque TLC es la cuenta maestra.';
+        }catch(e){
+          mirrorMessage = ' Ojo: TLC se guardó, pero TOP SHOP vinculado no se pudo actualizar: '+e.message;
+        }
+      }else{
+        mirrorMessage = ' Nota: TOP SHOP es espejo; los cambios hechos en TOP SHOP no se copian hacia TLC.';
       }
     }
 
