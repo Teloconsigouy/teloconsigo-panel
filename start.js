@@ -501,12 +501,15 @@ async function updatePublicationOnMeli(cuenta, payload = {}) {
 
   if (!Object.keys(body).length) return { ok: true, skipped: true, message: 'No habia campos para enviar a Mercado Libre.' };
 
+  // Mercado Libre usa PUT para modificar publicaciones.
+  // PATCH puede devolver errores confusos como "Resource /items/MLU... not found".
+  // Enviamos siempre el token de la cuenta detectada en la fila (tlc/topshop).
   const data = await meliApi(accountKey, `/items/${encodeURIComponent(id)}`, {
-    method: 'PATCH',
+    method: 'PUT',
     body,
   });
 
-  return { ok: true, direct: true, sent: body, response: data };
+  return { ok: true, direct: true, method: 'PUT', cuenta: accountKey, item_id: id, sent: body, response: data };
 }
 
 async function fetchAllPublicationsFromN8n(cuenta, params = {}) {
