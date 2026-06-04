@@ -306,7 +306,7 @@ async function logout(){location.href='/index.html';}
 
 async function loadPublications(refresh=false){
   document.getElementById('rows').innerHTML='<tr><td colspan="11" class="empty">Cargando publicaciones...</td></tr>';
-  showProgress(refresh?'Sincronizando publicaciones':'Cargando publicaciones', refresh?'Leyendo TLC y TOP SHOP desde n8n/Mercado Libre. Esto puede demorar.':'Cargando datos guardados.', {indeterminate:true});
+  showProgress(refresh?'Sincronizando publicaciones':'Cargando publicaciones', refresh?'Leyendo TLC y TOP SHOP directo desde Mercado Libre. Esto puede demorar.':'Cargando datos guardados.', {indeterminate:true});
   try{
     const r=await fetch('/api/publications?action=list'+(refresh?'&refresh=1':''));
     if(!r.ok){document.getElementById('rows').innerHTML='<tr><td colspan="11" class="empty">No se pudieron cargar las publicaciones.</td></tr>';return;}

@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════
 //  TELOCONSIGO + TOP SHOP — Panel de Control
-//  v36 — login desactivado temporalmente
+//  v38 — Publicaciones directo Mercado Libre, sin n8n
 // ═══════════════════════════════════════════════
 
 const http   = require('http');
@@ -158,9 +158,25 @@ function savePublicationsCache(data) {
   return clean;
 }
 
+function pickSkuFromMeliItem(raw) {
+  const direct = raw.sku || raw.SKU || raw.seller_sku || raw.sellerSku || raw.custom_sku || raw.seller_custom_field || raw.sellerCustomField || '';
+  if (direct) return direct;
+  const attrs = Array.isArray(raw.attributes) ? raw.attributes : [];
+  const skuAttr = attrs.find(a => String(a.id || a.name || '').toUpperCase().includes('SELLER_SKU') || String(a.name || '').toLowerCase() === 'sku');
+  if (skuAttr && (skuAttr.value_name || skuAttr.value_id)) return skuAttr.value_name || skuAttr.value_id;
+  const variations = Array.isArray(raw.variations) ? raw.variations : [];
+  for (const v of variations) {
+    if (v.seller_custom_field) return v.seller_custom_field;
+    const vAttrs = Array.isArray(v.attributes) ? v.attributes : [];
+    const vSku = vAttrs.find(a => String(a.id || a.name || '').toUpperCase().includes('SELLER_SKU') || String(a.name || '').toLowerCase() === 'sku');
+    if (vSku && (vSku.value_name || vSku.value_id)) return vSku.value_name || vSku.value_id;
+  }
+  return '';
+}
+
 function normalizePublication(raw, cuenta) {
   const id = raw.id || raw.mlu || raw.item_id || raw.itemId || raw.meli_id || raw.meliId || '';
-  const sku = raw.sku || raw.SKU || raw.seller_sku || raw.sellerSku || raw.custom_sku || '';
+  const sku = pickSkuFromMeliItem(raw);
   const statusRaw = String(raw.status || raw.estado || raw.state || '').toLowerCase();
   const status = statusRaw.includes('pause') || statusRaw.includes('paus') ? 'paused' : (statusRaw || 'active');
   return {
@@ -193,6 +209,221 @@ function normalizePublicationsPayload(payload, cuenta) {
   const source = Array.isArray(payload) ? payload : (payload.results || payload.items || payload.publications || payload.data || []);
   if (!Array.isArray(source)) return [];
   return source.map(item => normalizePublication(item, cuenta));
+}
+
+
+function normalizeCuentaKey(cuenta) {
+  return String(cuenta || '').toLowerCase().replace(/\s+/g, '').includes('top') ? 'topshop' : 'tlc';
+}
+
+const MELI_OAUTH_FILE = path.join(DATA_DIR, 'meli-oauth-tokens.json');
+const MELI_TOKEN_CACHE = { tlc: null, topshop: null };
+
+function loadMeliOAuthStore() {
+  ensureDataDir();
+  if (!fs.existsSync(MELI_OAUTH_FILE)) return { tlc: {}, topshop: {}, updatedAt: null };
+  try {
+    const data = JSON.parse(fs.readFileSync(MELI_OAUTH_FILE, 'utf8'));
+    return { tlc: data.tlc || {}, topshop: data.topshop || {}, updatedAt: data.updatedAt || null };
+  } catch {
+    return { tlc: {}, topshop: {}, updatedAt: null };
+  }
+}
+
+function saveMeliOAuthStore(store) {
+  ensureDataDir();
+  fs.writeFileSync(MELI_OAUTH_FILE, JSON.stringify({ ...(store || {}), updatedAt: new Date().toISOString() }, null, 2));
+}
+
+function envFirst(names) {
+  for (const name of names) {
+    const value = process.env[name];
+    if (value && String(value).trim()) return String(value).trim();
+  }
+  return '';
+}
+
+function getMeliOAuthConfig(cuenta) {
+  const key = normalizeCuentaKey(cuenta);
+  const suffix = key === 'topshop' ? 'TOPSHOP' : 'TLC';
+  const appId = envFirst([`MELI_APP_ID_${suffix}`, `MELI_CLIENT_ID_${suffix}`, `ML_APP_ID_${suffix}`, `ML_CLIENT_ID_${suffix}`]);
+  const clientSecret = envFirst([`MELI_CLIENT_SECRET_${suffix}`, `ML_CLIENT_SECRET_${suffix}`]);
+  const store = loadMeliOAuthStore();
+  const savedRefreshToken = store[key]?.refresh_token || '';
+  const refreshToken = savedRefreshToken || envFirst([`MELI_REFRESH_TOKEN_${suffix}`, `ML_REFRESH_TOKEN_${suffix}`]);
+  const fixedAccessToken = envFirst(key === 'topshop'
+    ? ['MELI_ACCESS_TOKEN_TOPSHOP', 'ML_ACCESS_TOKEN_TOPSHOP', 'MERCADOLIBRE_ACCESS_TOKEN_TOPSHOP', 'ACCESS_TOKEN_TOPSHOP', 'MELI_TOPSHOP_TOKEN']
+    : ['MELI_ACCESS_TOKEN_TLC', 'ML_ACCESS_TOKEN_TLC', 'MERCADOLIBRE_ACCESS_TOKEN_TLC', 'ACCESS_TOKEN_TLC', 'MELI_TLC_TOKEN']);
+  return { key, suffix, appId, clientSecret, refreshToken, fixedAccessToken };
+}
+
+function getPublicBaseUrl(req) {
+  const envUrl = process.env.PUBLIC_BASE_URL || process.env.RAILWAY_PUBLIC_DOMAIN || '';
+  if (String(envUrl).startsWith('http')) return String(envUrl).replace(/\/$/, '');
+  if (envUrl) return `https://${String(envUrl).replace(/\/$/, '')}`;
+  const host = req?.headers?.['x-forwarded-host'] || req?.headers?.host || 'tlcpanelcontrol.up.railway.app';
+  const proto = req?.headers?.['x-forwarded-proto'] || 'https';
+  return `${proto}://${host}`;
+}
+
+function getMeliRedirectUri(req) {
+  return process.env.MELI_REDIRECT_URI || `${getPublicBaseUrl(req)}/api/meli/oauth/callback`;
+}
+
+async function refreshMeliAccessToken(cuenta) {
+  const cfg = getMeliOAuthConfig(cuenta);
+  if (!cfg.appId || !cfg.clientSecret || !cfg.refreshToken) {
+    if (cfg.fixedAccessToken) return { access_token: cfg.fixedAccessToken, expires_at: Date.now() + 20 * 60 * 1000, fixed: true };
+    throw new Error(`Faltan credenciales Mercado Libre para ${cfg.key}. Configurá MELI_APP_ID_${cfg.suffix}, MELI_CLIENT_SECRET_${cfg.suffix} y MELI_REFRESH_TOKEN_${cfg.suffix}.`);
+  }
+
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token',
+    client_id: cfg.appId,
+    client_secret: cfg.clientSecret,
+    refresh_token: cfg.refreshToken,
+  });
+  const r = await fetch('https://api.mercadolibre.com/oauth/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
+    body: body.toString(),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok || !data.access_token) {
+    throw new Error(data.message || data.error_description || data.error || `No se pudo renovar token Mercado Libre ${cfg.key}`);
+  }
+
+  const expiresAt = Date.now() + Math.max(60, Number(data.expires_in || 21600) - 120) * 1000;
+  const tokenData = { access_token: data.access_token, refresh_token: data.refresh_token || cfg.refreshToken, expires_at: expiresAt };
+  MELI_TOKEN_CACHE[cfg.key] = tokenData;
+
+  const store = loadMeliOAuthStore();
+  store[cfg.key] = {
+    ...(store[cfg.key] || {}),
+    refresh_token: tokenData.refresh_token,
+    last_access_token_refresh: new Date().toISOString(),
+  };
+  saveMeliOAuthStore(store);
+  return tokenData;
+}
+
+async function getMeliAccessToken(cuenta) {
+  const cfg = getMeliOAuthConfig(cuenta);
+  const cached = MELI_TOKEN_CACHE[cfg.key];
+  if (cached?.access_token && cached.expires_at && Date.now() < cached.expires_at) return cached.access_token;
+  const refreshed = await refreshMeliAccessToken(cfg.key);
+  return refreshed.access_token;
+}
+
+async function exchangeMeliAuthorizationCode(cuenta, code, req) {
+  const cfg = getMeliOAuthConfig(cuenta);
+  if (!cfg.appId || !cfg.clientSecret) {
+    throw new Error(`Faltan MELI_APP_ID_${cfg.suffix} y MELI_CLIENT_SECRET_${cfg.suffix} en Railway.`);
+  }
+  const redirectUri = getMeliRedirectUri(req);
+  const body = new URLSearchParams({
+    grant_type: 'authorization_code',
+    client_id: cfg.appId,
+    client_secret: cfg.clientSecret,
+    code,
+    redirect_uri: redirectUri,
+  });
+  const r = await fetch('https://api.mercadolibre.com/oauth/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
+    body: body.toString(),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok || !data.refresh_token) throw new Error(data.message || data.error_description || data.error || 'No se pudo obtener refresh token');
+  const store = loadMeliOAuthStore();
+  store[cfg.key] = {
+    ...(store[cfg.key] || {}),
+    refresh_token: data.refresh_token,
+    user_id: data.user_id || null,
+    obtained_at: new Date().toISOString(),
+  };
+  saveMeliOAuthStore(store);
+  MELI_TOKEN_CACHE[cfg.key] = { access_token: data.access_token, refresh_token: data.refresh_token, expires_at: Date.now() + Math.max(60, Number(data.expires_in || 21600) - 120) * 1000 };
+  return { ...data, redirect_uri: redirectUri };
+}
+
+async function meliApi(cuenta, apiPath, options = {}) {
+  const token = await getMeliAccessToken(cuenta);
+  const url = apiPath.startsWith('http') ? apiPath : `https://api.mercadolibre.com${apiPath}`;
+  const headers = {
+    'Authorization': `Bearer ${token}`,
+    'Accept': 'application/json',
+    ...(options.headers || {}),
+  };
+  if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
+  const r = await fetch(url, {
+    method: options.method || 'GET',
+    headers,
+    body: options.body ? JSON.stringify(options.body) : undefined,
+  });
+  const text = await r.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+  if (!r.ok) {
+    const msg = data?.message || data?.error || data?.cause?.[0]?.message || text || `Mercado Libre status ${r.status}`;
+    throw new Error(msg);
+  }
+  return data;
+}
+
+async function fetchMeliSellerId(cuenta) {
+  const me = await meliApi(cuenta, '/users/me');
+  const id = me && me.id;
+  if (!id) throw new Error('Mercado Libre no devolvio seller_id en /users/me');
+  return id;
+}
+
+function extractScrollId(data) {
+  return data?.scroll_id || data?.scrollId || data?.paging?.scroll_id || data?.body?.scroll_id || data?.body?.paging?.scroll_id || '';
+}
+
+async function fetchMeliItemDetails(cuenta, ids = []) {
+  const out = [];
+  const clean = [...new Set(ids.map(x => String(x || '').trim()).filter(Boolean))];
+  const attributes = 'id,title,price,currency_id,available_quantity,status,permalink,thumbnail,seller_custom_field,attributes,variations,last_updated,date_created';
+  for (let i = 0; i < clean.length; i += 20) {
+    const chunk = clean.slice(i, i + 20);
+    const data = await meliApi(cuenta, `/items?ids=${encodeURIComponent(chunk.join(','))}&attributes=${encodeURIComponent(attributes)}`);
+    const arr = Array.isArray(data) ? data : [];
+    for (const row of arr) {
+      if (row && Number(row.code || 200) < 400 && row.body) out.push(row.body);
+    }
+  }
+  return out;
+}
+
+async function fetchAllPublicationsDirect(cuenta, params = {}) {
+  const sellerId = await fetchMeliSellerId(cuenta);
+  const limit = Math.min(Number(process.env.PUBLICATIONS_PAGE_LIMIT || 100), 100);
+  const maxPages = Number(process.env.PUBLICATIONS_MAX_PAGES || 120);
+  const allIds = [];
+  const seen = new Set();
+  let scrollId = '';
+
+  for (let page = 0; page < maxPages; page++) {
+    const qs = new URLSearchParams({ search_type: 'scan', limit: String(limit) });
+    if (scrollId) qs.set('scroll_id', scrollId);
+    const data = await meliApi(cuenta, `/users/${sellerId}/items/search?${qs.toString()}`);
+    const ids = Array.isArray(data?.results) ? data.results : [];
+    for (const id of ids) {
+      const sid = String(id || '').trim();
+      if (!sid || seen.has(sid)) continue;
+      seen.add(sid);
+      allIds.push(sid);
+    }
+    const nextScrollId = extractScrollId(data);
+    if (nextScrollId) scrollId = nextScrollId;
+    if (!ids.length) break;
+    if (!scrollId) break;
+  }
+
+  const details = await fetchMeliItemDetails(cuenta, allIds);
+  return details.map(item => normalizePublication(item, normalizeCuentaKey(cuenta)));
 }
 
 async function fetchPublicationsPageFromN8n(cuenta, params = {}) {
@@ -256,38 +487,26 @@ async function fetchPublicationsFromN8n(cuenta, params = {}) {
 }
 
 async function updatePublicationOnMeli(cuenta, payload = {}) {
-  const accountKey = String(cuenta || '').toLowerCase().replace(/\s+/g, '').includes('top') ? 'topshop' : 'tlc';
-  const webhook = PUBLICATIONS_EDIT_WEBHOOKS[accountKey];
-  if (!webhook) throw new Error('No hay webhook de edicion configurado para ' + accountKey);
+  const accountKey = normalizeCuentaKey(cuenta);
+  const id = String(payload.id || payload.mlu || '').trim();
+  if (!id) throw new Error('Falta id o MLU para editar publicacion');
 
-  const r = await fetch(webhook, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+  const body = {};
+  if (payload.price !== undefined && payload.price !== null && payload.price !== '') body.price = Number(payload.price);
+  if (payload.stock !== undefined && payload.stock !== null && payload.stock !== '') body.available_quantity = Number(payload.stock);
+  else if (payload.available_quantity !== undefined && payload.available_quantity !== null && payload.available_quantity !== '') body.available_quantity = Number(payload.available_quantity);
+  if (payload.title !== undefined && String(payload.title).trim()) body.title = String(payload.title).trim();
+  if (payload.status !== undefined && String(payload.status).trim()) body.status = String(payload.status).trim();
+  if (payload.sku !== undefined) body.seller_custom_field = String(payload.sku || '').trim();
+
+  if (!Object.keys(body).length) return { ok: true, skipped: true, message: 'No habia campos para enviar a Mercado Libre.' };
+
+  const data = await meliApi(accountKey, `/items/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body,
   });
 
-  let text = '';
-  let data = null;
-  try { text = await r.text(); } catch {}
-  try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
-
-  if (!r.ok) {
-    const msg = data?.error?.message || data?.message || text || ('n8n edit status ' + r.status);
-    throw new Error(msg);
-  }
-
-  if (data && data.ok === false) {
-    throw new Error(data.message || data.error || 'n8n devolvio ok=false al editar');
-  }
-
-  // n8n puede responder HTTP 200 aunque Mercado Libre haya devuelto error,
-  // porque el nodo HTTP usa ignoreResponseCode. No marcamos exito en esos casos.
-  const status = Number(data?.status || data?.statusCode || data?.raw?.status || 0);
-  if (data && (data.error || status >= 400 || data.raw?.error)) {
-    throw new Error(data.message || data.error || data.raw?.message || data.raw?.error || 'Mercado Libre rechazo la modificacion');
-  }
-
-  return data || { ok: true };
+  return { ok: true, direct: true, sent: body, response: data };
 }
 
 async function fetchAllPublicationsFromN8n(cuenta, params = {}) {
@@ -815,6 +1034,65 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // OAuth Mercado Libre propio del panel.
+  // Uso:
+  // /api/meli/oauth/start?cuenta=tlc
+  // /api/meli/oauth/start?cuenta=topshop
+  if (req.method === 'GET' && pathName === '/api/meli/oauth/start') {
+    try {
+      const cuenta = normalizeCuentaKey(u.searchParams.get('cuenta') || 'tlc');
+      const cfg = getMeliOAuthConfig(cuenta);
+      if (!cfg.appId) {
+        jsonResp(res, 400, { error: `Falta MELI_APP_ID_${cfg.suffix} o MELI_CLIENT_ID_${cfg.suffix} en Railway.` });
+        return;
+      }
+      const redirectUri = getMeliRedirectUri(req);
+      const auth = new URL('https://auth.mercadolibre.com.uy/authorization');
+      auth.searchParams.set('response_type', 'code');
+      auth.searchParams.set('client_id', cfg.appId);
+      auth.searchParams.set('redirect_uri', redirectUri);
+      auth.searchParams.set('state', cuenta);
+      res.writeHead(302, { Location: auth.toString() });
+      res.end();
+    } catch (e) {
+      jsonResp(res, 500, { error: e.message });
+    }
+    return;
+  }
+
+  if (req.method === 'GET' && pathName === '/api/meli/oauth/callback') {
+    (async () => {
+      try {
+        const code = u.searchParams.get('code') || '';
+        const cuenta = normalizeCuentaKey(u.searchParams.get('state') || u.searchParams.get('cuenta') || 'tlc');
+        if (!code) {
+          jsonResp(res, 400, { error: 'Mercado Libre no devolvio code.' });
+          return;
+        }
+        const data = await exchangeMeliAuthorizationCode(cuenta, code, req);
+        const cfg = getMeliOAuthConfig(cuenta);
+        const token = String(data.refresh_token || '');
+        const html = `<!doctype html><html><head><meta charset="utf-8"><title>Mercado Libre conectado</title><style>body{font-family:Arial,sans-serif;background:#f6f8f6;color:#102010;padding:32px}code,textarea{width:100%;box-sizing:border-box}textarea{height:120px;margin-top:10px;padding:12px} .box{max-width:900px;background:white;border:1px solid #d9e2d9;border-radius:12px;padding:24px}</style></head><body><div class="box"><h1>Cuenta ${cfg.suffix} conectada</h1><p>Copiá este refresh token y guardalo en Railway como <strong>MELI_REFRESH_TOKEN_${cfg.suffix}</strong>.</p><textarea readonly onclick="this.select()">${token.replace(/</g,'&lt;')}</textarea><p>Redirect usado: <code>${String(data.redirect_uri || '').replace(/</g,'&lt;')}</code></p><p>Después de guardarlo en Railway, podés cerrar esta pestaña.</p></div></body></html>`;
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(html);
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(`<h1>Error OAuth Mercado Libre</h1><pre>${String(e.message || e).replace(/</g,'&lt;')}</pre>`);
+      }
+    })();
+    return;
+  }
+
+  if (req.method === 'GET' && pathName === '/api/meli/oauth/status') {
+    const store = loadMeliOAuthStore();
+    jsonResp(res, 200, {
+      tlc: { hasRefreshToken: !!(store.tlc && store.tlc.refresh_token), obtainedAt: store.tlc?.obtained_at || null, lastRefresh: store.tlc?.last_access_token_refresh || null },
+      topshop: { hasRefreshToken: !!(store.topshop && store.topshop.refresh_token), obtainedAt: store.topshop?.obtained_at || null, lastRefresh: store.topshop?.last_access_token_refresh || null },
+      updatedAt: store.updatedAt || null,
+    });
+    return;
+  }
+
   // Si alguien entra al login, enviarlo directo al panel.
   if (pathName === '/login.html' || pathName === '/login') {
     res.writeHead(302, { 'Location': '/index.html' });
@@ -1171,7 +1449,7 @@ const server = http.createServer((req, res) => {
           if (refresh) {
             for (const cuenta of ['tlc', 'topshop']) {
               try {
-                const items = await fetchAllPublicationsFromN8n(cuenta, {});
+                const items = await fetchAllPublicationsDirect(cuenta, {});
                 cache[cuenta] = items;
               } catch (e) {
                 errors.push({ cuenta, message: e.message });
@@ -1184,7 +1462,7 @@ const server = http.createServer((req, res) => {
               id: crypto.randomBytes(8).toString('hex'),
               at: new Date().toISOString(),
               type: 'sync_publications',
-              message: errors.length ? 'Sincronizacion parcial: una o mas cuentas no respondieron desde n8n.' : 'Publicaciones sincronizadas desde n8n.',
+              message: errors.length ? 'Sincronizacion parcial: una o mas cuentas no respondieron desde Mercado Libre directo.' : 'Publicaciones sincronizadas directo desde Mercado Libre.',
               user: session.username,
             });
             savePublicationsCache(cache);
@@ -1488,11 +1766,11 @@ server.listen(PORT, '0.0.0.0', () => {
   loadInboxState(); // crea data/inbox-state.json si es primera vez
   loadAuditLog(); // crea data/audit-log.json si es primera vez
   loadPublicationsCache(); // crea data/publications-cache.json si es primera vez
-  const autoMs = Number(process.env.PUBLICATIONS_LINKED_AUTO_SYNC_MS || 300000);
+  const autoMs = Number(process.env.PUBLICATIONS_LINKED_AUTO_SYNC_MS || 0);
   if (autoMs > 0) setInterval(runAutoLinkedSync, autoMs);
   console.log('');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('  TELOCONSIGO + TOP SHOP — Panel v36 (login desactivado)');
+  console.log('  TELOCONSIGO + TOP SHOP — Panel v38 (Publicaciones sin n8n)');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
   console.log(`  ✓ Servidor activo: http://localhost:${PORT}`);
@@ -1500,8 +1778,8 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`  ✓ ADS TOP SHOP:    ${WEBHOOKS.topshop}`);
   console.log(`  ✓ INBOX TLC:       ${INBOX_WEBHOOKS.tlc}`);
   console.log(`  ✓ INBOX TOP SHOP:  ${INBOX_WEBHOOKS.topshop}`);
-  console.log(`  ✓ PUB TLC:         ${PUBLICATIONS_WEBHOOKS.tlc}`);
-  console.log(`  ✓ PUB TOP SHOP:    ${PUBLICATIONS_WEBHOOKS.topshop}`);
+  console.log(`  ✓ PUB TLC OAuth: ${process.env.MELI_REFRESH_TOKEN_TLC || process.env.MELI_ACCESS_TOKEN_TLC ? 'configurado' : 'FALTA MELI_REFRESH_TOKEN_TLC'}`);
+  console.log(`  ✓ PUB TOP OAuth: ${process.env.MELI_REFRESH_TOKEN_TOPSHOP || process.env.MELI_ACCESS_TOKEN_TOPSHOP ? 'configurado' : 'FALTA MELI_REFRESH_TOKEN_TOPSHOP'}`);
   console.log('');
   console.log('  Abrí http://localhost:8080 en Chrome');
   console.log('');
