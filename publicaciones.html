@@ -70,6 +70,10 @@
   .result-card{padding:10px 12px;border-bottom:1px solid var(--border);cursor:pointer;display:grid;gap:4px;}
   .result-card:last-child{border-bottom:0;}
   .result-card:hover,.result-card.active{background:var(--green-light);}
+  .result-card.checkrow{grid-template-columns:24px 1fr;align-items:start;gap:10px;}
+  .result-card.checkrow input{width:18px;height:18px;accent-color:var(--green);margin-top:2px;}
+  .result-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:2px 0 4px;}
+  .selected-count-box{border:1px solid var(--green-border);background:var(--green-light);border-radius:10px;padding:10px 12px;color:var(--green);font-size:.82rem;font-weight:800;}
   .result-title{font-weight:800;font-size:.82rem;color:var(--text);line-height:1.25;}
   .result-meta{font-size:.72rem;color:var(--muted);line-height:1.35;}
   .result-meta strong{color:var(--green);}
@@ -175,22 +179,28 @@ html, body, body *:not(.logo-text):not(.hdr-logo):not(.brand):not(.brand-logo):n
       </section>
       <section class="modal-section" id="section-manual">
         <div class="manual-box">
-          <p class="modal-note">Buscá una publicación maestra TLC y luego seleccioná una o varias publicaciones TLC secundarias o TOP SHOP para vincularlas al mismo grupo. Podés cambiar la cuenta y seguir sumando vinculadas antes de guardar.</p>
+          <p class="modal-note">1) Elegí una publicación maestra TLC. 2) Buscá por SKU, título o MLU. 3) Marcá con el checkbox todas las publicaciones TLC o TOP SHOP que quieras vincular a esa maestra. 4) Tocá vincular.</p>
           <div class="manual-search-grid">
             <div class="search-panel">
-              <label>Buscar publicación TLC<input class="input" id="manual-tlc" placeholder="Ej: 6787, HW58 o MLU678788226" oninput="manualSearchChanged('tlc')" autocomplete="off"></label>
+              <label>Publicación maestra TLC<input class="input" id="manual-tlc" placeholder="Buscar maestra TLC por SKU, título o MLU" oninput="manualSearchChanged('tlc')" autocomplete="off"></label>
               <div class="result-list" id="manual-tlc-results"><div class="empty">Escribí al menos 2 caracteres.</div></div>
-              <div class="selected-preview empty-preview" id="manual-tlc-preview">Todavía no seleccionaste publicación TLC.</div>
+              <div class="selected-preview empty-preview" id="manual-tlc-preview">Todavía no seleccionaste publicación maestra TLC.</div>
             </div>
             <div class="search-panel">
-              <label>Cuenta vinculada<select class="input" id="manual-child-cuenta" onchange="manualSearchChanged('child')"><option value="topshop">TOP SHOP</option><option value="tlc">TLC secundaria</option></select></label><label>Buscar publicación a vincular<input class="input" id="manual-topshop" placeholder="Ej: 6787, HW58 o MLU678801308" oninput="manualSearchChanged('child')" autocomplete="off"></label>
+              <label>Cuenta a vincular<select class="input" id="manual-child-cuenta" onchange="manualSearchChanged('child')"><option value="topshop">TOP SHOP</option><option value="tlc">TLC secundaria</option></select></label>
+              <label>Buscar publicaciones a vincular<input class="input" id="manual-topshop" placeholder="Ej: 649795462, MON 802021 o MLU1055734820" oninput="manualSearchChanged('child')" autocomplete="off"></label>
+              <div class="result-toolbar">
+                <button class="btn" onclick="selectManualChildResults(true)">Seleccionar resultados</button>
+                <button class="btn" onclick="selectManualChildResults(false)">Quitar resultados</button>
+              </div>
               <div class="result-list" id="manual-topshop-results"><div class="empty">Escribí al menos 2 caracteres.</div></div>
-              <div class="selected-preview empty-preview" id="manual-topshop-preview">Todavía no seleccionaste publicaciones vinculadas.</div>
+              <div class="selected-count-box" id="manual-selected-count">0 publicaciones seleccionadas para vincular.</div>
+              <div class="selected-preview empty-preview" id="manual-topshop-preview" style="display:none">Todavía no seleccionaste publicaciones vinculadas.</div>
             </div>
           </div>
           <div class="modal-actions">
-            <button class="btn primary" onclick="manualLink()">Vincular seleccionadas a maestra TLC</button>
-            <button class="btn" onclick="clearManualLinkSelection()">Limpiar selección</button>
+            <button class="btn primary" onclick="manualLink()">Vincular checkeadas a maestra TLC</button>
+            <button class="btn" onclick="clearManualLinkSelection()">Limpiar todo</button>
           </div>
         </div>
       </section>
@@ -442,43 +452,88 @@ function renderManualSearch(cuenta){
   const results=manualSearchResults(cuenta,term);
   if(normalizeSearchText(term).length<2){box.innerHTML='<div class="empty">Escribí al menos 2 caracteres.</div>';return;}
   if(!results.length){box.innerHTML='<div class="empty">No encontré publicaciones para esa búsqueda.</div>';return;}
+  if(cuenta==='child'){
+    box.innerHTML=results.map(r=>{
+      const id=esc(r.id||r.mlu||'');
+      const key=esc(rowKey(r));
+      const active=isManualChildSelected(r) ? ' active' : '';
+      const checked=isManualChildSelected(r) ? 'checked' : '';
+      return `<div class="result-card checkrow${active}" onclick="toggleManualChild('${key}')">
+        <input type="checkbox" ${checked} onclick="event.stopPropagation();toggleManualChild('${key}')">
+        <div>
+          <div class="result-title">${esc(r.title||'Sin título')}</div>
+          <div class="result-meta"><strong>${id}</strong> · ${accountBadge(r.account||r.cuenta)} · SKU: <strong>${esc(r.sku||'Sin SKU')}</strong></div>
+          <div class="result-meta">Stock: ${esc(r.stock??r.available_quantity??0)} · Precio: ${money(r.price,r.currency_id||r.currency)} · Estado: ${esc(r.status||'')}</div>
+        </div>
+      </div>`;
+    }).join('');
+    updateManualSelectedCount();
+    return;
+  }
   box.innerHTML=results.map(r=>{
     const id=esc(r.id||r.mlu||'');
     const key=esc(rowKey(r));
-    const active=cuenta==='child' ? (isManualChildSelected(r) ? ' active' : '') : (MANUAL_SELECTED.tlc && rowKey(MANUAL_SELECTED.tlc)===rowKey(r) ? ' active' : '');
-    return `<div class="result-card${active}" onclick="selectManualPublication('${cuenta}','${key}')">
+    const active=MANUAL_SELECTED.tlc && rowKey(MANUAL_SELECTED.tlc)===rowKey(r) ? ' active' : '';
+    return `<div class="result-card${active}" onclick="selectManualPublication('tlc','${key}')">
       <div class="result-title">${esc(r.title||'Sin título')}</div>
       <div class="result-meta"><strong>${id}</strong> · SKU: <strong>${esc(r.sku||'Sin SKU')}</strong></div>
       <div class="result-meta">Stock: ${esc(r.stock??r.available_quantity??0)} · Precio: ${money(r.price,r.currency_id||r.currency)} · Estado: ${esc(r.status||'')}</div>
     </div>`;
   }).join('');
 }
+function toggleManualChild(key){
+  const row=(DATA.publications||[]).find(r=>rowKey(r)===key);
+  if(!row) return;
+  if(MANUAL_SELECTED.tlc && accountKey(row)==='tlc' && normalizeMlu(row.id||row.mlu)===normalizeMlu(MANUAL_SELECTED.tlc.id||MANUAL_SELECTED.tlc.mlu)){
+    alert('La publicación maestra no puede vincularse a sí misma.');
+    return;
+  }
+  const ident=childIdentity(row);
+  const idx=MANUAL_SELECTED.children.findIndex(x=>childIdentity(x)===ident);
+  if(idx>=0) MANUAL_SELECTED.children.splice(idx,1);
+  else MANUAL_SELECTED.children.push(row);
+  renderManualSearch('child');
+  renderManualPreview('child',null);
+  updateManualSelectedCount();
+}
+function selectManualChildResults(checked){
+  const input=document.getElementById('manual-topshop');
+  const results=manualSearchResults('child',input?.value||'');
+  if(!results.length){alert('Primero buscá publicaciones para seleccionar.');return;}
+  for(const row of results){
+    if(MANUAL_SELECTED.tlc && accountKey(row)==='tlc' && normalizeMlu(row.id||row.mlu)===normalizeMlu(MANUAL_SELECTED.tlc.id||MANUAL_SELECTED.tlc.mlu)) continue;
+    const ident=childIdentity(row);
+    const idx=MANUAL_SELECTED.children.findIndex(x=>childIdentity(x)===ident);
+    if(checked && idx<0) MANUAL_SELECTED.children.push(row);
+    if(!checked && idx>=0) MANUAL_SELECTED.children.splice(idx,1);
+  }
+  renderManualSearch('child');
+  renderManualPreview('child',null);
+  updateManualSelectedCount();
+}
+function updateManualSelectedCount(){
+  const box=document.getElementById('manual-selected-count');
+  if(!box) return;
+  const total=(MANUAL_SELECTED.children||[]).length;
+  const tlc=(MANUAL_SELECTED.children||[]).filter(x=>accountKey(x)==='tlc').length;
+  const top=(MANUAL_SELECTED.children||[]).filter(x=>accountKey(x)==='topshop').length;
+  box.textContent=`${total} publicación(es) seleccionada(s): ${tlc} TLC secundaria(s) · ${top} TOP SHOP.`;
+}
+
 function selectManualPublication(cuenta,key){
   const row=(DATA.publications||[]).find(r=>rowKey(r)===key);
   if(!row) return;
-  if(cuenta==='child'){
-    if(MANUAL_SELECTED.tlc && accountKey(row)==='tlc' && normalizeMlu(row.id||row.mlu)===normalizeMlu(MANUAL_SELECTED.tlc.id||MANUAL_SELECTED.tlc.mlu)){
-      alert('La publicación maestra no puede vincularse a sí misma.');
-      return;
-    }
-    const ident=childIdentity(row);
-    const idx=MANUAL_SELECTED.children.findIndex(x=>childIdentity(x)===ident);
-    if(idx>=0) MANUAL_SELECTED.children.splice(idx,1);
-    else MANUAL_SELECTED.children.push(row);
-    renderManualSearch(cuenta);
-    renderManualPreview('child',null);
-    return;
-  }
   MANUAL_SELECTED.tlc=row;
   const input=document.getElementById('manual-tlc');
   if(input) input.value=(row.sku?row.sku+' - ':'')+(row.id||row.mlu||'');
-  // Si la nueva maestra estaba elegida como vinculada, la quitamos.
   MANUAL_SELECTED.children=MANUAL_SELECTED.children.filter(x=>!(accountKey(x)==='tlc' && normalizeMlu(x.id||x.mlu)===normalizeMlu(row.id||row.mlu)));
   renderManualSearch('tlc');
   renderManualSearch('child');
   renderManualPreview('tlc',row);
   renderManualPreview('child',null);
+  updateManualSelectedCount();
 }
+
 function renderManualPreview(cuenta,row){
   const box=document.getElementById(cuenta==='tlc'?'manual-tlc-preview':'manual-topshop-preview');
   if(!box) return;
@@ -513,7 +568,7 @@ function clearManualLinkSelection(){
   const a=document.getElementById('manual-tlc'), b=document.getElementById('manual-topshop');
   if(a) a.value=''; if(b) b.value='';
   renderManualSearch('tlc');renderManualSearch('child');
-  renderManualPreview('tlc',null);renderManualPreview('child',null);
+  renderManualPreview('tlc',null);renderManualPreview('child',null);updateManualSelectedCount();
 }
 function openLinkManager(){document.getElementById('link-modal').classList.add('open');setLinkTab(LINK_TAB||'suggestions');renderLinkManager();}
 function closeLinkManager(){document.getElementById('link-modal').classList.remove('open');}
