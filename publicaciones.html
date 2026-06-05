@@ -138,7 +138,7 @@ html, body, body *:not(.logo-text):not(.hdr-logo):not(.brand):not(.brand-logo):n
       <select id="statusFilter" onchange="resetPageAndRender()"><option value="all">Todos los estados</option><option value="active">Activas</option><option value="paused">Pausadas / revisar</option><option value="no_sku">Sin SKU</option><option value="supplier">Con proveedor</option><option value="no_supplier">Sin proveedor</option></select>
       <button class="btn primary" onclick="linkSelectedFromMain()">Vincular seleccionadas</button>
       <button class="btn" onclick="autoLinkVisibleBySku()">Vinculación automática SKU</button>
-      <button class="btn" onclick="openLinkManager()">Gestionar vínculos</button>
+      <button class="btn" onclick="openGroupsView()">Ver grupos vinculados</button><button class="btn" onclick="openLinkManager()">Gestionar vínculos</button>
       <div class="counter"><span>Mostradas: <strong id="visible-count">0</strong></span><span>Seleccionadas: <strong id="selected-count">0</strong></span></div>
     </div>
   </div>
@@ -490,7 +490,7 @@ function render(){
 }
 
 
-let LINK_TAB='suggestions';
+let LINK_TAB='linked';
 let MANUAL_SELECTED = { tlc: null, children: [] }; // tlc = maestra, children = varias TLC/TOPSHOP vinculadas
 function normalizeMlu(v){return String(v||'').trim().toUpperCase();}
 function getPubByCuentaId(cuenta,id){const aid=normalizeMlu(id);return (DATA.publications||[]).find(r=>accountKey(r)===cuenta && normalizeMlu(r.id||r.mlu)===aid);}
@@ -758,6 +758,120 @@ async function mirrorLinkedRow(sourceRow, originalBody, partial){
     peer.localEdited=true;
   }
   return data;
+}
+
+
+// Vista simple de grupos vinculados: maestra TLC -> varias TLC/TOP SHOP vinculadas.
+function openGroupsView(){
+  LINK_TAB='linked';
+  openLinkModal();
+}
+
+function groupLinkedRows(){
+  const linked = Array.isArray(DATA.linked) ? DATA.linked : [];
+  const groups = new Map();
+  function getByCuentaId(cuenta,id){
+    const ck = accountKey({cuenta});
+    return (DATA.publications||[]).find(r => accountKey(r)===ck && String(r.id||r.mlu||'')===String(id||'')) || null;
+  }
+  for(const link of linked){
+    const masterId = String(link.masterId || link.tlcId || (link.master && (link.master.id||link.master.mlu)) || '').trim();
+    const childCuenta = accountKey({cuenta: link.childCuenta || (link.topshop ? 'topshop' : 'tlc')});
+    const childId = String(link.childId || (link.child && (link.child.id||link.child.mlu)) || (link.topshop && (link.topshop.id||link.topshop.mlu)) || '').trim();
+    if(!masterId || !childId) continue;
+    const master = link.master || link.tlc || getByCuentaId('tlc', masterId) || {id:masterId, mlu:masterId, cuenta:'tlc', title:'Maestra TLC'};
+    const child = link.child || (childCuenta==='topshop' ? link.topshop : null) || getByCuentaId(childCuenta, childId) || {id:childId, mlu:childId, cuenta:childCuenta, title:'Publicación vinculada'};
+    if(!groups.has(masterId)) groups.set(masterId, {master, children:[]});
+    groups.get(masterId).children.push({link, childCuenta, childId, child});
+  }
+  return [...groups.values()].sort((a,b)=>String(a.master.title||'').localeCompare(String(b.master.title||''),'es'));
+}
+
+function renderLinkedTable(){
+  const box=document.getElementById('linked-table');
+  const counter=document.getElementById('linked-count');
+  if(!box) return;
+  const groups=groupLinkedRows();
+  const totalLinks=groups.reduce((sum,g)=>sum+g.children.length,0);
+  if(counter) counter.textContent = groups.length+' grupo(s), '+totalLinks+' publicación(es) vinculada(s).';
+  if(!groups.length){
+    box.innerHTML='<div class="empty">Todavía no hay grupos vinculados. Seleccioná publicaciones en la tabla principal y tocá “Vincular seleccionadas”.</div>';
+    return;
+  }
+  box.style.maxHeight='520px';
+  box.innerHTML = groups.map(g=>{
+    const m=g.master||{};
+    const masterId=esc(m.id||m.mlu||'');
+    const children=g.children.sort((a,b)=>String(a.childCuenta).localeCompare(String(b.childCuenta))||String((a.child.title||'')).localeCompare(String((b.child.title||'')),'es'));
+    return `<div style="border-bottom:1px solid var(--border);padding:14px;background:#fff;">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:10px;">
+        <div>
+          <div style="font-size:.68rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:900;margin-bottom:4px;">Maestra TLC</div>
+          <div style="font-weight:900;font-size:.94rem;line-height:1.25;">${esc(m.title||'Sin título')}</div>
+          <div class="result-meta"><strong>${masterId}</strong> · SKU: <strong>${esc(m.sku||'Sin SKU')}</strong> · Stock: ${esc(m.stock??m.available_quantity??0)} · Precio: ${money(m.price,m.currency_id||m.currency)}</div>
+          ${m.permalink?`<a href="${esc(m.permalink)}" target="_blank">Abrir maestra ↗</a>`:''}
+        </div>
+        <span class="pill ok">${children.length} vinculada(s)</span>
+      </div>
+      <table style="min-width:900px;width:100%;border-collapse:collapse;">
+        <thead><tr><th style="width:36px"><input type="checkbox" class="modal-check linked-check-group" data-master="${masterId}" onchange="toggleGroupLinkedChecks('${masterId}',this.checked)"></th><th>Cuenta</th><th>MLU</th><th>Título</th><th>SKU</th><th>Precio</th><th>Stock</th></tr></thead>
+        <tbody>
+          ${children.map(ch=>{
+            const c=ch.child||{};
+            const lid=esc(ch.link.linkId||ch.link.id||'');
+            return `<tr>
+              <td><input type="checkbox" class="modal-check linked-check linked-check-${masterId}" value="${lid}"></td>
+              <td>${accountBadge(ch.childCuenta)}</td>
+              <td><a href="${esc(c.permalink||'#')}" target="_blank">${esc(c.id||c.mlu||ch.childId)}</a></td>
+              <td>${esc(c.title||'')}</td>
+              <td><span class="sku">${esc(c.sku||'')}</span></td>
+              <td>${money(c.price,c.currency_id||c.currency)}</td>
+              <td>${esc(c.stock??c.available_quantity??0)}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`;
+  }).join('');
+}
+
+function toggleGroupLinkedChecks(masterId, checked){
+  document.querySelectorAll('.linked-check-'+CSS.escape(String(masterId))).forEach(ch=>ch.checked=checked);
+}
+
+function renderSuggestions(){
+  const box=document.getElementById('suggestions-table');
+  const counter=document.getElementById('suggestion-count');
+  if(!box) return;
+  const rows=(DATA.publications||[]).filter(r=>!r.linked && r.skuMatch && r.suggestedPeerId).slice(0,200);
+  if(counter) counter.textContent = rows.length+' sugerencia(s) por SKU.';
+  if(!rows.length){box.innerHTML='<div class="empty">No hay sugerencias únicas por SKU en este momento.</div>';return;}
+  box.innerHTML='<table><thead><tr><th>Cuenta</th><th>MLU</th><th>Título</th><th>SKU</th><th>Acción</th></tr></thead><tbody>'+rows.map(r=>`<tr><td>${accountBadge(accountKey(r))}</td><td>${esc(r.id||r.mlu||'')}</td><td>${esc(r.title||'')}</td><td><span class="sku">${esc(r.sku||'')}</span></td><td><button class="btn primary" onclick="linkSuggested('${rowKey(r)}')">Vincular</button></td></tr>`).join('')+'</tbody></table>';
+}
+
+function selectAllModal(type, checked){
+  const sel = type==='linked' ? '.linked-check' : '.modal-check';
+  document.querySelectorAll(sel).forEach(ch=>ch.checked=checked);
+}
+
+async function bulkUnlinkSelected(){
+  const ids=[...document.querySelectorAll('.linked-check:checked')].map(x=>x.value).filter(Boolean);
+  if(!ids.length){alert('Seleccioná al menos un vínculo para desvincular.');return;}
+  if(!confirm('¿Desvincular '+ids.length+' vínculo(s) seleccionado(s)?')) return;
+  showProgress('Desvinculando publicaciones','Quitando vínculos seleccionados...', {indeterminate:true});
+  let ok=0, fail=0;
+  for(const linkId of ids){
+    try{ await postPublicationAction({action:'unlink_publications',linkId}); ok++; }
+    catch(e){ console.warn('No se pudo desvincular',linkId,e); fail++; }
+  }
+  await loadPublications(false);
+  renderLinkManager();
+  hideProgress();
+  alert('Desvinculación terminada. OK: '+ok+' · Errores: '+fail);
+}
+
+async function bulkLinkSelected(){
+  alert('Para vinculación masiva usá la tabla principal: filtrá, marcá las publicaciones con checkbox y tocá “Vincular seleccionadas”.');
 }
 
 
