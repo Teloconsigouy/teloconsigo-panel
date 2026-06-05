@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════
 //  TELOCONSIGO + TOP SHOP — Panel de Control
-//  v38 — Publicaciones directo Mercado Libre, sin n8n
+//  v41 — Grupos de vinculación con maestra TLC
 // ═══════════════════════════════════════════════
 
 const http   = require('http');
@@ -552,44 +552,102 @@ async function fetchAllPublicationsFromN8n(cuenta, params = {}) {
   return all;
 }
 
+function cuentaKey(cuenta) {
+  return String(cuenta || '').toLowerCase().replace(/\s+/g, '').includes('top') ? 'topshop' : 'tlc';
+}
+
 function publicationIdKey(cuenta, id) {
-  return `${String(cuenta || '').toLowerCase().replace(/\s+/g,'').includes('top') ? 'topshop' : 'tlc'}::${String(id || '').trim()}`;
+  return `${cuentaKey(cuenta)}::${String(id || '').trim()}`;
 }
 
 function linkIdFromPair(tlcId, topshopId) {
   return `${publicationIdKey('tlc', tlcId)}__${publicationIdKey('topshop', topshopId)}`;
 }
 
-function getManualLinkFor(cache, cuenta, id) {
+function linkIdFromGroup(masterId, childCuenta, childId) {
+  return `group::${publicationIdKey('tlc', masterId)}__${publicationIdKey(childCuenta, childId)}`;
+}
+
+function normalizePublicationLinks(cache) {
   const links = cache.publicationLinks || {};
+  const normalized = {};
+  for (const [key, raw] of Object.entries(links)) {
+    if (!raw || raw.active === false) continue;
+    const masterId = String(raw.masterId || raw.tlcMasterId || raw.tlcId || '').trim();
+    if (!masterId) continue;
+    let childCuenta = cuentaKey(raw.childCuenta || (raw.topshopId ? 'topshop' : 'tlc'));
+    let childId = String(raw.childId || raw.topshopId || raw.secondaryTlcId || '').trim();
+    if (!childId) continue;
+    if (publicationIdKey('tlc', masterId) === publicationIdKey(childCuenta, childId)) continue;
+    const id = raw.id || linkIdFromGroup(masterId, childCuenta, childId);
+    normalized[id] = {
+      ...raw,
+      id,
+      active: true,
+      masterCuenta: 'tlc',
+      masterId,
+      childCuenta,
+      childId,
+      tlcId: masterId,
+      topshopId: childCuenta === 'topshop' ? childId : (raw.topshopId || ''),
+      secondaryTlcId: childCuenta === 'tlc' ? childId : (raw.secondaryTlcId || ''),
+    };
+  }
+  cache.publicationLinks = normalized;
+  return normalized;
+}
+
+function getManualLinkFor(cache, cuenta, id) {
+  const links = normalizePublicationLinks(cache);
   const key = publicationIdKey(cuenta, id);
   for (const link of Object.values(links)) {
     if (!link || link.active === false) continue;
-    if (publicationIdKey('tlc', link.tlcId) === key || publicationIdKey('topshop', link.topshopId) === key) {
-      return link;
-    }
+    if (publicationIdKey('tlc', link.masterId) === key || publicationIdKey(link.childCuenta, link.childId) === key) return link;
   }
   return null;
 }
 
+function getLinksForPublication(cache, cuenta, id) {
+  const links = normalizePublicationLinks(cache);
+  const key = publicationIdKey(cuenta, id);
+  return Object.values(links).filter(link => {
+    if (!link || link.active === false) return false;
+    return publicationIdKey('tlc', link.masterId) === key || publicationIdKey(link.childCuenta, link.childId) === key;
+  });
+}
+
+function findPublicationInCache(cache, cuenta, id) {
+  const key = String(id || '').trim();
+  const list = cuentaKey(cuenta) === 'topshop' ? (cache.topshop || []) : (cache.tlc || []);
+  return list.find(x => String(x.id || x.mlu || '') === key) || null;
+}
+
 function buildLinkedPublications(cache) {
   const rows = [];
-  const links = cache.publicationLinks || {};
+  const links = normalizePublicationLinks(cache);
   const tlcById = new Map((cache.tlc || []).map(item => [String(item.id || item.mlu || ''), item]));
   const topById = new Map((cache.topshop || []).map(item => [String(item.id || item.mlu || ''), item]));
 
   for (const link of Object.values(links)) {
     if (!link || link.active === false) continue;
-    const tlc = tlcById.get(String(link.tlcId || '')) || null;
-    const topshop = topById.get(String(link.topshopId || '')) || null;
-    const sku = link.sku || tlc?.sku || topshop?.sku || '';
+    const master = tlcById.get(String(link.masterId || '')) || null;
+    const child = link.childCuenta === 'topshop'
+      ? (topById.get(String(link.childId || '')) || null)
+      : (tlcById.get(String(link.childId || '')) || null);
+    const sku = link.sku || master?.sku || child?.sku || '';
     const supplier = sku ? (cache.supplierLinks[String(sku).toUpperCase()] || {}) : {};
     rows.push({
-      tlc,
-      topshop,
+      master,
+      child,
+      childCuenta: link.childCuenta,
+      childId: link.childId,
+      tlc: master,
+      topshop: link.childCuenta === 'topshop' ? child : null,
       sku,
       linked: true,
-      linkId: link.id || linkIdFromPair(link.tlcId, link.topshopId),
+      groupMode: true,
+      linkId: link.id || linkIdFromGroup(link.masterId, link.childCuenta, link.childId),
+      masterId: link.masterId,
       linkedAt: link.createdAt || null,
       supplierUrl: supplier.url || '',
       supplierPrice: supplier.price || null,
@@ -601,73 +659,71 @@ function buildLinkedPublications(cache) {
   return rows.sort((a,b) => String(a.sku || '').localeCompare(String(b.sku || ''), 'es'));
 }
 
-
 async function syncLinkedValuesFromTlcMaster(cache, username = 'sistema', options = {}) {
-  const links = Object.values(cache.publicationLinks || {}).filter(link => link && link.active !== false);
-  const tlcById = new Map((cache.tlc || []).map(item => [String(item.id || item.mlu || ''), item]));
-  const topById = new Map((cache.topshop || []).map(item => [String(item.id || item.mlu || ''), item]));
+  const links = Object.values(normalizePublicationLinks(cache)).filter(link => link && link.active !== false);
   const results = [];
   let okCount = 0;
   let errorCount = 0;
   let skippedCount = 0;
 
   for (const link of links) {
-    const tlcId = String(link.tlcId || '').trim();
-    const topshopId = String(link.topshopId || '').trim();
-    const tlcItem = tlcById.get(tlcId);
-    const topItem = topById.get(topshopId);
-    if (!tlcItem || !topItem) {
+    const masterId = String(link.masterId || '').trim();
+    const childCuenta = cuentaKey(link.childCuenta);
+    const childId = String(link.childId || '').trim();
+    const masterItem = findPublicationInCache(cache, 'tlc', masterId);
+    const childItem = findPublicationInCache(cache, childCuenta, childId);
+    if (!masterItem || !childItem) {
       skippedCount++;
-      results.push({ ok: false, skipped: true, tlcId, topshopId, message: 'No se encontro TLC o TOP SHOP en el cache actual.' });
+      results.push({ ok: false, skipped: true, masterId, childCuenta, childId, message: 'No se encontro la maestra TLC o la vinculada en el cache actual.' });
       continue;
     }
-    const stockMaster = Number(tlcItem.stock ?? tlcItem.available_quantity ?? 0);
-    const stockTopShop = Number(topItem.stock ?? topItem.available_quantity ?? 0);
-    const priceMaster = Number(tlcItem.price ?? 0);
-    const priceTopShop = Number(topItem.price ?? 0);
-    const currencyMaster = String(tlcItem.currency_id || tlcItem.currency || 'UYU').trim() || 'UYU';
-    const currencyTopShop = String(topItem.currency_id || topItem.currency || 'UYU').trim() || 'UYU';
+    const stockMaster = Number(masterItem.stock ?? masterItem.available_quantity ?? 0);
+    const stockChild = Number(childItem.stock ?? childItem.available_quantity ?? 0);
+    const priceMaster = Number(masterItem.price ?? 0);
+    const priceChild = Number(childItem.price ?? 0);
+    const currencyMaster = String(masterItem.currency_id || masterItem.currency || 'UYU').trim() || 'UYU';
+    const currencyChild = String(childItem.currency_id || childItem.currency || 'UYU').trim() || 'UYU';
     if (!Number.isFinite(stockMaster) || !Number.isFinite(priceMaster) || priceMaster <= 0) {
       skippedCount++;
-      results.push({ ok: false, skipped: true, tlcId, topshopId, message: 'Stock o precio maestro TLC invalido.' });
+      results.push({ ok: false, skipped: true, masterId, childCuenta, childId, message: 'Stock o precio de maestra TLC invalido.' });
       continue;
     }
-    const needsStock = stockMaster !== stockTopShop;
-    const needsPrice = priceMaster !== priceTopShop;
-    const needsCurrency = currencyMaster !== currencyTopShop;
+    const needsStock = stockMaster !== stockChild;
+    const needsPrice = priceMaster !== priceChild;
+    const needsCurrency = currencyMaster !== currencyChild;
     if (!needsStock && !needsPrice && !needsCurrency) {
       skippedCount++;
-      results.push({ ok: true, skipped: true, tlcId, topshopId, stock: stockMaster, price: priceMaster, currency_id: currencyMaster, message: 'Ya estaba sincronizado.' });
+      results.push({ ok: true, skipped: true, masterId, childCuenta, childId, stock: stockMaster, price: priceMaster, currency_id: currencyMaster, message: 'Ya estaba sincronizado.' });
       continue;
     }
-    const payload = { id: topshopId, mlu: topshopId, source: options.source || 'sync_linked_values_tlc_master', tlcMasterId: tlcId };
+    const payload = { id: childId, mlu: childId, source: options.source || 'sync_group_values_tlc_master', tlcMasterId: masterId };
     if (needsStock) { payload.stock = stockMaster; payload.available_quantity = stockMaster; }
     if (needsPrice) payload.price = priceMaster;
     if (needsCurrency) payload.currency_id = currencyMaster;
     try {
       let meli;
       try {
-        meli = await updatePublicationOnMeli('topshop', payload);
+        meli = await updatePublicationOnMeli(childCuenta, payload);
       } catch (err) {
         const msg = String(err && err.message ? err.message : err);
         if ((payload.currency_id || payload.stock !== undefined) && payload.price !== undefined && /has_bids|Cannot update item|cannot update item|currency|moneda/i.test(msg)) {
-          meli = await updatePublicationOnMeli('topshop', { id: topshopId, mlu: topshopId, price: priceMaster, source: 'sync_linked_values_price_fallback', tlcMasterId: tlcId });
+          meli = await updatePublicationOnMeli(childCuenta, { id: childId, mlu: childId, price: priceMaster, source: 'sync_group_values_price_fallback', tlcMasterId: masterId });
           meli = { ...(meli || {}), ok: true, partial: true, warning: 'Mercado Libre rechazo stock/moneda. Se reintento solo precio.' };
         } else {
           throw err;
         }
       }
       if (!meli || !meli.partial) {
-        if (needsStock) { topItem.stock = stockMaster; topItem.available_quantity = stockMaster; }
-        if (needsCurrency) topItem.currency_id = currencyMaster;
+        if (needsStock) { childItem.stock = stockMaster; childItem.available_quantity = stockMaster; }
+        if (needsCurrency) childItem.currency_id = currencyMaster;
       }
-      if (needsPrice) topItem.price = priceMaster;
-      topItem.lastLinkedSyncFromTlc = new Date().toISOString();
+      if (needsPrice) childItem.price = priceMaster;
+      childItem.lastLinkedSyncFromTlc = new Date().toISOString();
       okCount++;
-      results.push({ ok: true, partial: !!(meli && meli.partial), warning: meli && meli.warning, tlcId, topshopId, stock: stockMaster, price: priceMaster, currency_id: currencyMaster });
+      results.push({ ok: true, partial: !!(meli && meli.partial), warning: meli && meli.warning, masterId, childCuenta, childId, stock: stockMaster, price: priceMaster, currency_id: currencyMaster });
     } catch (e) {
       errorCount++;
-      results.push({ ok: false, tlcId, topshopId, message: e.message });
+      results.push({ ok: false, masterId, childCuenta, childId, message: e.message });
     }
   }
   cache.lastAutoLinkedSyncAt = new Date().toISOString();
@@ -676,12 +732,12 @@ async function syncLinkedValuesFromTlcMaster(cache, username = 'sistema', option
       id: crypto.randomBytes(8).toString('hex'),
       at: new Date().toISOString(),
       type: options.source || 'sync_linked_values',
-      message: `Vinculados sincronizados desde TLC: ${okCount} ok, ${skippedCount} sin cambios, ${errorCount} errores.`,
+      message: `Grupos sincronizados desde maestra TLC: ${okCount} ok, ${skippedCount} sin cambios, ${errorCount} errores.`,
       user: username,
     });
   }
   savePublicationsCache(cache);
-  return { ok: errorCount === 0, okCount, skippedCount, errorCount, results, message: `Vinculados sincronizados desde TLC: ${okCount} ok, ${skippedCount} sin cambios, ${errorCount} errores.` };
+  return { ok: errorCount === 0, okCount, skippedCount, errorCount, results, message: `Grupos sincronizados desde maestra TLC: ${okCount} ok, ${skippedCount} sin cambios, ${errorCount} errores.` };
 }
 
 let AUTO_LINKED_SYNC_RUNNING = false;
@@ -690,7 +746,7 @@ async function runAutoLinkedSync() {
   AUTO_LINKED_SYNC_RUNNING = true;
   try {
     const cache = loadPublicationsCache();
-    const count = Object.values(cache.publicationLinks || {}).filter(link => link && link.active !== false).length;
+    const count = Object.values(normalizePublicationLinks(cache)).filter(link => link && link.active !== false).length;
     if (count > 0) await syncLinkedValuesFromTlcMaster(cache, 'sistema', { silent: true, source: 'auto_sync_linked_values' });
   } catch (e) {
     console.error('Auto sync vinculados:', e.message);
@@ -1518,35 +1574,69 @@ const server = http.createServer((req, res) => {
           }
 
 
-          if (postAction === 'link_publications') {
-            const tlcId = String(body.tlcId || body.tlc || '').trim();
-            const topshopId = String(body.topshopId || body.topshop || '').trim();
-            if (!tlcId || !topshopId) { jsonResp(res, 400, { error: 'Falta tlcId o topshopId' }); return; }
-            const tlcItem = (cache.tlc || []).find(x => String(x.id || x.mlu || '') === tlcId);
-            const topItem = (cache.topshop || []).find(x => String(x.id || x.mlu || '') === topshopId);
-            if (!tlcItem || !topItem) { jsonResp(res, 404, { error: 'No se encontro una de las publicaciones para vincular' }); return; }
-            const linkId = linkIdFromPair(tlcId, topshopId);
-            cache.publicationLinks[linkId] = {
-              id: linkId,
-              tlcId,
-              topshopId,
-              sku: String(body.sku || tlcItem.sku || topItem.sku || '').trim(),
-              active: true,
-              createdAt: cache.publicationLinks[linkId]?.createdAt || new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-              updatedBy: session.username,
-            };
+          if (postAction === 'link_publications' || postAction === 'link_to_master') {
+            const masterTlcId = String(body.masterTlcId || body.masterId || body.tlcId || body.tlc || '').trim();
+            if (!masterTlcId) { jsonResp(res, 400, { error: 'Falta masterTlcId o tlcId' }); return; }
+            const masterItem = (cache.tlc || []).find(x => String(x.id || x.mlu || '') === masterTlcId);
+            if (!masterItem) { jsonResp(res, 404, { error: 'No se encontro la publicacion maestra TLC' }); return; }
+
+            let items = Array.isArray(body.items) ? body.items : [];
+            if (!items.length) {
+              if (body.topshopId || body.topshop) items.push({ cuenta: 'topshop', id: body.topshopId || body.topshop });
+              if (body.childTlcId || body.secondaryTlcId) items.push({ cuenta: 'tlc', id: body.childTlcId || body.secondaryTlcId });
+              if (body.childId) items.push({ cuenta: body.childCuenta || body.cuenta || 'topshop', id: body.childId });
+            }
+            items = items.map(it => ({ cuenta: cuentaKey(it.cuenta || it.account || it.childCuenta || 'topshop'), id: String(it.id || it.mlu || it.childId || '').trim() }))
+              .filter(it => it.id && publicationIdKey(it.cuenta, it.id) !== publicationIdKey('tlc', masterTlcId));
+            if (!items.length) { jsonResp(res, 400, { error: 'Falta al menos una publicacion vinculada' }); return; }
+
+            normalizePublicationLinks(cache);
+            const created = [];
+            const errors = [];
+            for (const it of items) {
+              const childItem = it.cuenta === 'topshop'
+                ? (cache.topshop || []).find(x => String(x.id || x.mlu || '') === it.id)
+                : (cache.tlc || []).find(x => String(x.id || x.mlu || '') === it.id);
+              if (!childItem) { errors.push(`No se encontro ${it.cuenta} ${it.id}`); continue; }
+
+              // Una publicación secundaria puede depender de una sola maestra.
+              for (const [existingKey, existingLink] of Object.entries(cache.publicationLinks || {})) {
+                if (!existingLink) continue;
+                if (publicationIdKey(existingLink.childCuenta, existingLink.childId) === publicationIdKey(it.cuenta, it.id)) {
+                  delete cache.publicationLinks[existingKey];
+                }
+              }
+
+              const linkId = linkIdFromGroup(masterTlcId, it.cuenta, it.id);
+              cache.publicationLinks[linkId] = {
+                id: linkId,
+                active: true,
+                masterCuenta: 'tlc',
+                masterId: masterTlcId,
+                childCuenta: it.cuenta,
+                childId: it.id,
+                tlcId: masterTlcId,
+                topshopId: it.cuenta === 'topshop' ? it.id : '',
+                secondaryTlcId: it.cuenta === 'tlc' ? it.id : '',
+                sku: String(body.sku || masterItem.sku || childItem.sku || '').trim(),
+                createdAt: cache.publicationLinks[linkId]?.createdAt || new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                updatedBy: session.username,
+              };
+              created.push(cache.publicationLinks[linkId]);
+            }
+
             cache.movements.push({
               id: crypto.randomBytes(8).toString('hex'),
               at: new Date().toISOString(),
-              type: 'link_publications',
-              sku: cache.publicationLinks[linkId].sku,
-              message: `Se vincularon ${tlcId} y ${topshopId}.`,
+              type: 'link_publications_group',
+              sku: String(body.sku || masterItem.sku || '').trim(),
+              message: `Se vincularon ${created.length} publicacion(es) a la maestra TLC ${masterTlcId}.`,
               user: session.username,
             });
             savePublicationsCache(cache);
-            audit(session, 'publications_link', { tlcId, topshopId });
-            jsonResp(res, 200, { ok: true, link: cache.publicationLinks[linkId], publications: buildFlatPublications(cache), linked: buildLinkedPublications(cache) });
+            audit(session, 'publications_link_group', { masterTlcId, created: created.length, errors });
+            jsonResp(res, 200, { ok: true, links: created, errors, publications: buildFlatPublications(cache), linked: buildLinkedPublications(cache) });
             return;
           }
 
@@ -1642,6 +1732,23 @@ const server = http.createServer((req, res) => {
               }
             }
 
+            // Si se editó una publicación TLC que es maestra de un grupo,
+            // copiamos precio/stock a todas sus vinculadas (TLC secundarias y TOP SHOP).
+            let groupSyncResult = null;
+            if (postAction === 'edit_meli' && cuenta === 'tlc' && (body.price !== undefined || body.stock !== undefined)) {
+              const hasChildren = Object.values(normalizePublicationLinks(cache)).some(link => link && String(link.masterId || '') === id);
+              if (hasChildren) {
+                // Actualizamos la maestra en cache antes de sincronizar para que tome los valores nuevos.
+                const masterItem = (cache.tlc || []).find(x => String(x.id || x.mlu || '') === id);
+                if (masterItem) {
+                  if (body.price !== undefined) masterItem.price = Number(body.price);
+                  if (body.stock !== undefined) { masterItem.stock = Number(body.stock); masterItem.available_quantity = Number(body.stock); }
+                  if (body.currency_id !== undefined) masterItem.currency_id = body.currency_id;
+                }
+                groupSyncResult = await syncLinkedValuesFromTlcMaster(cache, session.username, { source: 'sync_group_after_master_edit', silent: false });
+              }
+            }
+
             const key = `${cuenta}::${id}`;
             const previous = cache.localEdits[key] || {};
             const next = { ...previous };
@@ -1672,7 +1779,7 @@ const server = http.createServer((req, res) => {
             });
             savePublicationsCache(cache);
             audit(session, postAction === 'edit_meli' ? 'publications_edit_meli' : 'publications_edit_local', { cuenta, id });
-            jsonResp(res, 200, { ok: true, item: cache.localEdits[key], meli: meliResult });
+            jsonResp(res, 200, { ok: true, item: cache.localEdits[key], meli: meliResult, groupSync: groupSyncResult });
             return;
           }
 
