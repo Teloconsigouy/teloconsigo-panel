@@ -1,12 +1,15 @@
 // ═══════════════════════════════════════════════
 //  TELOCONSIGO + TOP SHOP — Panel de Control
-//  v41 — Grupos de vinculación con maestra TLC
+//  v49 LOCAL DEV — Publicaciones directas MeLi + vinculaciones simples
 // ═══════════════════════════════════════════════
 
 const http   = require('http');
 const fs     = require('fs');
 const path   = require('path');
 const crypto = require('crypto');
+
+// Carga variables locales desde .env cuando se ejecuta en PC. En Railway usa Variables.
+try { require('dotenv').config(); } catch {}
 
 const PORT = 8080;
 
@@ -900,6 +903,281 @@ function cleanExpiredInboxState(data) {
 }
 
 
+// ── Mercado Libre directo: Bandeja MeLi sin n8n ───────────────────────────
+const MELI_SELLER_ID_CACHE = {};
+const MLU_AGENT_ID = process.env.MELI_MLU_AGENT_ID || '3037204685';
+
+async function getMeliSellerIdCached(cuenta) {
+  const key = normalizeCuentaKey(cuenta);
+  if (MELI_SELLER_ID_CACHE[key]) return MELI_SELLER_ID_CACHE[key];
+  const id = await fetchMeliSellerId(key);
+  MELI_SELLER_ID_CACHE[key] = String(id);
+  return String(id);
+}
+
+function toIntSafe(v, def = 50, max = 100) {
+  const n = parseInt(String(v || ''), 10);
+  if (!Number.isFinite(n) || n <= 0) return def;
+  return Math.min(n, max);
+}
+
+function qsFrom(obj) {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(obj || {})) {
+    if (v !== undefined && v !== null && String(v) !== '') qs.set(k, String(v));
+  }
+  return qs.toString();
+}
+
+function firstList(data, keys = []) {
+  if (Array.isArray(data)) return data;
+  for (const k of keys) if (Array.isArray(data?.[k])) return data[k];
+  return data?.results || data?.data || data?.messages || data?.questions || data?.claims || [];
+}
+
+async function tryMeliPaths(cuenta, paths, options = {}) {
+  const errors = [];
+  for (const path of paths) {
+    try {
+      const data = await meliApi(cuenta, path, options);
+      return { data, path };
+    } catch (e) {
+      errors.push(`${path}: ${e.message}`);
+    }
+  }
+  throw new Error(errors.join(' | '));
+}
+
+async function meliInboxQuestions(cuenta, params) {
+  const sellerId = await getMeliSellerIdCached(cuenta);
+  const limit = toIntSafe(params.get('limit'), 50, 100);
+  const status = params.get('status') || 'UNANSWERED';
+  const q = qsFrom({ seller_id: sellerId, seller: sellerId, status, limit, api_version: 4, sort_fields: 'date_created', sort_types: 'DESC' });
+  const { data, path } = await tryMeliPaths(cuenta, [`/questions/search?${q}`]);
+  const questions = firstList(data, ['questions', 'results']);
+  return { ok: true, source: 'meli-direct', action: 'questions', cuenta: normalizeCuentaKey(cuenta), seller_id: sellerId, path, questions, results: questions, raw: data };
+}
+
+async function meliInboxAnswerQuestion(cuenta, body) {
+  const questionId = body.question_id || body.id || body.questionId;
+  const text = String(body.text || body.answer || '').trim();
+  if (!questionId) throw new Error('Falta question_id para responder la pregunta.');
+  if (!text) throw new Error('Falta texto para responder la pregunta.');
+  const data = await meliApi(cuenta, '/answers', { method: 'POST', body: { question_id: Number(questionId) || questionId, text } });
+  return { ok: true, source: 'meli-direct', action: 'answer', cuenta: normalizeCuentaKey(cuenta), question_id: questionId, data };
+}
+
+function msgPackId(m) {
+  const resources = Array.isArray(m?.message_resources) ? m.message_resources : [];
+  const pack = resources.find(r => String(r.name || r.type || '').toLowerCase().includes('pack'));
+  const direct = m?.pack_id || m?.packId || m?.resource_id || m?.resourceId || pack?.id || '';
+  return String(direct).replace(/\D/g, '') || String(direct || '');
+}
+
+function orderPackId(o) {
+  const pack = o?.pack_id || o?.packId || o?.pack?.id || o?.pack?.pack_id || '';
+  const orderId = o?.id || o?.order_id || o?.orderId || '';
+  return String(pack || orderId || '').replace(/\D/g, '') || String(pack || orderId || '');
+}
+
+function messageDateValue(m) {
+  return m?.message_date?.received || m?.message_date?.created || m?.date_received || m?.date_created || m?.created_at || m?.updated_at || '';
+}
+
+function messageTextValue(m) {
+  if (typeof m?.text === 'string') return m.text;
+  return m?.text?.plain || m?.message || m?.snippet || m?.subject || '';
+}
+
+function isBuyerMessage(m, sellerId) {
+  const fromId = m?.from?.user_id || m?.from_id || '';
+  return fromId && String(fromId) !== String(sellerId);
+}
+
+function isUnreadBuyerMessage(m, sellerId) {
+  const read = m?.message_date?.read || m?.date_read || m?.read_at;
+  return isBuyerMessage(m, sellerId) && !read;
+}
+
+async function fetchRecentOrderPackIds(cuenta, sellerId, limit) {
+  const q = qsFrom({ seller: sellerId, sort: 'date_desc', limit: Math.min(limit, 50) });
+  const { data, path } = await tryMeliPaths(cuenta, [`/orders/search?${q}`, `/orders/search?seller_id=${sellerId}&sort=date_desc&limit=${Math.min(limit, 50)}`]);
+  const orders = firstList(data, ['results', 'orders']);
+  const packIds = [];
+  for (const o of orders) {
+    const id = orderPackId(o);
+    if (id && !packIds.includes(id)) packIds.push(id);
+  }
+  return { packIds, ordersPath: path, ordersRaw: data };
+}
+
+async function getMessagesForPack(cuenta, packId, sellerId, markAsRead = 'false') {
+  const q = qsFrom({ tag: 'post_sale', mark_as_read: markAsRead });
+  const { data, path } = await tryMeliPaths(cuenta, [
+    `/messages/packs/${packId}/sellers/${sellerId}?${q}`,
+    `/messages/packs/${packId}/sellers/${sellerId}?mark_as_read=${markAsRead}`,
+  ]);
+  const messages = firstList(data, ['messages', 'results']);
+  return { data, path, messages };
+}
+
+async function meliInboxUnreadMessages(cuenta, params) {
+  const sellerId = await getMeliSellerIdCached(cuenta);
+  const limit = toIntSafe(params.get('limit'), 30, 50);
+
+  // Mercado Libre no ofrece una bandeja universal confiable sin notificaciones previas.
+  // Para que el panel local no dependa de n8n, se toman las ventas recientes y se consulta
+  // el hilo real de mensajes de cada pack/order. Así aparecen los mensajes aunque no haya
+  // webhook de notificaciones funcionando.
+  const { packIds, ordersPath } = await fetchRecentOrderPackIds(cuenta, sellerId, limit);
+  const out = [];
+  const errors = [];
+
+  for (const packId of packIds.slice(0, limit)) {
+    try {
+      const thread = await getMessagesForPack(cuenta, packId, sellerId, 'false');
+      const all = Array.isArray(thread.messages) ? thread.messages : [];
+      const unread = all.filter(m => isUnreadBuyerMessage(m, sellerId));
+      const buyerMessages = all.filter(m => isBuyerMessage(m, sellerId));
+      const candidates = unread.length ? unread : buyerMessages.slice(-1);
+      for (const m of candidates) {
+        out.push({
+          ...m,
+          pack_id: packId,
+          _packId: packId,
+          _source: unread.length ? 'unread' : 'latest_buyer_message',
+          _thread_path: thread.path,
+          text: messageTextValue(m) || `Pack ${packId} con mensajes`,
+          date_created: messageDateValue(m),
+        });
+      }
+    } catch (e) {
+      errors.push({ pack_id: packId, message: e.message });
+    }
+  }
+
+  out.sort((a, b) => new Date(messageDateValue(b) || b.date_created || 0) - new Date(messageDateValue(a) || a.date_created || 0));
+  return {
+    ok: true,
+    source: 'meli-direct-orders-scan',
+    action: 'messages_unread',
+    cuenta: normalizeCuentaKey(cuenta),
+    seller_id: sellerId,
+    orders_path: ordersPath,
+    scanned_packs: packIds.length,
+    messages: out,
+    results: out,
+    errors,
+  };
+}
+
+async function meliInboxMessagesPack(cuenta, params) {
+  const sellerId = await getMeliSellerIdCached(cuenta);
+  const packId = params.get('pack_id') || params.get('packId');
+  if (!packId) throw new Error('Falta pack_id para leer el hilo de mensajes.');
+  const markAsRead = params.get('mark_as_read') || 'false';
+  const { data, path, messages } = await getMessagesForPack(cuenta, packId, sellerId, markAsRead);
+  return { ok: true, source: 'meli-direct', action: 'messages_pack', cuenta: normalizeCuentaKey(cuenta), seller_id: sellerId, pack_id: packId, path, messages, results: messages, raw: data };
+}
+
+async function meliInboxSendMessage(cuenta, body) {
+  const sellerId = await getMeliSellerIdCached(cuenta);
+  const packId = body.pack_id || body.packId;
+  const text = String(body.text || body.message || '').trim();
+  if (!packId) throw new Error('Falta pack_id para enviar el mensaje.');
+  if (!text) throw new Error('Falta texto para enviar el mensaje.');
+  const buyerId = body.buyer_id || body.buyerId || MLU_AGENT_ID;
+  const payload = { from: { user_id: sellerId }, to: { user_id: String(buyerId) }, text };
+  const data = await meliApi(cuenta, `/messages/packs/${packId}/sellers/${sellerId}?tag=post_sale`, { method: 'POST', body: payload });
+  return { ok: true, source: 'meli-direct', action: 'send_message', cuenta: normalizeCuentaKey(cuenta), seller_id: sellerId, pack_id: packId, data };
+}
+
+function pickClaimOrderId(claim) {
+  const direct = claim?.order_id || claim?.orderId || claim?.order?.id || claim?.purchase_id || claim?.purchaseId || claim?.sale_id || claim?.saleId;
+  if (direct) return String(direct).replace(/\D/g, '') || String(direct);
+  const refs = [];
+  if (Array.isArray(claim?.players)) {
+    for (const p of claim.players) {
+      refs.push(p?.order_id, p?.orderId, p?.order?.id, p?.purchase_id, p?.sale_id);
+      if (Array.isArray(p?.available_actions)) refs.push(...p.available_actions.map(a => a?.order_id || a?.orderId || a?.order?.id));
+    }
+  }
+  const found = refs.find(Boolean);
+  return found ? (String(found).replace(/\D/g, '') || String(found)) : '';
+}
+
+const shipmentOrderCache = {};
+async function getOrderIdFromShipment(cuenta, shipmentId) {
+  const clean = String(shipmentId || '').replace(/\D/g, '') || String(shipmentId || '');
+  if (!clean) return '';
+  const key = `${normalizeCuentaKey(cuenta)}:${clean}`;
+  if (shipmentOrderCache[key]) return shipmentOrderCache[key];
+  try {
+    const sh = await meliApi(cuenta, `/shipments/${clean}`);
+    const orderId = sh?.order_id || sh?.orderId || sh?.order?.id || sh?.orders?.[0]?.id || sh?.shipping_option?.order_id || '';
+    if (orderId) {
+      shipmentOrderCache[key] = String(orderId).replace(/\D/g, '') || String(orderId);
+      return shipmentOrderCache[key];
+    }
+  } catch (e) {
+    console.warn('No se pudo resolver shipment -> order', clean, e.message);
+  }
+  return '';
+}
+
+async function enrichClaimWithOrderId(cuenta, claim) {
+  const out = { ...claim };
+  let orderId = pickClaimOrderId(out);
+
+  // En reclamos donde resource === 'shipment', Mercado Libre devuelve resource_id como ID de envio,
+  // no como numero de venta. Por eso hay que consultar /shipments/{resource_id} para obtener order_id.
+  const resource = String(out.resource || '').toLowerCase();
+  const resourceId = out.resource_id || out.resourceId;
+  if (!orderId && resource === 'shipment' && resourceId) {
+    orderId = await getOrderIdFromShipment(cuenta, resourceId);
+  }
+
+  if (orderId) {
+    out.order_id = orderId;
+    out.orderId = orderId;
+    out.sale_id = orderId;
+    out.saleId = orderId;
+  }
+  return out;
+}
+
+async function meliInboxClaims(cuenta, params) {
+  const sellerId = await getMeliSellerIdCached(cuenta);
+  const limit = toIntSafe(params.get('limit'), 50, 100);
+  const status = params.get('status') || 'opened';
+  const paths = [
+    `/post-purchase/v1/claims/search?${qsFrom({ seller_id: sellerId, status, limit })}`,
+    `/post-purchase/v1/claims/search?${qsFrom({ seller: sellerId, status, limit })}`,
+    `/claims/search?${qsFrom({ seller_id: sellerId, status, limit })}`,
+    `/claims?${qsFrom({ seller_id: sellerId, status, limit })}`,
+  ];
+  const { data, path } = await tryMeliPaths(cuenta, paths);
+  const rawClaims = firstList(data, ['claims', 'results', 'data']);
+  const claims = [];
+  for (const cl of rawClaims) {
+    claims.push(await enrichClaimWithOrderId(cuenta, cl));
+  }
+  return { ok: true, source: 'meli-direct', action: 'claims', cuenta: normalizeCuentaKey(cuenta), seller_id: sellerId, path, claims, results: claims, data: claims, raw: data };
+}
+
+async function handleMeliInboxDirect(req, u, cuenta) {
+  const action = u.searchParams.get('action') || '';
+  const body = req.method === 'POST' ? await readBody(req) : {};
+  if (action === 'questions') return await meliInboxQuestions(cuenta, u.searchParams);
+  if (action === 'answer') return await meliInboxAnswerQuestion(cuenta, body);
+  if (action === 'messages_unread') return await meliInboxUnreadMessages(cuenta, u.searchParams);
+  if (action === 'messages_pack') return await meliInboxMessagesPack(cuenta, u.searchParams);
+  if (action === 'send_message') return await meliInboxSendMessage(cuenta, body);
+  if (action === 'claims') return await meliInboxClaims(cuenta, u.searchParams);
+  throw new Error(`Accion de inbox no soportada sin n8n: ${action || 'vacia'}`);
+}
+
+
 // Webhooks de n8n (uno por cuenta)
 const WEBHOOKS = {
   tlc:     'https://teloconsigo.app.n8n.cloud/webhook/meli-ads-live',
@@ -1439,53 +1717,23 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // ── PROXY INBOX a n8n ────────────────────────
+  // ── INBOX directo a Mercado Libre (sin n8n) ────────────────────────
   // /api/inbox?cuenta=tlc&action=questions|messages_unread|claims|answer|messages_pack|send_message
   if (pathName === '/api/inbox') {
     (async () => {
       try {
-        const cuenta = u.searchParams.get('cuenta') || 'tlc';
-        const webhook = INBOX_WEBHOOKS[cuenta] || INBOX_WEBHOOKS.tlc;
-        u.searchParams.delete('cuenta');
-        const target = `${webhook}?${u.searchParams.toString()}`;
-        console.log(`[MELI INBOX ${cuenta.toUpperCase()}] (${session.username}) ${req.method} → ${target.substring(0, 160)}...`);
-
-        // IMPORTANTE:
-        // Los workflows de INBOX en n8n estan registrados como GET.
-        // El frontend puede llamar POST para acciones como responder preguntas o enviar mensajes,
-        // pero aca convertimos esos datos a querystring y llamamos al webhook por GET.
-        // Esto evita el error: "webhook is not registered for POST requests".
-        let targetFinal = target;
-        const opts = {
-          method: 'GET',
-          headers: { 'Accept': 'application/json' },
-        };
-
-        if (req.method === 'POST') {
-          const body = await readBody(req);
-          const params = new URLSearchParams(u.searchParams);
-          for (const [k, v] of Object.entries(body || {})) {
-            if (v !== undefined && v !== null) params.set(k, String(v));
-          }
-          targetFinal = `${webhook}?${params.toString()}`;
-          console.log(`[MELI INBOX ${cuenta.toUpperCase()}] POST convertido a GET -> ${targetFinal.substring(0, 180)}...`);
-        }
-
-        const r = await fetch(targetFinal, opts);
-        const text = await r.text();
-        let data;
-        try { data = JSON.parse(text); }
-        catch { data = { error: { message: 'n8n devolvió respuesta vacía o no-JSON', raw: text.slice(0, 400) } }; }
-        audit(session, 'meli_inbox_api', { cuenta, method: req.method, status: r.status, action: u.searchParams.get('action') || '', params: Object.fromEntries(u.searchParams.entries()) });
-        jsonResp(res, r.status, data);
+        const cuenta = normalizeCuentaKey(u.searchParams.get('cuenta') || 'tlc');
+        console.log(`[MELI INBOX DIRECT ${cuenta.toUpperCase()}] (${session.username}) ${req.method} action=${u.searchParams.get('action') || ''}`);
+        const data = await handleMeliInboxDirect(req, u, cuenta);
+        audit(session, 'meli_inbox_direct_api', { cuenta, method: req.method, action: u.searchParams.get('action') || '', params: Object.fromEntries(u.searchParams.entries()) });
+        jsonResp(res, 200, data);
       } catch (e) {
-        console.error('Error proxy MeLi INBOX:', e.message);
+        console.error('Error MeLi INBOX directo:', e.message);
         jsonResp(res, 500, { error: { message: e.message } });
       }
     })();
     return;
   }
-
 
   // ── PUBLICACIONES / CATALOGO ──────────────────
   // GET  /api/publications?action=list|movements&refresh=1
