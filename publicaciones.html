@@ -138,12 +138,11 @@ html, body, body *:not(.logo-text):not(.hdr-logo):not(.brand):not(.brand-logo):n
     <div class="toolbar">
       <input id="search" class="search" placeholder="Buscar por título, MLU, SKU o cuenta..." oninput="resetPageAndRender()">
       <select id="accountFilter" onchange="resetPageAndRender()"><option value="all">Todas las cuentas</option><option value="tlc">Solo TLC</option><option value="topshop">Solo TOP SHOP</option></select>
-      <select id="linkFilter" onchange="resetPageAndRender()"><option value="all">Todas</option><option value="linked">Vinculadas reales</option><option value="sku_match">Coincidencia SKU</option><option value="unlinked">No vinculadas reales</option></select>
+      <select id="linkFilter" onchange="resetPageAndRender()"><option value="all">Todas</option><option value="masters">Solo maestras</option><option value="linked">Solo vinculadas</option><option value="sku_match">Coincidencia SKU</option><option value="unlinked">Solo sin vincular</option></select>
       <select id="statusFilter" onchange="resetPageAndRender()"><option value="all">Todos los estados</option><option value="active">Activas</option><option value="paused">Pausadas / revisar</option><option value="no_sku">Sin SKU</option><option value="supplier">Con proveedor</option><option value="no_supplier">Sin proveedor</option></select>
       <button class="btn primary" onclick="linkSelectedFromMain()">Vincular seleccionadas</button>
       <button class="btn danger" onclick="unlinkSelectedFromMain()">Desvincular seleccionadas</button>
       <button class="btn" onclick="autoLinkVisibleBySku()">Vinculación automática SKU</button>
-      <button class="btn" onclick="openGroupsView()">Ver grupos vinculados</button><button class="btn" onclick="openLinkManager()">Gestionar vínculos</button>
       <div class="counter"><span>Mostradas: <strong id="visible-count">0</strong></span><span>Seleccionadas: <strong id="selected-count">0</strong></span></div>
     </div>
   </div>
@@ -491,7 +490,8 @@ function filteredRows(){
   if(q) rows=rows.filter(r=>JSON.stringify(r).toLowerCase().includes(q));
   if(accountFilter==='tlc') rows=rows.filter(r=>accountKey(r)==='tlc');
   if(accountFilter==='topshop') rows=rows.filter(r=>accountKey(r)==='topshop');
-  if(linkFilter==='linked') rows=rows.filter(r=>!!r.linked);
+  if(linkFilter==='masters') rows=rows.filter(r=>isMasterPublication(r));
+  if(linkFilter==='linked') rows=rows.filter(r=>!!r.linked && !isMasterPublication(r));
   if(linkFilter==='sku_match') rows=rows.filter(r=>!r.linked && !!r.skuMatch);
   if(linkFilter==='unlinked') rows=rows.filter(r=>!r.linked);
   if(statusFilter==='active') rows=rows.filter(r=>String(r.status).toLowerCase()==='active');
