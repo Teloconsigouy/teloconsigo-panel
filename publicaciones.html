@@ -136,6 +136,8 @@ html, body, body *:not(.logo-text):not(.hdr-logo):not(.brand):not(.brand-logo):n
       <select id="accountFilter" onchange="resetPageAndRender()"><option value="all">Todas las cuentas</option><option value="tlc">Solo TLC</option><option value="topshop">Solo TOP SHOP</option></select>
       <select id="linkFilter" onchange="resetPageAndRender()"><option value="all">Todas</option><option value="linked">Vinculadas reales</option><option value="sku_match">Coincidencia SKU</option><option value="unlinked">No vinculadas reales</option></select>
       <select id="statusFilter" onchange="resetPageAndRender()"><option value="all">Todos los estados</option><option value="active">Activas</option><option value="paused">Pausadas / revisar</option><option value="no_sku">Sin SKU</option><option value="supplier">Con proveedor</option><option value="no_supplier">Sin proveedor</option></select>
+      <button class="btn primary" onclick="linkSelectedFromMain()">Vincular seleccionadas</button>
+      <button class="btn" onclick="autoLinkVisibleBySku()">Vinculación automática SKU</button>
       <button class="btn" onclick="openLinkManager()">Gestionar vínculos</button>
       <div class="counter"><span>Mostradas: <strong id="visible-count">0</strong></span><span>Seleccionadas: <strong id="selected-count">0</strong></span></div>
     </div>
@@ -320,6 +322,84 @@ function linkActionHtml(r,key){
   return '';
 }
 async function logout(){location.href='/index.html';}
+
+
+async function postPublicationAction(body){
+  const r=await fetch('/api/publications',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});
+  const data=await r.json().catch(()=>({}));
+  if(!r.ok || data.ok===false){
+    throw new Error(data?.error?.message || data?.error || data?.message || 'Error desconocido');
+  }
+  if(Array.isArray(data.publications)) DATA.publications=data.publications;
+  if(Array.isArray(data.linked)) DATA.linked=data.linked;
+  if(Array.isArray(data.movements)) DATA.movements=data.movements;
+  return data;
+}
+
+function selectedRowsInTableOrder(){
+  const selectedKeys=new Set(SELECTED);
+  return (DATA.publications||[]).filter(r=>selectedKeys.has(rowKey(r)));
+}
+
+async function linkSelectedFromMain(){
+  const selected=selectedRowsInTableOrder();
+  if(selected.length<2){alert('Seleccioná al menos 2 publicaciones en la tabla. Una debe ser TLC para usarla como maestra.');return;}
+  const masters=selected.filter(r=>accountKey(r)==='tlc');
+  if(!masters.length){alert('Tenés que seleccionar al menos una publicación TLC. Esa será la maestra del grupo.');return;}
+  const master=masters[0];
+  const masterId=String(master.id||master.mlu||'').trim();
+  const children=selected.filter(r=>rowKey(r)!==rowKey(master)).map(r=>({cuenta:accountKey(r),id:String(r.id||r.mlu||'').trim()}));
+  if(!children.length){alert('Seleccioná publicaciones adicionales para vincular a la maestra TLC.');return;}
+  const msg='Se va a usar como MAESTRA TLC:\n\n'+masterId+' - '+(master.title||'')+'\n\nY se van a vincular '+children.length+' publicación(es) seleccionada(s).\n\nCuando sincronices vinculados, todas copiarán precio y stock desde esta maestra.\n\n¿Confirmás?';
+  if(!confirm(msg)) return;
+  showProgress('Vinculando seleccionadas','Creando grupo con maestra TLC desde la tabla principal...', {indeterminate:true});
+  try{
+    const data=await postPublicationAction({action:'link_to_master',masterTlcId:masterId,items:children,sku:master.sku||''});
+    SELECTED.clear();
+    render();
+    hideProgress();
+    alert('Listo. Se vincularon '+children.length+' publicación(es) a la maestra TLC.');
+  }catch(e){hideProgress(0);alert('No se pudo vincular: '+e.message);}
+}
+
+async function autoLinkVisibleBySku(){
+  const rows=filteredRows().filter(r=>String(r.sku||'').trim());
+  if(!rows.length){alert('No hay publicaciones con SKU en el filtro actual.');return;}
+  const groups=new Map();
+  for(const r of rows){
+    const sku=String(r.sku||'').trim().toUpperCase();
+    if(!groups.has(sku)) groups.set(sku,[]);
+    groups.get(sku).push(r);
+  }
+  const jobs=[];
+  for(const [sku,items] of groups.entries()){
+    const tlc=items.filter(r=>accountKey(r)==='tlc');
+    if(!tlc.length || items.length<2) continue;
+    const master=tlc[0];
+    const children=items.filter(r=>rowKey(r)!==rowKey(master)).map(r=>({cuenta:accountKey(r),id:String(r.id||r.mlu||'').trim()}));
+    if(children.length) jobs.push({sku,master,children});
+  }
+  if(!jobs.length){alert('No encontré grupos vinculables por SKU exacto en el filtro actual. Probá buscar un SKU específico primero.');return;}
+  const totalChildren=jobs.reduce((a,j)=>a+j.children.length,0);
+  if(!confirm('Vinculación automática por SKU exacto en el filtro actual.\n\nGrupos encontrados: '+jobs.length+'\nPublicaciones a vincular: '+totalChildren+'\n\nSe usará la primera publicación TLC de cada SKU como maestra.\n\n¿Confirmás?')) return;
+  showProgress('Vinculación automática SKU','Creando grupos por SKU exacto...', {current:0,total:jobs.length,indeterminate:false});
+  let ok=0, fail=0;
+  for(let i=0;i<jobs.length;i++){
+    const j=jobs[i];
+    updateProgress(i+1,jobs.length,'SKU '+j.sku+' ('+(i+1)+'/'+jobs.length+')',false);
+    try{
+      await postPublicationAction({action:'link_to_master',masterTlcId:String(j.master.id||j.master.mlu||''),items:j.children,sku:j.sku});
+      ok++;
+    }catch(e){
+      fail++;
+      console.warn('No se pudo vincular SKU',j.sku,e);
+    }
+  }
+  SELECTED.clear();
+  render();
+  hideProgress();
+  alert('Vinculación automática terminada.\n\nGrupos OK: '+ok+'\nErrores: '+fail+'\n\nAhora podés usar Sincronizar vinculados.');
+}
 
 async function loadPublications(refresh=false){
   document.getElementById('rows').innerHTML='<tr><td colspan="11" class="empty">Cargando publicaciones...</td></tr>';
@@ -587,6 +667,10 @@ function clearManualLinkSelection(){
 }
 
 function setLinkTab(tab){LINK_TAB=tab;['suggestions','linked','manual'].forEach(t=>{document.getElementById('tab-'+t)?.classList.toggle('active',t===tab);document.getElementById('section-'+t)?.classList.toggle('active',t===tab);});renderLinkManager();}
+
+function openLinkManager(){openLinkModal();}
+function closeLinkManager(){closeLinkModal();}
+
 function openLinkModal(){document.getElementById('link-modal')?.classList.add('open');setLinkTab(LINK_TAB||'suggestions');}
 function closeLinkModal(){document.getElementById('link-modal')?.classList.remove('open');}
 function renderLinkManager(){if(!document.getElementById('link-modal')?.classList.contains('open')) return;renderSuggestions();renderLinkedTable();renderManualSearch('tlc');renderManualSearch('child');updateManualSelectedCount();}
