@@ -336,25 +336,31 @@ async function postPublicationAction(body){
   return data;
 }
 
-function selectedRowsInTableOrder(){
-  const selectedKeys=new Set(SELECTED);
-  return (DATA.publications||[]).filter(r=>selectedKeys.has(rowKey(r)));
+function selectedRowsInSelectionOrder(){
+  // IMPORTANTE: se respeta el orden real en que el usuario marcó los checkbox.
+  // La primera publicación TLC marcada será la maestra.
+  const byKey=new Map((DATA.publications||[]).map(r=>[rowKey(r),r]));
+  const out=[];
+  for(const key of SELECTED){
+    const row=byKey.get(key);
+    if(row) out.push(row);
+  }
+  return out;
 }
 
 async function linkSelectedFromMain(){
-  const selected=selectedRowsInTableOrder();
-  if(selected.length<2){alert('Seleccioná al menos 2 publicaciones en la tabla. Una debe ser TLC para usarla como maestra.');return;}
-  const masters=selected.filter(r=>accountKey(r)==='tlc');
-  if(!masters.length){alert('Tenés que seleccionar al menos una publicación TLC. Esa será la maestra del grupo.');return;}
-  const master=masters[0];
+  const selected=selectedRowsInSelectionOrder();
+  if(selected.length<2){alert('Seleccioná al menos 2 publicaciones en la tabla. Marcá primero la TLC que querés usar como maestra.');return;}
+  const master=selected.find(r=>accountKey(r)==='tlc');
+  if(!master){alert('Tenés que seleccionar al menos una publicación TLC. La primera TLC que marques será la maestra del grupo.');return;}
   const masterId=String(master.id||master.mlu||'').trim();
   const children=selected.filter(r=>rowKey(r)!==rowKey(master)).map(r=>({cuenta:accountKey(r),id:String(r.id||r.mlu||'').trim()}));
   if(!children.length){alert('Seleccioná publicaciones adicionales para vincular a la maestra TLC.');return;}
-  const msg='Se va a usar como MAESTRA TLC:\n\n'+masterId+' - '+(master.title||'')+'\n\nY se van a vincular '+children.length+' publicación(es) seleccionada(s).\n\nCuando sincronices vinculados, todas copiarán precio y stock desde esta maestra.\n\n¿Confirmás?';
+  const msg='Se va a usar como MAESTRA TLC la primera TLC que marcaste:\n\n'+masterId+' - '+(master.title||'')+'\n\nY se van a vincular '+children.length+' publicación(es) seleccionada(s).\n\nSi querés otra maestra, cancelá, desmarcá todo y marcá primero la TLC correcta.\n\nCuando sincronices vinculados, todas copiarán precio y stock desde esta maestra.\n\n¿Confirmás?';
   if(!confirm(msg)) return;
   showProgress('Vinculando seleccionadas','Creando grupo con maestra TLC desde la tabla principal...', {indeterminate:true});
   try{
-    const data=await postPublicationAction({action:'link_to_master',masterTlcId:masterId,items:children,sku:master.sku||''});
+    await postPublicationAction({action:'link_to_master',masterTlcId:masterId,items:children,sku:master.sku||''});
     SELECTED.clear();
     render();
     hideProgress();
