@@ -1640,6 +1640,32 @@ const server = http.createServer((req, res) => {
             return;
           }
 
+          if (postAction === 'unlink_master_group') {
+            const masterTlcId = String(body.masterTlcId || body.masterId || body.tlcId || '').trim();
+            if (!masterTlcId) { jsonResp(res, 400, { error: 'Falta masterTlcId' }); return; }
+            normalizePublicationLinks(cache);
+            let removed = 0;
+            for (const [existingKey, existingLink] of Object.entries(cache.publicationLinks || {})) {
+              if (!existingLink) continue;
+              if (String(existingLink.masterId || existingLink.tlcId || '').trim() === masterTlcId) {
+                delete cache.publicationLinks[existingKey];
+                removed++;
+              }
+            }
+            cache.movements.push({
+              id: crypto.randomBytes(8).toString('hex'),
+              at: new Date().toISOString(),
+              type: 'unlink_master_group',
+              sku: '',
+              message: `Se desvinculo el grupo completo de la maestra TLC ${masterTlcId}: ${removed} vinculo(s) eliminado(s).`,
+              user: session.username,
+            });
+            savePublicationsCache(cache);
+            audit(session, 'publications_unlink_master_group', { masterTlcId, removed });
+            jsonResp(res, 200, { ok: true, removed, publications: buildFlatPublications(cache), linked: buildLinkedPublications(cache) });
+            return;
+          }
+
           if (postAction === 'unlink_publications') {
             const linkId = String(body.linkId || '').trim();
             const cuentaRaw = String(body.cuenta || body.account || '').toLowerCase().replace(/\s+/g, '');

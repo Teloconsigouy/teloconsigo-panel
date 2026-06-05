@@ -35,6 +35,10 @@
   td{padding:12px 10px;border-bottom:1px solid var(--border);font-size:.82rem;vertical-align:middle;}
   tr:hover td{background:#FAFCFA;} tr.selected td{background:rgba(26,92,26,.055)}
   .rowcheck{width:18px;height:18px;accent-color:var(--green);}
+  tr.master-selected{background:#fff7d6!important;outline:2px solid #b7791f;}
+  tr.master-linked{background:#eef8ef;}
+  .pill.master{background:#ffe8a3;color:#6b3f00;border-color:#d69e2e;}
+  .master-hint{display:block;margin-top:4px;font-size:.68rem;font-weight:900;color:#6b3f00;text-transform:uppercase;letter-spacing:.08em;}
   .sku{font-weight:800;color:var(--green);}.muted{color:var(--muted);}.edited{font-size:.64rem;color:var(--blue);font-weight:800;text-transform:uppercase;margin-top:4px;display:block;}
   .pill{display:inline-flex;align-items:center;gap:5px;font-size:.65rem;text-transform:uppercase;letter-spacing:.08em;font-weight:800;padding:5px 9px;border-radius:999px;border:1px solid var(--border);white-space:nowrap;}
   .ok{color:var(--green);background:var(--green-light);border-color:var(--green-border);}.top{color:var(--pink);background:var(--pink-light);border-color:var(--pink-border);}.warn{color:var(--yellow);background:var(--yellow-bg);border-color:#FDE68A;}.bad{color:var(--red);background:#FEE2E2;border-color:#FECACA;}.info{color:var(--blue);background:var(--blue-bg);border-color:#BFDBFE;}
@@ -137,6 +141,7 @@ html, body, body *:not(.logo-text):not(.hdr-logo):not(.brand):not(.brand-logo):n
       <select id="linkFilter" onchange="resetPageAndRender()"><option value="all">Todas</option><option value="linked">Vinculadas reales</option><option value="sku_match">Coincidencia SKU</option><option value="unlinked">No vinculadas reales</option></select>
       <select id="statusFilter" onchange="resetPageAndRender()"><option value="all">Todos los estados</option><option value="active">Activas</option><option value="paused">Pausadas / revisar</option><option value="no_sku">Sin SKU</option><option value="supplier">Con proveedor</option><option value="no_supplier">Sin proveedor</option></select>
       <button class="btn primary" onclick="linkSelectedFromMain()">Vincular seleccionadas</button>
+      <button class="btn danger" onclick="unlinkSelectedFromMain()">Desvincular seleccionadas</button>
       <button class="btn" onclick="autoLinkVisibleBySku()">Vinculación automática SKU</button>
       <button class="btn" onclick="openGroupsView()">Ver grupos vinculados</button><button class="btn" onclick="openLinkManager()">Gestionar vínculos</button>
       <div class="counter"><span>Mostradas: <strong id="visible-count">0</strong></span><span>Seleccionadas: <strong id="selected-count">0</strong></span></div>
@@ -305,17 +310,36 @@ function esc(s){return String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&l
 function accountKey(r){const v=String(r.account||r.cuenta||'').toLowerCase().replace(/\s+/g,'');return v.includes('top')?'topshop':'tlc';}
 function rowKey(r){return `${accountKey(r)}::${String(r.id||r.mlu||'').trim()}`;}
 function accountBadge(account){const a=String(account||'').toLowerCase().replace(/\s+/g,'');return a.includes('top')?'<span class="pill top">TOP SHOP</span>':'<span class="pill ok">TLC</span>';}
+function getRowId(r){return String(r?.id||r?.mlu||'').trim();}
+function isMasterPublication(r){
+  if(!r || accountKey(r)!=='tlc') return false;
+  const id=getRowId(r);
+  return (DATA.linked||[]).some(l=>String(l.masterId||l.tlcId||'').trim()===id);
+}
+function isSelectedMasterCandidate(r){
+  const master=selectedMasterRow();
+  return master && rowKey(master)===rowKey(r);
+}
+function selectedMasterRow(){
+  const byKey=new Map((DATA.publications||[]).map(r=>[rowKey(r),r]));
+  for(const key of SELECTED){
+    const row=byKey.get(key);
+    if(row && accountKey(row)==='tlc') return row;
+  }
+  return null;
+}
+
 function linkBadge(r){
+  if(isMasterPublication(r)) return '<span class="pill master">PUBLICACIÓN MAESTRA</span>';
   if(!String(r.sku||'').trim()) return '<span class="pill bad">Sin SKU</span>';
   if(r.linked) return '<span class="pill ok">Vinculada real</span>';
   if(r.skuMatch) return '<span class="pill info">Coincidencia SKU</span>';
   return '<span class="pill warn">No vinculada</span>';
 }
 function linkActionHtml(r,key){
+  if(isMasterPublication(r)) return '<span class="muted" style="font-size:.72rem">Maestra: copia precio/stock a todas las vinculadas</span>';
   if(r.linked){
-    return accountKey(r)==='tlc'
-      ? '<span class="muted" style="font-size:.72rem">Maestro: copia precio/stock a TOP SHOP al guardar</span>'
-      : '<span class="muted" style="font-size:.72rem">Espejo: recibe precio/stock desde TLC</span>';
+    return '<span class="muted" style="font-size:.72rem">Vinculada: recibe precio/stock desde su maestra TLC</span>';
   }
   if(r.suggestedPeerId) return '<span class="muted" style="font-size:.72rem">Sugerida para vincular</span>';
   if(r.skuMatch) return '<span class="muted" style="font-size:.72rem">Revisar duplicados</span>';
@@ -356,7 +380,7 @@ async function linkSelectedFromMain(){
   const masterId=String(master.id||master.mlu||'').trim();
   const children=selected.filter(r=>rowKey(r)!==rowKey(master)).map(r=>({cuenta:accountKey(r),id:String(r.id||r.mlu||'').trim()}));
   if(!children.length){alert('Seleccioná publicaciones adicionales para vincular a la maestra TLC.');return;}
-  const msg='Se va a usar como MAESTRA TLC la primera TLC que marcaste:\n\n'+masterId+' - '+(master.title||'')+'\n\nY se van a vincular '+children.length+' publicación(es) seleccionada(s).\n\nSi querés otra maestra, cancelá, desmarcá todo y marcá primero la TLC correcta.\n\nCuando sincronices vinculados, todas copiarán precio y stock desde esta maestra.\n\n¿Confirmás?';
+  const msg='Se va a usar como MAESTRA TLC la publicación marcada en amarillo:\n\n'+masterId+' - '+(master.title||'')+'\n\nY se van a vincular '+children.length+' publicación(es) seleccionada(s).\n\nSi querés otra maestra, cancelá, desmarcá todo y marcá primero la TLC correcta.\n\nCuando sincronices vinculados, todas copiarán precio y stock desde esta maestra.\n\n¿Confirmás?';
   if(!confirm(msg)) return;
   showProgress('Vinculando seleccionadas','Creando grupo con maestra TLC desde la tabla principal...', {indeterminate:true});
   try{
@@ -366,6 +390,39 @@ async function linkSelectedFromMain(){
     hideProgress();
     alert('Listo. Se vincularon '+children.length+' publicación(es) a la maestra TLC.');
   }catch(e){hideProgress(0);alert('No se pudo vincular: '+e.message);}
+}
+
+async function unlinkSelectedFromMain(){
+  const selected=selectedRowsInSelectionOrder();
+  if(!selected.length){alert('Seleccioná una publicación maestra o publicaciones vinculadas para desvincular.');return;}
+  const masters=selected.filter(r=>isMasterPublication(r));
+  const linkedChildren=selected.filter(r=>r.linked && !isMasterPublication(r));
+  if(!masters.length && !linkedChildren.length){alert('La selección no tiene publicaciones vinculadas para desvincular.');return;}
+  let msg='';
+  if(masters.length){
+    msg+='Se van a desvincular TODOS los grupos de '+masters.length+' publicación(es) maestra(s) seleccionada(s).\n';
+  }
+  if(linkedChildren.length){
+    msg+='Además se van a desvincular '+linkedChildren.length+' publicación(es) vinculada(s) seleccionada(s).\n';
+  }
+  msg+='\nEsto no modifica precio ni stock; solo elimina los vínculos. ¿Confirmás?';
+  if(!confirm(msg)) return;
+  showProgress('Desvinculando publicaciones','Eliminando vínculos seleccionados...', {indeterminate:true});
+  let ok=0, fail=0;
+  try{
+    for(const m of masters){
+      try{ await postPublicationAction({action:'unlink_master_group',masterTlcId:getRowId(m)}); ok++; }
+      catch(e){ console.warn('No se pudo desvincular grupo maestro',m,e); fail++; }
+    }
+    for(const r of linkedChildren){
+      try{ await postPublicationAction({action:'unlink_publications',linkId:r.linkId,cuenta:accountKey(r),id:getRowId(r)}); ok++; }
+      catch(e){ console.warn('No se pudo desvincular publicación',r,e); fail++; }
+    }
+    SELECTED.clear();
+    await loadPublications(false);
+    hideProgress();
+    alert('Desvinculación terminada. OK: '+ok+' · Errores: '+fail);
+  }catch(e){hideProgress(0);alert('No se pudo desvincular: '+e.message);}
 }
 
 async function autoLinkVisibleBySku(){
@@ -461,7 +518,7 @@ function togglePageSelection(checked){
   pageRows.forEach(r=>checked?SELECTED.add(rowKey(r)):SELECTED.delete(rowKey(r)));
   render();
 }
-function toggleOne(key,checked){checked?SELECTED.add(key):SELECTED.delete(key);document.getElementById('selected-count').textContent=SELECTED.size;const tr=document.querySelector(`tr[data-key="${CSS.escape(key)}"]`);if(tr)tr.classList.toggle('selected',checked);}
+function toggleOne(key,checked){checked?SELECTED.add(key):SELECTED.delete(key);render();}
 function getPageRows(){const start=(CURRENT_PAGE-1)*PAGE_SIZE;return FILTERED_ROWS.slice(start,start+PAGE_SIZE);}
 function render(){
   FILTERED_ROWS=filteredRows();updateKpis(FILTERED_ROWS);renderPager(FILTERED_ROWS.length);
@@ -469,10 +526,14 @@ function render(){
   if(!rows.length){document.getElementById('rows').innerHTML='<tr><td colspan="11" class="empty">No hay resultados para ese filtro.</td></tr>';} else {
     document.getElementById('rows').innerHTML=rows.map((r,idx)=>{
       const key=rowKey(r); const mlu=r.mlu||r.id||'—'; const link=r.permalink?`<a href="${esc(r.permalink)}" target="_blank">${esc(mlu)} ↗</a>`:esc(mlu);
-      const supplierKey=String(r.supplierKey||r.sku||r.id||idx).trim().toUpperCase(); const checked=SELECTED.has(key)?'checked':''; const selected=SELECTED.has(key)?'selected':'';
-      return `<tr data-key="${esc(key)}" class="${selected}">
+      const supplierKey=String(r.supplierKey||r.sku||r.id||idx).trim().toUpperCase(); const checked=SELECTED.has(key)?'checked':'';
+      const selected=SELECTED.has(key)?'selected':'';
+      const masterCandidate=isSelectedMasterCandidate(r)?'master-selected':'';
+      const masterLinked=isMasterPublication(r)?'master-linked':'';
+      const masterText=masterCandidate?'<span class="master-hint">Será maestra al vincular</span>':(isMasterPublication(r)?'<span class="master-hint">Publicación maestra</span>':'');
+      return `<tr data-key="${esc(key)}" class="${selected} ${masterCandidate} ${masterLinked}">
         <td><input class="rowcheck" type="checkbox" ${checked} onchange="toggleOne('${esc(key)}',this.checked)"></td>
-        <td><input class="input title-input" id="title-${esc(key)}" value="${esc(r.title||'Sin título')}">${r.localEdited?'<span class="edited">Editada en panel</span>':''}</td>
+        <td><input class="input title-input" id="title-${esc(key)}" value="${esc(r.title||'Sin título')}">${masterText}${r.localEdited?'<span class="edited">Editada en panel</span>':''}</td>
         <td>${link}</td>
         <td><input class="input sku-input" id="sku-${esc(key)}" value="${esc(r.sku||'')}"></td>
         <td><select class="input" id="status-${esc(key)}"><option value="active" ${String(r.status).toLowerCase()==='active'?'selected':''}>Activa</option><option value="paused" ${String(r.status).toLowerCase()==='paused'?'selected':''}>Pausada</option><option value="closed" ${String(r.status).toLowerCase()==='closed'?'selected':''}>Cerrada</option><option value="under_review" ${String(r.status).toLowerCase()==='under_review'?'selected':''}>Revisión</option></select></td>
@@ -811,7 +872,7 @@ function renderLinkedTable(){
           <div class="result-meta"><strong>${masterId}</strong> · SKU: <strong>${esc(m.sku||'Sin SKU')}</strong> · Stock: ${esc(m.stock??m.available_quantity??0)} · Precio: ${money(m.price,m.currency_id||m.currency)}</div>
           ${m.permalink?`<a href="${esc(m.permalink)}" target="_blank">Abrir maestra ↗</a>`:''}
         </div>
-        <span class="pill ok">${children.length} vinculada(s)</span>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="pill ok">${children.length} vinculada(s)</span><button class="btn danger" onclick="unlinkMasterGroup('${masterId}')">Desvincular grupo</button></div>
       </div>
       <table style="min-width:900px;width:100%;border-collapse:collapse;">
         <thead><tr><th style="width:36px"><input type="checkbox" class="modal-check linked-check-group" data-master="${masterId}" onchange="toggleGroupLinkedChecks('${masterId}',this.checked)"></th><th>Cuenta</th><th>MLU</th><th>Título</th><th>SKU</th><th>Precio</th><th>Stock</th></tr></thead>
@@ -833,6 +894,19 @@ function renderLinkedTable(){
       </table>
     </div>`;
   }).join('');
+}
+
+async function unlinkMasterGroup(masterId){
+  if(!masterId){alert('No se encontró la maestra.');return;}
+  if(!confirm('¿Desvincular todo el grupo de la maestra TLC '+masterId+'?\n\nEsto elimina todos los vínculos de ese lote. No modifica precio ni stock.')) return;
+  showProgress('Desvinculando grupo','Eliminando todos los vínculos de la maestra '+masterId+'...', {indeterminate:true});
+  try{
+    await postPublicationAction({action:'unlink_master_group',masterTlcId:masterId});
+    await loadPublications(false);
+    renderLinkManager();
+    hideProgress();
+    alert('Grupo desvinculado.');
+  }catch(e){hideProgress(0);alert('No se pudo desvincular el grupo: '+e.message);}
 }
 
 function toggleGroupLinkedChecks(masterId, checked){
