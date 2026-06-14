@@ -25,6 +25,7 @@ const AUDIT_FILE = path.join(DATA_DIR, 'audit-log.json');
 const PUBLICATIONS_CACHE_FILE = path.join(DATA_DIR, 'publications-cache.json');
 const PRECIOS_FILE = path.join(DATA_DIR, 'precios.json');
 const BUNDLED_PRECIOS_FILE = path.join(DEFAULT_DATA_DIR, 'precios.json');
+const ROOT_PRECIOS_FILE = path.join(__dirname, 'precios.json');
 
 const MODULES = {
   meliads: { label: 'MeLi ADS', pages: ['/meliads.html'], api: ['/api/meli'] },
@@ -118,10 +119,13 @@ function defaultPreciosDb() {
 function loadPreciosDb() {
   ensureDataDir();
   if (!fs.existsSync(PRECIOS_FILE)) {
-    // Railway: si DATA_DIR apunta a un Volume vacio, sembramos la base inicial
-    // desde el archivo incluido en el repo. No pisa cambios si el archivo ya existe.
+    // Railway/local: si DATA_DIR apunta a un Volume vacio, sembramos la base inicial.
+    // Primero intenta /data/precios.json del repo y luego precios.json en la raiz.
+    // No pisa cambios si PRECIOS_FILE ya existe.
     if (BUNDLED_PRECIOS_FILE !== PRECIOS_FILE && fs.existsSync(BUNDLED_PRECIOS_FILE)) {
       fs.copyFileSync(BUNDLED_PRECIOS_FILE, PRECIOS_FILE);
+    } else if (ROOT_PRECIOS_FILE !== PRECIOS_FILE && fs.existsSync(ROOT_PRECIOS_FILE)) {
+      fs.copyFileSync(ROOT_PRECIOS_FILE, PRECIOS_FILE);
     } else {
       const initial = defaultPreciosDb();
       fs.writeFileSync(PRECIOS_FILE, JSON.stringify(initial, null, 2));
