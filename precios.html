@@ -1,0 +1,1703 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lista de Precios — TELOCONSIGO</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f3f4f6;
+      margin: 0;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+
+    .container {
+      padding: 20px 20px 32px 20px;
+      position: relative;
+      height: 100vh;
+      box-sizing: border-box;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .topbar-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .btn-primary { background: #111827; color: white; }
+    .btn-secondary { background: #e5e7eb; color: #111827; }
+    .btn-success { background: #15803d; color: white; }
+    .btn-danger { background: #b91c1c; color: white; }
+    .btn-sim { background: #2563eb; color: white; }
+
+    button {
+      padding: 10px 14px;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    .filters-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .filters-panel {
+      background: white;
+      border-radius: 14px;
+      padding: 14px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+      display: none;
+    }
+
+    .filters-panel.open {
+      display: block;
+    }
+
+    .search-box {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 10px;
+      align-items: end;
+    }
+
+    .search-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    input, select {
+      padding: 10px;
+      border-radius: 10px;
+      border: 1px solid #ccc;
+      width: 100%;
+      box-sizing: border-box;
+      background: white;
+    }
+
+    .counter-bar {
+      font-size: 14px;
+      color: #374151;
+      font-weight: 600;
+    }
+
+    .counter-bar strong {
+      color: #111827;
+    }
+
+    .table-wrap {
+      width: 100%;
+      flex: 1;
+      min-height: 0;
+      overflow-x: auto;
+      overflow-y: auto;
+      position: relative;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+      padding-bottom: 18px;
+      box-sizing: border-box;
+    }
+
+    table {
+      width: 100%;
+      min-width: 1180px;
+      background: white;
+      border-collapse: separate;
+      border-spacing: 0;
+    }
+
+    thead th {
+      position: sticky;
+      top: 0;
+      z-index: 999;
+      background: #0f172a;
+      color: white;
+      padding: 10px;
+      text-align: left;
+      white-space: nowrap;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    }
+
+    td {
+      padding: 10px;
+      border-bottom: 1px solid #eee;
+      white-space: nowrap;
+      background: white;
+    }
+
+    tbody tr:hover td {
+      background: #f9fafb;
+    }
+
+    .row-incomplete td {
+      background: #fff7ed;
+    }
+
+    .row-incomplete:hover td {
+      background: #ffedd5;
+    }
+
+    .margin-green { color: #15803d; font-weight: bold; }
+    .margin-yellow { color: #ca8a04; font-weight: bold; }
+    .margin-orange { color: #ea580c; font-weight: bold; }
+    .margin-red { color: #b91c1c; font-weight: bold; }
+
+    .badge-incomplete {
+      display: inline-block;
+      margin-left: 8px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: bold;
+      background: #fed7aa;
+      color: #9a3412;
+      vertical-align: middle;
+    }
+
+    .modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.4);
+      display: none;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 20px;
+      overflow-y: auto;
+      z-index: 1000;
+    }
+
+    .modal-content {
+      background: white;
+      padding: 20px;
+      border-radius: 16px;
+      width: 100%;
+      max-width: 650px;
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+    }
+
+    .form-group {
+      margin-bottom: 12px;
+    }
+
+    .readonly-box {
+      background: #f3f4f6;
+      padding: 10px;
+      border-radius: 10px;
+    }
+
+    .collapsible-header {
+      padding: 10px;
+      background: #f3f4f6;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: bold;
+      user-select: none;
+    }
+
+    .collapsible-content {
+      display: none;
+      margin-top: 10px;
+    }
+
+    .collapsible-open .collapsible-content {
+      display: block;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .actions-right {
+      display: flex;
+      gap: 10px;
+      margin-left: auto;
+    }
+
+    .required-note {
+      margin-top: 10px;
+      font-size: 13px;
+      color: #555;
+    }
+
+    .message {
+      margin-top: 10px;
+      font-size: 14px;
+    }
+
+    .success { color: #15803d; }
+    .error { color: #b91c1c; }
+
+    .sim-result {
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 14px;
+      background: #fafafa;
+      margin-top: 14px;
+    }
+
+    .sim-title {
+      font-weight: bold;
+      margin-bottom: 10px;
+    }
+
+    .sim-subtitle {
+      font-weight: bold;
+      margin: 16px 0 10px 0;
+      color: #111827;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+
+/* Estilo TLC Panel Control */
+:root{
+  --bg:#F0F4F0; --surface:#FFFFFF; --border:#D4DDD4; --border2:#B8C8B8;
+  --green:#1A5C1A; --green-mid:#2E7D2E; --green-light:rgba(26,92,26,0.08);
+  --green-border:rgba(26,92,26,0.25); --text:#0E1A0E; --muted:#5C7060; --muted2:#9CB09C;
+  --red:#DC2626; --blue:#2563eb;
+}
+*,*::before,*::after{box-sizing:border-box;}
+html,body{background:var(--bg);color:var(--text);font-family:'Inter','Segoe UI',Arial,sans-serif;min-height:100vh;}
+body{overflow:hidden;}
+.app-header{background:var(--surface);border-bottom:1px solid var(--border);padding:0 48px;height:64px;display:flex;align-items:center;justify-content:space-between;}
+.logo-text{font-family:'Syne','Inter',sans-serif;font-weight:800;font-size:1.4rem;letter-spacing:-0.04em;color:var(--green);text-transform:uppercase;}
+.header-right{display:flex;align-items:center;gap:18px;font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;}
+.status-dot{display:flex;align-items:center;gap:6px;}
+.dot{width:7px;height:7px;border-radius:50%;background:#16A34A;box-shadow:0 0 0 4px rgba(22,163,74,0.10);}
+.back-home{padding:8px 12px;border:1px solid var(--green-border);background:var(--green-light);border-radius:5px;color:var(--green);cursor:pointer;font-family:'Inter',sans-serif;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;text-decoration:none;display:inline-flex;align-items:center;gap:6px;}
+.back-home:hover{background:var(--green);color:#fff;}
+.page-title-bar{padding:28px 48px 22px;display:flex;align-items:flex-end;justify-content:space-between;gap:16px;border-bottom:1px solid var(--border);background:var(--surface);}
+.page-title{font-family:'Syne','Inter',sans-serif;font-size:1.55rem;font-weight:800;letter-spacing:-0.03em;color:var(--text);}
+.page-title-sub{font-size:0.85rem;color:var(--muted);margin-top:4px;}
+.container{height:calc(100vh - 143px);padding:24px 48px 34px;background:var(--bg);gap:14px;}
+.topbar{background:transparent;border:0;padding:0;}
+.topbar h2{font-family:'Syne','Inter',sans-serif;font-size:1.05rem;letter-spacing:-0.02em;color:var(--text);}
+.topbar-actions{gap:8px;}
+button{border-radius:5px;font-family:'Inter','Segoe UI',Arial,sans-serif;font-size:0.75rem;letter-spacing:0.02em;transition:all .18s;}
+button:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(14,26,14,0.08);}
+.btn-primary{background:var(--green);color:white;}
+.btn-secondary{background:var(--surface);color:var(--muted);border:1px solid var(--border);}
+.btn-success{background:var(--green-mid);color:white;}
+.btn-danger{background:var(--red);color:white;}
+.btn-sim{background:#0f172a;color:white;}
+.filters-panel,.table-wrap,.modal-content{background:var(--surface);border:1px solid var(--border);border-radius:6px;box-shadow:0 8px 24px rgba(27,27,47,0.06);}
+.filters-panel{padding:16px;}
+input,select{border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:'Inter','Segoe UI',Arial,sans-serif;}
+input:focus,select:focus{outline:none;border-color:var(--green);box-shadow:0 0 0 3px rgba(26,92,26,0.10);}
+.counter-bar{font-size:0.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;}
+.counter-bar strong{color:var(--green);}
+table{min-width:1180px;}
+thead th{background:var(--green);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;padding:12px 10px;}
+td{font-size:0.86rem;color:var(--text);border-bottom:1px solid var(--border);}
+tbody tr:hover td{background:var(--green-light);}
+.readonly-box,.collapsible-header{background:#F6F8F6;border:1px solid var(--border);border-radius:5px;}
+.modal{z-index:2000;}
+.modal-content h3{font-family:'Syne','Inter',sans-serif;color:var(--text);}
+.form-group label{display:block;margin-bottom:6px;font-size:0.76rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:0.06em;}
+.sim-result{border:1px solid var(--border);background:#FAFCFA;border-radius:6px;}
+@media(max-width:760px){.app-header,.page-title-bar{padding-left:18px;padding-right:18px}.container{padding:18px;height:calc(100vh - 143px)}.header-right{display:none}.page-title-bar{align-items:flex-start;flex-direction:column}.back-home{width:100%;justify-content:center}}
+
+
+/* Corrección visual: unifica Lista de Precios con Bandeja MeLi / Publicaciones */
+body { background: var(--bg) !important; font-family: 'Inter','Segoe UI',Arial,sans-serif !important; }
+.app-header{height:64px;padding:0 48px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+.logo-text{font-family:'Syne','Inter',sans-serif !important;font-size:1.4rem !important;font-weight:800;letter-spacing:-0.04em;text-transform:uppercase;color:var(--green);}
+.header-right{display:flex;align-items:center;gap:20px;font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;}
+.header-right a{color:var(--muted);text-decoration:none;}
+.header-right a:hover{color:var(--green);}
+#clock{font-weight:600;color:var(--green);}
+.page-title-bar{padding:24px 48px;display:flex;align-items:center;justify-content:flex-start;gap:16px;border-bottom:1px solid var(--border);background:var(--surface);}
+.page-title{font-family:'Inter','Segoe UI',Arial,sans-serif !important;font-size:1.4rem;font-weight:700;letter-spacing:-0.03em;color:var(--text);}
+.page-title-sub{font-size:0.85rem;color:var(--muted);margin-top:0;}
+.back-link{color:var(--muted);text-decoration:none;font-size:0.85rem;margin-right:8px;}
+.back-link:hover{color:var(--green);}
+.container{height:calc(100vh - 194px);padding:18px 48px 24px;background:var(--bg);gap:12px;}
+.topbar-only-actions{justify-content:space-between;}
+.topbar h2{display:none;}
+button{border-radius:5px !important;font-family:'Inter','Segoe UI',Arial,sans-serif !important;font-weight:600;font-size:0.78rem;}
+button:hover{transform:none;box-shadow:none;}
+.btn-primary,.btn-success{background:var(--green) !important;color:#fff !important;}
+.btn-primary:hover,.btn-success:hover{background:var(--green-mid) !important;}
+.btn-sim{background:#0f172a !important;color:#fff !important;}
+.btn-secondary{background:var(--surface) !important;color:var(--text) !important;border:1px solid var(--border) !important;}
+.btn-secondary:hover{border-color:var(--border2) !important;background:var(--bg) !important;}
+.filters-panel,.table-wrap,.modal-content{border-radius:5px;box-shadow:none;border:1px solid var(--border);}
+.counter-bar{font-size:0.72rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);}
+thead th{background:var(--green) !important;box-shadow:none;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;}
+td{font-size:0.84rem;}
+footer{background:var(--surface);border-top:1px solid var(--border);padding:18px 48px;display:flex;justify-content:space-between;font-size:0.65rem;color:var(--muted2);text-transform:uppercase;letter-spacing:0.1em;}
+html, body, body *:not(.logo-text):not(.logo-text *) { font-family: 'Inter','Segoe UI',Arial,sans-serif !important; }
+.logo-text { font-family: 'Syne','Inter',sans-serif !important; }
+@media(max-width:760px){.app-header,.page-title-bar,footer{padding-left:18px;padding-right:18px}.container{padding:18px;height:calc(100vh - 194px)}.header-right{display:none}.page-title-bar{align-items:flex-start;flex-direction:column}}
+
+
+/* Simulador ancho y claro */
+#simulatorModal{
+  align-items:flex-start;
+  padding:28px;
+}
+#simulatorModal .simulator-wide-content{
+  width:95vw;
+  max-width:1400px;
+  max-height:92vh;
+  padding:24px 28px 28px;
+  overflow-y:auto;
+}
+.simulator-header{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:16px;
+  margin-bottom:20px;
+  padding-bottom:14px;
+  border-bottom:1px solid var(--border);
+}
+.simulator-subhead{
+  margin-top:4px;
+  color:var(--muted);
+  font-size:0.85rem;
+}
+.simulator-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(260px,1fr));
+  gap:14px 18px;
+  margin-bottom:18px;
+}
+.simulator-grid .form-group,
+.detail-grid .form-group{
+  margin-bottom:0;
+}
+.sim-panels{
+  display:grid;
+  gap:14px;
+}
+.sim-card-section{
+  margin-top:0;
+  padding:16px;
+}
+.metric-grid{
+  display:grid;
+  gap:12px;
+}
+.metric-grid.three{
+  grid-template-columns:repeat(3,minmax(160px,1fr));
+}
+.metric-grid.five{
+  grid-template-columns:repeat(5,minmax(130px,1fr));
+}
+.metric-grid.six{
+  grid-template-columns:repeat(6,minmax(125px,1fr));
+}
+.metric-card label{
+  display:block;
+  margin-bottom:6px;
+  font-size:0.7rem;
+  color:var(--muted);
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:0.06em;
+}
+.metric-card .readonly-box{
+  min-height:42px;
+  display:flex;
+  align-items:center;
+  font-size:0.92rem;
+  font-weight:600;
+}
+.target-section{
+  background:#fff;
+}
+.sim-detail-box{
+  margin-top:14px;
+}
+.detail-grid{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(180px,1fr));
+  gap:12px;
+}
+@media(max-width:980px){
+  #simulatorModal{padding:14px;}
+  #simulatorModal .simulator-wide-content{width:100%;max-width:100%;padding:18px;}
+  .simulator-grid,.metric-grid.three,.metric-grid.five,.metric-grid.six,.detail-grid{grid-template-columns:1fr;}
+}
+
+  
+    .sim-note {
+      font-size: 12px;
+      color: #53645a;
+      margin: -4px 0 12px 0;
+      line-height: 1.35;
+    }
+
+    .modal-content.editor-wide {
+      width: 95vw;
+      max-width: 1400px;
+      max-height: 92vh;
+    }
+
+    .modal-subtitle {
+      color: #53645a;
+      font-size: 14px;
+      margin-top: 4px;
+    }
+
+    .modal-header-clean {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      border-bottom: 1px solid #d5ded7;
+      padding-bottom: 14px;
+      margin-bottom: 18px;
+    }
+
+    .editor-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px 18px;
+      align-items: end;
+    }
+
+    .editor-grid .form-group {
+      margin-bottom: 0;
+    }
+
+    .editor-grid .full-span {
+      grid-column: 1 / -1;
+    }
+
+    .editor-results {
+      margin-top: 18px;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .metric-grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .editor-actions-bar {
+      position: sticky;
+      bottom: -20px;
+      background: white;
+      border-top: 1px solid #d5ded7;
+      margin: 18px -20px -20px -20px;
+      padding: 14px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      z-index: 5;
+    }
+
+    @media (max-width: 900px) {
+      .editor-grid,
+      .metric-grid,
+      .metric-grid-4 {
+        grid-template-columns: 1fr;
+      }
+    }
+
+  </style>
+</head>
+
+<body>
+
+
+<header class="app-header">
+  <div class="logo-text">Teloconsigo</div>
+  <div class="header-right">
+    <a href="index.html">← Volver al panel</a>
+    <span id="clock">—</span>
+  </div>
+</header>
+
+<div class="page-title-bar">
+  <a href="index.html" class="back-link">←</a>
+  <span class="page-title">Lista de Precios</span>
+  <span class="page-title-sub">Costos, márgenes, simulador y promociones</span>
+</div>
+
+<div class="container">
+  <div class="topbar topbar-only-actions">
+    <div></div>
+
+    <div class="topbar-actions">
+      <button class="btn-secondary filters-toggle" onclick="toggleFiltersPanel()">
+        <span id="filtersArrow">▼</span>
+        <span>Filtros</span>
+      </button>
+      <button class="btn-sim" onclick="openSimulatorModal()">Simulador</button>
+      <button class="btn-success" onclick="openCreateModal()">Nuevo</button>
+    </div>
+  </div>
+
+  <div id="filtersPanel" class="filters-panel">
+    <div class="search-box">
+      <input id="searchInput" placeholder="Buscar por artículo, TLC, proveedor o código proveedor">
+
+      <select id="filterEstado" onchange="renderProducts()">
+        <option value="todos">Todos los estados</option>
+        <option value="sin_codigo_proveedor">Sin código proveedor</option>
+        <option value="sin_codigo_tlc">Sin código TLC</option>
+        <option value="sin_envio_costo">Sin envío / costo fijo</option>
+        <option value="incompletos">Artículos incompletos</option>
+      </select>
+
+      <select id="filterMargen" onchange="renderProducts()">
+        <option value="todos">Todos los márgenes</option>
+        <option value="mas_20">Más de 20%</option>
+        <option value="entre_10_20">Entre 10% y 20%</option>
+        <option value="entre_0_10">Entre 0% y 10%</option>
+        <option value="menor_0">Menor a 0%</option>
+      </select>
+
+      <select id="filterProveedor" onchange="renderProducts()">
+        <option value="todos">Todos los proveedores</option>
+      </select>
+
+      <div class="search-actions">
+        <button class="btn-primary" onclick="renderProducts()">Buscar</button>
+        <button class="btn-secondary" onclick="resetSearch()">Limpiar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="counter-bar" id="productsCounter">
+    Mostrando <strong>0</strong> de <strong>0</strong> artículos
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Artículo</th>
+          <th>Código TLC</th>
+          <th>Proveedor</th>
+          <th>Código Proveedor</th>
+          <th>Costo</th>
+          <th>PVP</th>
+          <th>Ganancia</th>
+          <th>Margen</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="productsBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="modal" id="editModal">
+  <div class="modal-content editor-wide">
+    <div class="modal-header-clean">
+      <div>
+        <h3 id="modalTitle" style="margin:0;">Editar producto</h3>
+        <div class="modal-subtitle">Costos, margen y rentabilidad del producto</div>
+      </div>
+      <button class="btn-secondary" onclick="closeModal()">Cerrar</button>
+    </div>
+
+    <div class="editor-grid">
+    <div class="form-group">
+      <label>Artículo *</label>
+      <input id="editArticulo" oninput="updatePreview()">
+    </div>
+
+    <div class="form-group">
+      <label>Código TLC *</label>
+      <input id="editCodigoTLC" oninput="updatePreview()">
+    </div>
+
+    <div class="form-group">
+      <label>Proveedor</label>
+      <input id="editProveedor" oninput="updatePreview()">
+    </div>
+
+    <div class="form-group">
+      <label>Código Proveedor</label>
+      <input id="editCodigoProveedor" oninput="updatePreview()">
+    </div>
+
+    <div class="form-group">
+      <label>Código Fábrica</label>
+      <input id="editCodigoFabrica" oninput="updatePreview()">
+    </div>
+
+    <div class="form-group">
+      <label>Moneda *</label>
+      <select id="editMoneda" onchange="updatePreview()">
+        <option value="">Seleccionar</option>
+        <option value="USD">USD</option>
+        <option value="UYU">UYU</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label>Modo Costo</label>
+      <select id="editModoCosto" onchange="updateCostoModeUI('edit'); updatePreview();">
+        <option value="costo_directo">Costo directo</option>
+        <option value="pvp_descuento">PVP proveedor + descuento</option>
+      </select>
+    </div>
+
+    <div id="editCostoDirectoWrap" class="form-group">
+      <label>Precio Proveedor *</label>
+      <input id="editPrecioProveedor" type="number" step="0.01" oninput="updatePreview()">
+    </div>
+
+    <div id="editPvpProveedorWrap" class="form-group hidden">
+      <label>PVP Proveedor</label>
+      <input id="editPvpProveedor" type="number" step="0.01" oninput="updatePreview()">
+    </div>
+
+    <div id="editDescuentoProveedorWrap" class="form-group hidden">
+      <label>Descuento Proveedor %</label>
+      <input id="editDescuentoProveedorPct" type="number" step="0.01" oninput="updatePreview()">
+    </div>
+
+    <div id="editPrecioProveedorCalculadoWrap" class="form-group hidden">
+      <label>Precio Proveedor calculado</label>
+      <div class="readonly-box" id="editPrecioProveedorCalculado">0</div>
+    </div>
+
+    <div id="editPvpWrap" class="form-group">
+      <label>PVP *</label>
+      <input id="editPVP" type="number" step="0.01" oninput="updatePreview()">
+    </div>
+
+    <div class="form-group">
+      <label>Comisión ML %</label>
+      <input id="editComisionMlPct" type="number" step="0.01" oninput="updatePreview()">
+    </div>
+
+    <div class="form-group">
+      <label>Envio / Costo fijo</label>
+      <input id="editEnvioCostoFijo" type="number" step="0.01" oninput="updatePreview()">
+    </div>
+
+    </div>
+
+    <div class="editor-results">
+      <div class="sim-result">
+        <div class="sim-title">Resultado del producto</div>
+        <div class="metric-grid">
+          <div class="form-group">
+            <label>Ganancia real</label>
+            <div class="readonly-box" id="editGananciaResumen">0</div>
+          </div>
+          <div class="form-group">
+            <label>Margen real %</label>
+            <div class="readonly-box" id="editMargenResumen">0%</div>
+          </div>
+          <div class="form-group">
+            <label>Rentabilidad</label>
+            <div class="readonly-box" id="editEstadoResumen">Sin calcular</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sim-result">
+        <div class="sim-title">Cálculo detallado</div>
+    <div id="calculoBox">
+      <div class="collapsible-header" onclick="toggleCalculo()">
+        <span>▼ Ver cálculo</span>
+      </div>
+
+      <div class="collapsible-content">
+        <div class="form-group">
+          <label>Comisión ML $</label>
+          <div class="readonly-box" id="editComisionMlImporte">0</div>
+        </div>
+
+        <div class="form-group">
+          <label>IVA comisión ML</label>
+          <div class="readonly-box" id="editIvaComisionMl">0</div>
+        </div>
+
+        <div class="form-group">
+          <label>IVA compra</label>
+          <div class="readonly-box" id="editIvaCompra">0</div>
+        </div>
+
+        <div class="form-group">
+          <label>IVA venta</label>
+          <div class="readonly-box" id="editIvaVenta">0</div>
+        </div>
+
+        <div class="form-group">
+          <label>IVA DGI</label>
+          <div class="readonly-box" id="editIvaDgi">0</div>
+        </div>
+
+        <div class="form-group">
+          <label>Ganancia real</label>
+          <div class="readonly-box" id="editGanancia">0</div>
+        </div>
+
+        <div class="form-group">
+          <label>Margen real %</label>
+          <div class="readonly-box" id="editMargen">0%</div>
+        </div>
+      </div>
+    </div>
+
+      </div>
+      </div>
+    </div>
+
+    <div class="required-note">(*) campo obligatorio</div>
+
+    <div class="editor-actions-bar">
+      <button id="deleteButton" class="btn-danger" onclick="deleteCurrentProduct()">Eliminar</button>
+      <div class="actions-right">
+        <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button class="btn-primary" onclick="saveProduct()">Guardar producto</button>
+      </div>
+    </div>
+
+    <div id="modalMessage" class="message"></div>
+  </div>
+</div>
+
+<div class="modal" id="simulatorModal">
+  <div class="modal-content simulator-wide-content">
+    <div class="simulator-header">
+      <div>
+        <h3 style="margin:0;">Simulador</h3>
+        <div class="simulator-subhead">Calculá margen, descuento y rentabilidad antes de publicar</div>
+      </div>
+      <button class="btn-secondary" onclick="closeSimulatorModal()">Cerrar</button>
+    </div>
+
+    <div class="simulator-grid">
+      <div class="form-group">
+        <label>Moneda</label>
+        <select id="simMoneda" onchange="updateSimulator(); updateTargetPrice();">
+          <option value="USD">USD</option>
+          <option value="UYU">UYU</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Modo Costo</label>
+        <select id="simModoCosto" onchange="updateCostoModeUI('sim'); updateSimulator(); updateTargetPrice();">
+          <option value="costo_directo">Costo directo</option>
+          <option value="pvp_descuento">PVP proveedor + descuento</option>
+        </select>
+      </div>
+
+      <div id="simCostoDirectoWrap" class="form-group">
+        <label>Precio Proveedor</label>
+        <input id="simPrecioProveedor" type="number" step="0.01" oninput="updateSimulator(); updateTargetPrice();">
+      </div>
+
+      <div id="simPvpWrap" class="form-group">
+        <label>Precio de venta</label>
+        <input id="simPvp" type="number" step="0.01" oninput="updateSimulator()">
+      </div>
+
+      <div id="simPvpProveedorWrap" class="form-group hidden">
+        <label>PVP Proveedor</label>
+        <input id="simPvpProveedor" type="number" step="0.01" oninput="updateSimulator(); updateTargetPrice();">
+      </div>
+
+      <div id="simDescuentoProveedorWrap" class="form-group hidden">
+        <label>Descuento Proveedor %</label>
+        <input id="simDescuentoProveedorPct" type="number" step="0.01" oninput="updateSimulator(); updateTargetPrice();">
+      </div>
+
+      <div id="simPrecioProveedorCalculadoWrap" class="form-group hidden">
+        <label>Precio Proveedor calculado</label>
+        <div class="readonly-box" id="simPrecioProveedorCalculado">USD 0,00</div>
+      </div>
+
+      <div class="form-group">
+        <label>Comisión ML %</label>
+        <input id="simComisionMlPct" type="number" step="0.01" oninput="updateSimulator(); updateTargetPrice();">
+      </div>
+
+      <div class="form-group">
+        <label>Envio / Costo fijo</label>
+        <input id="simEnvioCostoFijo" type="number" step="0.01" oninput="updateSimulator(); updateTargetPrice();">
+      </div>
+
+      <div class="form-group">
+        <label>Descuento publicación / promoción %</label>
+        <input id="simDescuentoPromocion" type="number" step="0.01" min="0" max="100" placeholder="Ej: 10" oninput="updateSimulator(); updateTargetPrice();">
+      </div>
+
+      <div class="form-group">
+        <label>ACOS publicidad %</label>
+        <input id="simAcosPublicidadPct" type="number" step="0.01" min="0" placeholder="Ej: 12" oninput="updateSimulator();">
+      </div>
+
+      <div class="form-group">
+        <label>Margen objetivo %</label>
+        <input id="simTargetMarginPct" type="number" step="0.01" oninput="updateTargetPrice()">
+      </div>
+    </div>
+
+    <div class="sim-panels">
+      <div class="sim-result sim-card-section">
+        <div class="sim-title">Resultado actual</div>
+        <div class="metric-grid three">
+          <div class="metric-card">
+            <label>Ganancia real</label>
+            <div class="readonly-box" id="simGanancia">USD 0,00</div>
+          </div>
+          <div class="metric-card">
+            <label>Margen real %</label>
+            <div class="readonly-box" id="simMargen">0,00%</div>
+          </div>
+          <div class="metric-card">
+            <label>Resultado</label>
+            <div class="readonly-box" id="simEstado">Sin calcular</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sim-result sim-card-section">
+        <div class="sim-title">Resultado con descuento y publicidad</div>
+          <div class="sim-note">El ACOS se descuenta como costo publicitario sobre el precio final con descuento.</div>
+        <div class="metric-grid six">
+          <div class="metric-card">
+            <label>Descuento aplicado</label>
+            <div class="readonly-box" id="simDescuentoImporte">USD 0,00</div>
+          </div>
+          <div class="metric-card">
+            <label>Precio final</label>
+            <div class="readonly-box" id="simVentaFinal">USD 0,00</div>
+          </div>
+          <div class="metric-card">
+            <label>Ganancia final</label>
+            <div class="readonly-box" id="simGananciaFinal">USD 0,00</div>
+          </div>
+          <div class="metric-card">
+            <label>Margen final</label>
+            <div class="readonly-box" id="simMargenFinal">0,00%</div>
+          </div>
+          <div class="metric-card">
+            <label>Rentabilidad final</label>
+            <div class="readonly-box" id="simEstadoFinal">Sin calcular</div>
+          </div>
+          <div class="metric-card">
+            <label>Costo de publicidad</label>
+            <div class="readonly-box" id="simCostoPublicidad">USD 0,00</div>
+          </div>
+          <div class="metric-card">
+            <label>Ganancia después de publicidad</label>
+            <div class="readonly-box" id="simGananciaPublicidad">USD 0,00</div>
+          </div>
+          <div class="metric-card">
+            <label>Margen después de publicidad</label>
+            <div class="readonly-box" id="simMargenPublicidad">0,00%</div>
+          </div>
+          <div class="metric-card">
+            <label>Resultado de venta con publicidad</label>
+            <div class="readonly-box" id="simEstadoPublicidad">Sin calcular</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sim-result sim-card-section target-section">
+        <div class="sim-title">Precio sugerido por margen objetivo</div>
+        <div class="metric-grid three">
+          <div class="metric-card">
+            <label>Precio sugerido</label>
+            <div class="readonly-box" id="simTargetPrice">USD 0,00</div>
+          </div>
+          <div class="metric-card">
+            <label>Margen estimado</label>
+            <div class="readonly-box" id="simTargetAchievedMargin">0,00%</div>
+          </div>
+          <div class="metric-card">
+            <label>Estado objetivo</label>
+            <div class="readonly-box" id="simTargetState">Sin calcular</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="simDetalleBox" class="sim-detail-box">
+      <div class="collapsible-header" onclick="toggleSimDetalle()">
+        <span>▼ Ver cálculo detallado</span>
+      </div>
+
+      <div class="collapsible-content">
+        <div class="detail-grid">
+          <div class="form-group">
+            <label>Comisión ML $</label>
+            <div class="readonly-box" id="simComisionMlImporte">USD 0,00</div>
+          </div>
+
+          <div class="form-group">
+            <label>IVA comisión ML</label>
+            <div class="readonly-box" id="simIvaComisionMl">USD 0,00</div>
+          </div>
+
+          <div class="form-group">
+            <label>IVA compra</label>
+            <div class="readonly-box" id="simIvaCompra">USD 0,00</div>
+          </div>
+
+          <div class="form-group">
+            <label>IVA venta</label>
+            <div class="readonly-box" id="simIvaVenta">USD 0,00</div>
+          </div>
+
+          <div class="form-group">
+            <label>IVA DGI</label>
+            <div class="readonly-box" id="simIvaDgi">USD 0,00</div>
+          </div>
+
+          <div class="form-group">
+            <label>Comisión ML final con descuento</label>
+            <div class="readonly-box" id="simComisionMlFinal">USD 0,00</div>
+          </div>
+
+          <div class="form-group">
+            <label>IVA DGI final con descuento</label>
+            <div class="readonly-box" id="simIvaDgiFinal">USD 0,00</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="simTargetMessage" class="message"></div>
+  </div>
+</div>
+<footer>
+  <div><span>TELOCONSIGO © 2026</span></div>
+  <span>Lista de Precios v1.0</span>
+</footer>
+
+<script>
+let allProducts = [];
+let currentProduct = null;
+let modalMode = 'edit';
+let editPreviewRequestId = 0;
+let simPreviewRequestId = 0;
+let simTargetRequestId = 0;
+
+function formatNumber(n) {
+  return Number(n || 0).toLocaleString('es-UY', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+}
+
+function money(n, moneda) {
+  const m = String(moneda || '').trim().toUpperCase();
+  const prefix = m === 'USD' ? 'USD' : (m === 'UYU' ? 'UYU' : '');
+  return prefix ? `${prefix} ${formatNumber(n)}` : formatNumber(n);
+}
+
+function getMarginClass(m) {
+  const val = Number(m || 0);
+  if (val < 0) return 'margin-red';
+  if (val < 10) return 'margin-orange';
+  if (val < 20) return 'margin-yellow';
+  return 'margin-green';
+}
+
+function normalizeModoCosto(modo) {
+  const m = String(modo || '').trim().toLowerCase();
+  return m === 'pvp_descuento' ? 'pvp_descuento' : 'costo_directo';
+}
+
+function normalizeProveedor(value) {
+  return String(value || '').trim();
+}
+
+function getStateLabelByMargin(margin, gain) {
+  if (Number(gain || 0) < 0) return 'No rentable';
+  if (Number(margin || 0) < 10) return 'Rentabilidad baja';
+  if (Number(margin || 0) < 20) return 'Rentabilidad media';
+  return 'Rentable';
+}
+
+function toggleFiltersPanel() {
+  const panel = document.getElementById('filtersPanel');
+  const arrow = document.getElementById('filtersArrow');
+  const open = panel.classList.toggle('open');
+  arrow.innerText = open ? '▲' : '▼';
+}
+
+function toggleCalculo(forceOpen = null) {
+  const box = document.getElementById('calculoBox');
+  const text = box.querySelector('span');
+
+  if (forceOpen === true) box.classList.add('collapsible-open');
+  else if (forceOpen === false) box.classList.remove('collapsible-open');
+  else box.classList.toggle('collapsible-open');
+
+  text.innerText = box.classList.contains('collapsible-open')
+    ? '▲ Ocultar cálculo'
+    : '▼ Ver cálculo';
+}
+
+function toggleSimDetalle(forceOpen = null) {
+  const box = document.getElementById('simDetalleBox');
+  const text = box.querySelector('span');
+
+  if (forceOpen === true) box.classList.add('collapsible-open');
+  else if (forceOpen === false) box.classList.remove('collapsible-open');
+  else box.classList.toggle('collapsible-open');
+
+  text.innerText = box.classList.contains('collapsible-open')
+    ? '▲ Ocultar cálculo'
+    : '▼ Ver cálculo';
+}
+
+function resetSearch() {
+  document.getElementById('searchInput').value = '';
+  document.getElementById('filterEstado').value = 'todos';
+  document.getElementById('filterMargen').value = 'todos';
+  document.getElementById('filterProveedor').value = 'todos';
+  renderProducts();
+}
+
+function passesEstadoFilter(product, estado) {
+  switch (estado) {
+    case 'sin_codigo_proveedor':
+      return !String(product.codigoProveedor || '').trim();
+    case 'sin_codigo_tlc':
+      return !String(product.codigoTLC || '').trim();
+    case 'sin_envio_costo':
+      return Number(product.envioCostoFijo || 0) <= 0;
+    case 'incompletos':
+      return !!product.incompleto;
+    default:
+      return true;
+  }
+}
+
+function passesMargenFilter(product, margenFilter) {
+  const margen = Number(product.margenReal || 0);
+
+  switch (margenFilter) {
+    case 'mas_20':
+      return margen > 20;
+    case 'entre_10_20':
+      return margen >= 10 && margen < 20;
+    case 'entre_0_10':
+      return margen >= 0 && margen < 10;
+    case 'menor_0':
+      return margen < 0;
+    default:
+      return true;
+  }
+}
+
+function populateProveedorFilter() {
+  const select = document.getElementById('filterProveedor');
+  if (!select) return;
+
+  const currentValue = select.value || 'todos';
+
+  const proveedores = [...new Set(
+    allProducts
+      .map(p => normalizeProveedor(p.proveedor))
+      .filter(p => p !== '')
+  )].sort((a, b) => a.localeCompare(b, 'es'));
+
+  select.innerHTML = '<option value="todos">Todos los proveedores</option>';
+
+  proveedores.forEach(proveedor => {
+    const option = document.createElement('option');
+    option.value = proveedor;
+    option.textContent = proveedor;
+    select.appendChild(option);
+  });
+
+  select.value = proveedores.includes(currentValue) ? currentValue : 'todos';
+}
+
+async function apiRequest(url, options = {}) {
+  const response = await fetch(url, {
+    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    ...options
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error?.message || data.error || 'Error de API');
+  return data;
+}
+
+function loadProducts() {
+  apiRequest('/api/precios')
+    .then(data => {
+      allProducts = data.products || data || [];
+      populateProveedorFilter();
+      renderProducts();
+    })
+    .catch(err => alert(err.message || err));
+}
+
+function renderProducts() {
+  const tbody = document.getElementById('productsBody');
+  const counter = document.getElementById('productsCounter');
+  const s = document.getElementById('searchInput').value.toLowerCase().trim();
+  const estadoFilter = document.getElementById('filterEstado').value;
+  const margenFilter = document.getElementById('filterMargen').value;
+  const proveedorFilter = document.getElementById('filterProveedor').value;
+
+  tbody.innerHTML = '';
+
+  const filteredProducts = allProducts.filter(p => {
+    const proveedorActual = normalizeProveedor(p.proveedor);
+
+    const matchBusqueda =
+      String(p.articulo || '').toLowerCase().includes(s) ||
+      String(p.codigoTLC || '').toLowerCase().includes(s) ||
+      String(p.codigoProveedor || '').toLowerCase().includes(s) ||
+      String(p.proveedor || '').toLowerCase().includes(s);
+
+    const matchEstado = passesEstadoFilter(p, estadoFilter);
+    const matchMargen = passesMargenFilter(p, margenFilter);
+    const matchProveedor = proveedorFilter === 'todos' || proveedorActual === proveedorFilter;
+
+    return matchBusqueda && matchEstado && matchMargen && matchProveedor;
+  });
+
+  filteredProducts.forEach(p => {
+    const tr = document.createElement('tr');
+    if (p.incompleto) tr.classList.add('row-incomplete');
+
+    const articuloLabel = p.incompleto
+      ? `${p.articulo || '(Sin nombre)'} <span class="badge-incomplete">Incompleto</span>`
+      : (p.articulo || '');
+
+    const tooltip = (p.incompleteFields || []).length
+      ? `title="Falta: ${(p.incompleteFields || []).join(', ')}"`
+      : '';
+
+    tr.innerHTML = `
+      <td ${tooltip}>${articuloLabel}</td>
+      <td>${p.codigoTLC || ''}</td>
+      <td>${p.proveedor || ''}</td>
+      <td>${p.codigoProveedor || ''}</td>
+      <td>${money(p.precioProveedor, p.moneda)}</td>
+      <td>${money(p.pvp, p.moneda)}</td>
+      <td>${money(p.gananciaReal, p.moneda)}</td>
+      <td class="${getMarginClass(p.margenReal)}">${formatNumber(p.margenReal)}%</td>
+      <td><button class="btn-primary" onclick="openEditModal(${Number(p.rowNumber)})">Editar</button></td>
+    `;
+
+    tbody.appendChild(tr);
+  });
+
+  counter.innerHTML = `Mostrando <strong>${filteredProducts.length}</strong> de <strong>${allProducts.length}</strong> artículos`;
+}
+
+function updateCostoModeUI(prefix) {
+  const modo = normalizeModoCosto(document.getElementById(prefix + 'ModoCosto').value);
+
+  const costoDirectoWrap = document.getElementById(prefix + 'CostoDirectoWrap');
+  const pvpProveedorWrap = document.getElementById(prefix + 'PvpProveedorWrap');
+  const descuentoProveedorWrap = document.getElementById(prefix + 'DescuentoProveedorWrap');
+  const precioProveedorCalculadoWrap = document.getElementById(prefix + 'PrecioProveedorCalculadoWrap');
+  const pvpWrap = document.getElementById(prefix + 'PvpWrap');
+
+  if (modo === 'pvp_descuento') {
+    costoDirectoWrap.classList.add('hidden');
+    pvpProveedorWrap.classList.remove('hidden');
+    descuentoProveedorWrap.classList.remove('hidden');
+    precioProveedorCalculadoWrap.classList.remove('hidden');
+    pvpWrap.classList.add('hidden');
+  } else {
+    costoDirectoWrap.classList.remove('hidden');
+    pvpProveedorWrap.classList.add('hidden');
+    descuentoProveedorWrap.classList.add('hidden');
+    precioProveedorCalculadoWrap.classList.add('hidden');
+    pvpWrap.classList.remove('hidden');
+  }
+}
+
+function clearForm() {
+  document.getElementById('editArticulo').value = '';
+  document.getElementById('editCodigoTLC').value = '';
+  document.getElementById('editProveedor').value = '';
+  document.getElementById('editCodigoProveedor').value = '';
+  document.getElementById('editCodigoFabrica').value = '';
+  document.getElementById('editMoneda').value = '';
+  document.getElementById('editModoCosto').value = 'costo_directo';
+  document.getElementById('editPrecioProveedor').value = '';
+  document.getElementById('editPvpProveedor').value = '';
+  document.getElementById('editDescuentoProveedorPct').value = '';
+  document.getElementById('editPVP').value = '';
+  document.getElementById('editComisionMlPct').value = '';
+  document.getElementById('editEnvioCostoFijo').value = '';
+  document.getElementById('editPrecioProveedorCalculado').innerText = '0';
+  document.getElementById('editComisionMlImporte').innerText = '0';
+  document.getElementById('editIvaComisionMl').innerText = '0';
+  document.getElementById('editIvaCompra').innerText = '0';
+  document.getElementById('editIvaVenta').innerText = '0';
+  document.getElementById('editIvaDgi').innerText = '0';
+  document.getElementById('editGanancia').innerText = '0';
+  document.getElementById('editMargen').innerText = '0%';
+  document.getElementById('modalMessage').innerHTML = '';
+  updateCostoModeUI('edit');
+}
+
+function setEditMetricsPreview(result) {
+  const moneda = result.moneda || '';
+
+  document.getElementById('editPrecioProveedorCalculado').innerText = money(result.precioProveedor, moneda);
+  document.getElementById('editComisionMlImporte').innerText = money(result.comisionMlImporte, moneda);
+  document.getElementById('editIvaComisionMl').innerText = money(result.ivaComisionMl, moneda);
+  document.getElementById('editIvaCompra').innerText = money(result.ivaCompra, moneda);
+  document.getElementById('editIvaVenta').innerText = money(result.ivaVenta, moneda);
+  document.getElementById('editIvaDgi').innerText = money(result.ivaDgi, moneda);
+  document.getElementById('editGanancia').innerText = money(result.gananciaReal, moneda);
+  document.getElementById('editMargen').innerText = `${formatNumber(result.margenReal)}%`;
+
+  const estado = getStateLabelByMargin(result.margenReal, result.gananciaReal);
+  const gananciaResumen = document.getElementById('editGananciaResumen');
+  const margenResumen = document.getElementById('editMargenResumen');
+  const estadoResumen = document.getElementById('editEstadoResumen');
+  if (gananciaResumen) {
+    gananciaResumen.innerText = money(result.gananciaReal, moneda);
+    gananciaResumen.className = 'readonly-box ' + getMarginClass(result.margenReal);
+  }
+  if (margenResumen) {
+    margenResumen.innerText = `${formatNumber(result.margenReal)}%`;
+    margenResumen.className = 'readonly-box ' + getMarginClass(result.margenReal);
+  }
+  if (estadoResumen) {
+    estadoResumen.innerText = estado;
+    estadoResumen.className = 'readonly-box ' + getMarginClass(result.margenReal);
+  }
+}
+
+function setEditPreviewNeutral() {
+  const moneda = document.getElementById('editMoneda').value || '';
+  document.getElementById('editPrecioProveedorCalculado').innerText = money(0, moneda);
+  document.getElementById('editComisionMlImporte').innerText = money(0, moneda);
+  document.getElementById('editIvaComisionMl').innerText = money(0, moneda);
+  document.getElementById('editIvaCompra').innerText = money(0, moneda);
+  document.getElementById('editIvaVenta').innerText = money(0, moneda);
+  document.getElementById('editIvaDgi').innerText = money(0, moneda);
+  document.getElementById('editGanancia').innerText = money(0, moneda);
+  document.getElementById('editMargen').innerText = '0,00%';
+
+  ['editGananciaResumen', 'editMargenResumen', 'editEstadoResumen'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.className = 'readonly-box';
+    if (id === 'editGananciaResumen') el.innerText = money(0, moneda);
+    if (id === 'editMargenResumen') el.innerText = '0,00%';
+    if (id === 'editEstadoResumen') el.innerText = 'Sin calcular';
+  });
+}
+
+function getFormData() {
+  return {
+    articulo: document.getElementById('editArticulo').value.trim(),
+    codigoTLC: document.getElementById('editCodigoTLC').value.trim(),
+    proveedor: document.getElementById('editProveedor').value.trim(),
+    codigoProveedor: document.getElementById('editCodigoProveedor').value.trim(),
+    codigoFabrica: document.getElementById('editCodigoFabrica').value.trim(),
+    moneda: document.getElementById('editMoneda').value.trim(),
+    modoCosto: document.getElementById('editModoCosto').value || 'costo_directo',
+    precioProveedor: Number(document.getElementById('editPrecioProveedor').value || 0),
+    pvpProveedor: Number(document.getElementById('editPvpProveedor').value || 0),
+    descuentoProveedorPct: Number(document.getElementById('editDescuentoProveedorPct').value || 0),
+    pvp: Number(document.getElementById('editPVP').value || 0),
+    comisionMlPct: Number(document.getElementById('editComisionMlPct').value || 0),
+    envioCostoFijo: Number(document.getElementById('editEnvioCostoFijo').value || 0)
+  };
+}
+
+function canRequestPreview(data) {
+  return !!data.moneda;
+}
+
+function updatePreview() {
+  const data = getFormData();
+  const requestId = ++editPreviewRequestId;
+  const message = document.getElementById('modalMessage');
+
+  if (!canRequestPreview(data)) {
+    setEditPreviewNeutral();
+    message.innerHTML = '';
+    return;
+  }
+
+  apiRequest('/api/precios/preview', { method: 'POST', body: JSON.stringify(data) })
+    .then(result => {
+      if (requestId !== editPreviewRequestId) return;
+      setEditMetricsPreview(result);
+      message.innerHTML = '';
+    })
+    .catch(error => {
+      if (requestId !== editPreviewRequestId) return;
+      setEditPreviewNeutral();
+      message.innerHTML = `<span class="error">${error.message || error}</span>`;
+    });
+}
+
+function openCreateModal() {
+  modalMode = 'create';
+  currentProduct = null;
+  document.getElementById('modalTitle').innerText = 'Nuevo producto';
+  document.getElementById('deleteButton').style.display = 'none';
+  clearForm();
+  toggleCalculo(false);
+  document.getElementById('editModal').style.display = 'flex';
+}
+
+function openEditModal(rowNumber) {
+  modalMode = 'edit';
+  const p = allProducts.find(x => Number(x.rowNumber) === Number(rowNumber));
+  if (!p) return;
+
+  currentProduct = p;
+
+  document.getElementById('modalTitle').innerText = 'Editar producto';
+  document.getElementById('deleteButton').style.display = 'inline-block';
+
+  document.getElementById('editArticulo').value = p.articulo || '';
+  document.getElementById('editCodigoTLC').value = p.codigoTLC || '';
+  document.getElementById('editProveedor').value = p.proveedor || '';
+  document.getElementById('editCodigoProveedor').value = p.codigoProveedor || '';
+  document.getElementById('editCodigoFabrica').value = p.codigoFabrica || '';
+  document.getElementById('editMoneda').value = p.moneda || '';
+  document.getElementById('editModoCosto').value = p.modoCosto || 'costo_directo';
+  document.getElementById('editPrecioProveedor').value = p.precioProveedor ?? '';
+  document.getElementById('editPvpProveedor').value = p.pvpProveedor ?? '';
+  document.getElementById('editDescuentoProveedorPct').value = p.descuentoProveedorPct ?? '';
+  document.getElementById('editPVP').value = p.pvp ?? '';
+  document.getElementById('editComisionMlPct').value = p.comisionMlPct ?? '';
+  document.getElementById('editEnvioCostoFijo').value = p.envioCostoFijo ?? '';
+  document.getElementById('modalMessage').innerHTML = '';
+
+  updateCostoModeUI('edit');
+  toggleCalculo(false);
+  document.getElementById('editModal').style.display = 'flex';
+  updatePreview();
+}
+
+function closeModal() {
+  document.getElementById('editModal').style.display = 'none';
+  document.getElementById('modalMessage').innerHTML = '';
+}
+
+function saveProduct() {
+  const data = getFormData();
+  const message = document.getElementById('modalMessage');
+  message.innerHTML = 'Guardando...';
+
+  if (modalMode === 'create') {
+    apiRequest('/api/precios', { method: 'POST', body: JSON.stringify(data) })
+      .then(result => {
+        allProducts.push(result);
+        populateProveedorFilter();
+        renderProducts();
+        closeModal();
+      })
+      .catch(error => {
+        message.innerHTML = `<span class="error">${error.message || error}</span>`;
+      });
+    return;
+  }
+
+  data.originalRowNumber = currentProduct.rowNumber;
+
+  apiRequest('/api/precios/' + encodeURIComponent(currentProduct.rowNumber), { method: 'PUT', body: JSON.stringify(data) })
+    .then(result => {
+      const index = allProducts.findIndex(p => Number(p.rowNumber) === Number(result.originalRowNumber || result.rowNumber));
+      if (index >= 0) allProducts[index] = { ...allProducts[index], ...result };
+      populateProveedorFilter();
+      renderProducts();
+      closeModal();
+    })
+    .catch(error => {
+      message.innerHTML = `<span class="error">${error.message || error}</span>`;
+    });
+}
+
+function deleteCurrentProduct() {
+  if (!currentProduct) return;
+  const ok = confirm(`¿Seguro que querés eliminar el artículo "${currentProduct.articulo || '(Sin nombre)'}"?`);
+  if (!ok) return;
+
+  const message = document.getElementById('modalMessage');
+  message.innerHTML = 'Eliminando...';
+
+  apiRequest('/api/precios/' + encodeURIComponent(currentProduct.rowNumber), { method: 'DELETE' })
+    .then(() => {
+      allProducts = allProducts.filter(p => Number(p.rowNumber) !== Number(currentProduct.rowNumber));
+      populateProveedorFilter();
+      renderProducts();
+      closeModal();
+    })
+    .catch(error => {
+      message.innerHTML = `<span class="error">${error.message || error}</span>`;
+    });
+}
+
+function getSimulatorData() {
+  return {
+    articulo: 'Simulador',
+    codigoTLC: '',
+    proveedor: '',
+    codigoProveedor: '',
+    codigoFabrica: '',
+    moneda: document.getElementById('simMoneda').value || 'USD',
+    modoCosto: document.getElementById('simModoCosto').value || 'costo_directo',
+    precioProveedor: Number(document.getElementById('simPrecioProveedor').value || 0),
+    pvpProveedor: Number(document.getElementById('simPvpProveedor').value || 0),
+    descuentoProveedorPct: Number(document.getElementById('simDescuentoProveedorPct').value || 0),
+    pvp: Number(document.getElementById('simPvp').value || 0),
+    comisionMlPct: Number(document.getElementById('simComisionMlPct').value || 0),
+    envioCostoFijo: Number(document.getElementById('simEnvioCostoFijo').value || 0),
+    descuentoPromocion: Number(document.getElementById('simDescuentoPromocion').value || 0)
+  };
+}
+
+function setSimNeutral() {
+  const moneda = document.getElementById('simMoneda').value || 'USD';
+  document.getElementById('simPrecioProveedorCalculado').innerText = money(0, moneda);
+  document.getElementById('simGanancia').innerText = money(0, moneda);
+  document.getElementById('simMargen').innerText = '0,00%';
+  document.getElementById('simComisionMlImporte').innerText = money(0, moneda);
+  document.getElementById('simIvaComisionMl').innerText = money(0, moneda);
+  document.getElementById('simIvaCompra').innerText = money(0, moneda);
+  document.getElementById('simIvaVenta').innerText = money(0, moneda);
+  document.getElementById('simIvaDgi').innerText = money(0, moneda);
+  document.getElementById('simDescuentoImporte').innerText = money(0, moneda);
+  document.getElementById('simVentaFinal').innerText = money(0, moneda);
+  document.getElementById('simGananciaFinal').innerText = money(0, moneda);
+  document.getElementById('simMargenFinal').innerText = '0,00%';
+  document.getElementById('simComisionMlFinal').innerText = money(0, moneda);
+  document.getElementById('simIvaDgiFinal').innerText = money(0, moneda);
+  ['simMargenPublicidad'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.innerText = '0,00%';
+      el.className = 'readonly-box';
+    }
+  });
+  ['simCostoPublicidad','simGananciaPublicidad'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.innerText = money(0, moneda);
+      el.className = 'readonly-box';
+    }
+  });
+  const estadoPubEl = document.getElementById('simEstadoPublicidad');
+  if (estadoPubEl) {
+    estadoPubEl.innerText = 'Sin calcular';
+    estadoPubEl.className = 'readonly-box';
+  }
+
+  const estadoEl = document.getElementById('simEstado');
+  estadoEl.innerText = 'Sin calcular';
+  estadoEl.className = 'readonly-box';
+
+  const estadoFinalEl = document.getElementById('simEstadoFinal');
+  estadoFinalEl.innerText = 'Sin calcular';
+  estadoFinalEl.className = 'readonly-box';
+
+  document.getElementById('simTargetPrice').innerText = money(0, moneda);
+  document.getElementById('simTargetAchievedMargin').innerText = '0,00%';
+  document.getElementById('simTargetState').innerText = 'Sin calcular';
+  document.getElementById('simTargetMessage').innerHTML = '';
+}
+
+
+function updatePublicidadResult(result) {
+  const moneda = (result && result.moneda) || document.getElementById('simMoneda').value || 'USD';
+  const acosPct = Number(document.getElementById('simAcosPublicidadPct')?.value || 0);
+  const ventaFinal = Number((result && result.ventaFinal) || 0);
+  const gananciaFinal = Number((result && result.gananciaFinal) || 0);
+
+  const costoPublicidad = ventaFinal * (acosPct / 100);
+  const gananciaPublicidad = gananciaFinal - costoPublicidad;
+  const margenPublicidad = ventaFinal > 0 ? (gananciaPublicidad / ventaFinal) * 100 : 0;
+  const estadoPublicidad = getStateLabelByMargin(margenPublicidad, gananciaPublicidad);
+
+  const setText = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.innerText = value;
+  };
+  const setClass = (id, margin) => {
+    const el = document.getElementById(id);
+    if (el) el.className = 'readonly-box ' + getMarginClass(margin);
+  };
+setText('simCostoPublicidad', money(costoPublicidad, moneda));
+  setText('simGananciaPublicidad', money(gananciaPublicidad, moneda));
+  setText('simMargenPublicidad', `${formatNumber(margenPublicidad)}%`);
+  setText('simEstadoPublicidad', estadoPublicidad);
+
+  setClass('simGananciaPublicidad', margenPublicidad);
+  setClass('simMargenPublicidad', margenPublicidad);
+  setClass('simEstadoPublicidad', margenPublicidad);
+}
+
+function setSimulatorResult(result) {
+  const moneda = result.moneda || 'USD';
+
+  document.getElementById('simPrecioProveedorCalculado').innerText = money(result.precioProveedor, moneda);
+  document.getElementById('simGanancia').innerText = money(result.gananciaReal, moneda);
+  document.getElementById('simMargen').innerText = `${formatNumber(result.margenReal)}%`;
+  document.getElementById('simComisionMlImporte').innerText = money(result.comisionMlImporte, moneda);
+  document.getElementById('simIvaComisionMl').innerText = money(result.ivaComisionMl, moneda);
+  document.getElementById('simIvaCompra').innerText = money(result.ivaCompra, moneda);
+  document.getElementById('simIvaVenta').innerText = money(result.ivaVenta, moneda);
+  document.getElementById('simIvaDgi').innerText = money(result.ivaDgi, moneda);
+  document.getElementById('simDescuentoImporte').innerText = money(result.descuentoPromocionImporte, moneda);
+  document.getElementById('simVentaFinal').innerText = money(result.ventaFinal, moneda);
+  document.getElementById('simGananciaFinal').innerText = money(result.gananciaFinal, moneda);
+  document.getElementById('simMargenFinal').innerText = `${formatNumber(result.margenFinal)}%`;
+  document.getElementById('simComisionMlFinal').innerText = money(result.comisionMlImporteFinal, moneda);
+  document.getElementById('simIvaDgiFinal').innerText = money(result.ivaDgiFinal, moneda);
+  updatePublicidadResult(result);
+
+  const estado = getStateLabelByMargin(result.margenReal, result.gananciaReal);
+
+  const estadoEl = document.getElementById('simEstado');
+  estadoEl.innerText = estado;
+  estadoEl.className = 'readonly-box ' + getMarginClass(result.margenReal);
+
+  const estadoFinal = getStateLabelByMargin(result.margenFinal, result.gananciaFinal);
+  const estadoFinalEl = document.getElementById('simEstadoFinal');
+  estadoFinalEl.innerText = estadoFinal;
+  estadoFinalEl.className = 'readonly-box ' + getMarginClass(result.margenFinal);
+}
+
+function openSimulatorModal() {
+  document.getElementById('simMoneda').value = 'USD';
+  document.getElementById('simModoCosto').value = 'costo_directo';
+  document.getElementById('simPrecioProveedor').value = '';
+  document.getElementById('simPvpProveedor').value = '';
+  document.getElementById('simDescuentoProveedorPct').value = '';
+  document.getElementById('simPvp').value = '';
+  document.getElementById('simComisionMlPct').value = '';
+  document.getElementById('simEnvioCostoFijo').value = '';
+  document.getElementById('simDescuentoPromocion').value = '';
+  document.getElementById('simTargetMarginPct').value = '';
+  if (document.getElementById('simAcosPublicidadPct')) document.getElementById('simAcosPublicidadPct').value = '';
+  updateCostoModeUI('sim');
+  toggleSimDetalle(false);
+  setSimNeutral();
+  document.getElementById('simulatorModal').style.display = 'flex';
+}
+
+function closeSimulatorModal() {
+  document.getElementById('simulatorModal').style.display = 'none';
+}
+
+function updateSimulator() {
+  const requestId = ++simPreviewRequestId;
+  const data = getSimulatorData();
+
+  apiRequest('/api/precios/preview', { method: 'POST', body: JSON.stringify(data) })
+    .then(result => {
+      if (requestId !== simPreviewRequestId) return;
+      setSimulatorResult(result);
+    })
+    .catch(() => {
+      if (requestId !== simPreviewRequestId) return;
+      setSimNeutral();
+    });
+}
+
+function updateTargetPrice() {
+  const targetMarginPct = Number(document.getElementById('simTargetMarginPct').value || 0);
+  const requestId = ++simTargetRequestId;
+  const data = getSimulatorData();
+  const message = document.getElementById('simTargetMessage');
+
+  if (String(document.getElementById('simTargetMarginPct').value).trim() === '') {
+    document.getElementById('simTargetPrice').innerText = money(0, data.moneda);
+    document.getElementById('simTargetAchievedMargin').innerText = '0,00%';
+    document.getElementById('simTargetState').innerText = 'Sin calcular';
+    message.innerHTML = '';
+    return;
+  }
+
+  apiRequest('/api/precios/target-price', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, targetMarginPct: targetMarginPct })
+  })
+    .then(result => {
+      if (requestId !== simTargetRequestId) return;
+
+      document.getElementById('simTargetPrice').innerText = money(result.suggestedPvp, result.moneda);
+      document.getElementById('simTargetAchievedMargin').innerText = `${formatNumber(result.achievedMarginPct)}%`;
+      document.getElementById('simTargetState').innerText = getStateLabelByMargin(result.margenReal, result.gananciaReal);
+      document.getElementById('simTargetState').className = 'readonly-box ' + getMarginClass(result.achievedMarginPct);
+      message.innerHTML = '';
+    })
+    .catch(error => {
+      if (requestId !== simTargetRequestId) return;
+
+      document.getElementById('simTargetPrice').innerText = money(0, data.moneda);
+      document.getElementById('simTargetAchievedMargin').innerText = '0,00%';
+      document.getElementById('simTargetState').innerText = 'Sin calcular';
+      document.getElementById('simTargetState').className = 'readonly-box';
+      message.innerHTML = `<span class="error">${error.message || error}</span>`;
+    });
+}
+
+function updateClock() {
+  const el = document.getElementById('clock');
+  if (!el) return;
+  const now = new Date();
+  el.textContent = now.toLocaleTimeString('es-UY', { hour: 'numeric', minute: '2-digit' });
+}
+
+window.onload = function() {
+  updateClock();
+  setInterval(updateClock, 30000);
+  loadProducts();
+
+  const searchInput = document.getElementById('searchInput');
+  searchInput.addEventListener('keydown', function(event) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      renderProducts();
+    }
+  });
+};
+</script>
+
+</body>
+</html>

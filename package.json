@@ -1,9 +1,15 @@
 {
-  "name": "teloconsigo-panel",
+  "name": "tlc-panel-control-local-dev",
   "version": "1.0.0",
   "main": "start.js",
   "scripts": {
-    "start": "node start.js"
+    "start": "node start.js",
+    "dev": "node start.js"
   },
-  "dependencies": {}
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7"
+  }
 }
