@@ -636,14 +636,32 @@ function normalizeInboxQuestionForFrontend(q) {
   };
 }
 
+function extractPackIdFromMessageResource(value) {
+  const raw = String(value || '');
+  const m = raw.match(/packs\/(\d+)/i) || raw.match(/pack_id[=:](\d+)/i) || raw.match(/(\d{10,})/);
+  return m ? m[1] : '';
+}
+
+function pickInboxPackId(m) {
+  const direct = m.pack_id || m.packId || m.resource_id || m.resourceId || m.id || '';
+  if (direct) return String(direct).replace(/[^0-9]/g, '') || String(direct);
+  const resource = m.resource || m.path || m.href || m.url || m.conversation_status?.path || '';
+  const fromResource = extractPackIdFromMessageResource(resource);
+  if (fromResource) return fromResource;
+  const resources = Array.isArray(m.message_resources) ? m.message_resources : [];
+  const packRes = resources.find(r => String(r.name || r.type || '').toLowerCase().includes('pack'));
+  return packRes ? String(packRes.id || '') : '';
+}
+
 function normalizeInboxMessageForFrontend(m) {
-  const packId = m.pack_id || m.packId || m.resource_id || m.resourceId || m.id || '';
+  const packId = pickInboxPackId(m);
   const rawText = (m.text && (m.text.plain || m.text)) || m.message || m.subject || m.snippet || m.title || '';
   const date = m.message_date?.received || m.message_date?.created || m.date_received || m.date_created || m.created_at || m.updated_at || m.last_updated || '';
   return {
     ...m,
     pack_id: packId,
     resource_id: packId,
+    resource: m.resource || (packId ? `/packs/${packId}` : ''),
     text: typeof m.text === 'object' ? m.text : { plain: rawText || (packId ? `Pack ${packId} con mensajes pendientes` : 'Mensaje pendiente') },
     message_date: m.message_date || { received: date, created: date },
     from: m.from || (m.from_user_id ? { user_id: m.from_user_id } : undefined),
@@ -721,11 +739,13 @@ async function fetchInboxMessagePackDirect(cuenta, params = {}) {
   if (!packId) throw new Error('Falta pack_id');
   const markAsRead = String(params.mark_as_read ?? 'false');
   const limit = getInboxLimit(params.limit, 50);
+  const offset = Number(params.offset || 0) || 0;
+  const common = `limit=${limit}&offset=${offset}&tag=post_sale&mark_as_read=${encodeURIComponent(markAsRead)}`;
   const endpoints = [
-    `/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}?mark_as_read=${encodeURIComponent(markAsRead)}&limit=${limit}`,
-    `/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}?limit=${limit}`,
-    `/marketplace/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}?mark_as_read=${encodeURIComponent(markAsRead)}&limit=${limit}`,
-    `/marketplace/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}?limit=${limit}`,
+    `/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}?${common}`,
+    `/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}?limit=${limit}&offset=${offset}&mark_as_read=${encodeURIComponent(markAsRead)}`,
+    `/marketplace/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}?${common}`,
+    `/marketplace/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}?limit=${limit}&offset=${offset}&mark_as_read=${encodeURIComponent(markAsRead)}`,
   ];
   const errors = [];
   for (const endpoint of endpoints) {
@@ -742,22 +762,60 @@ async function fetchInboxMessagePackDirect(cuenta, params = {}) {
 async function fetchInboxUnreadMessagesDirect(cuenta, params = {}) {
   const sellerId = await fetchMeliSellerId(cuenta);
   const limit = getInboxLimit(params.limit, 50);
-  const endpoints = [
-    `/messages/packs/sellers/${sellerId}?tag=post_sale&limit=${limit}`,
-    `/messages/packs/sellers/${sellerId}?limit=${limit}`,
-    `/marketplace/messages/packs/sellers/${sellerId}?tag=post_sale&limit=${limit}`,
-    `/marketplace/messages/packs/sellers/${sellerId}?limit=${limit}`,
+
+  // Endpoint correcto para pendientes/no leidos segun documentacion MeLi actual:
+  // /marketplace/messages/unread?role=seller&tag=post_sale&user_id=$SELLER_ID
+  const unreadEndpoints = [
+    `/marketplace/messages/unread?role=seller&tag=post_sale&user_id=${sellerId}`,
+    `/marketplace/messages/unread?tag=post_sale&user_id=${sellerId}`,
+    `/marketplace/messages/unread?role=seller&user_id=${sellerId}`,
   ];
   const errors = [];
-  for (const endpoint of endpoints) {
+
+  for (const endpoint of unreadEndpoints) {
     const result = await meliApiTry(cuenta, endpoint);
-    if (result.ok) {
-      const messages = unwrapMeliList(result.data, ['messages', 'results']).map(normalizeInboxMessageForFrontend)
-        .filter(m => m.pack_id || m.resource_id);
-      return { ok: true, direct: true, cuenta: normalizeCuentaKey(cuenta), messages, results: messages, paging: result.data?.paging || null, raw: result.data };
+    if (!result.ok) {
+      errors.push(`${endpoint}: ${result.error}`);
+      continue;
     }
-    errors.push(`${endpoint}: ${result.error}`);
+
+    const unreadRows = unwrapMeliList(result.data, ['results']).slice(0, limit);
+    const messages = [];
+
+    for (const row of unreadRows) {
+      const packId = pickInboxPackId(row);
+      if (!packId) continue;
+
+      // Armamos un item visible aunque el hilo falle; despues intentamos hidratar fecha/texto
+      // sin marcar como leido.
+      let item = normalizeInboxMessageForFrontend({
+        ...row,
+        pack_id: packId,
+        resource_id: packId,
+        resource: row.resource || `/packs/${packId}`,
+        text: { plain: `Pack ${packId} con ${row.count || 1} mensaje(s) pendiente(s)` },
+      });
+
+      const thread = await meliApiTry(cuenta, `/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}?limit=1&offset=0&tag=post_sale&mark_as_read=false`);
+      if (thread.ok) {
+        const last = unwrapMeliList(thread.data, ['messages', 'results']).map(normalizeInboxMessageForFrontend)[0];
+        if (last) item = { ...last, pack_id: packId, resource_id: packId, resource: row.resource || `/packs/${packId}`, unread_count: row.count || 1 };
+      }
+      messages.push(item);
+    }
+
+    return {
+      ok: true,
+      direct: true,
+      cuenta: normalizeCuentaKey(cuenta),
+      messages,
+      results: messages,
+      paging: result.data?.paging || null,
+      unreadRaw: result.data,
+      sourceEndpoint: endpoint,
+    };
   }
+
   throw new Error(`No se pudieron cargar mensajes pendientes. ${errors[0] || ''}`);
 }
 
