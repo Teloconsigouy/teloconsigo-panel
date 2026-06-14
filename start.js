@@ -759,64 +759,183 @@ async function fetchInboxMessagePackDirect(cuenta, params = {}) {
   throw new Error(`No se pudo cargar el hilo del pack ${packId}. ${errors[0] || ''}`);
 }
 
+async function fetchInboxRecentMessageConversationsDirect(cuenta, sellerId, limit = 50) {
+  // Fallback real: si Mercado Libre no devuelve pendientes en /marketplace/messages/unread,
+  // buscamos las ventas recientes y consultamos sus hilos sin marcarlos como leidos.
+  // Esto evita que la bandeja quede vacia cuando el endpoint de pendientes devuelve []
+  // aunque existan conversaciones postventa.
+  const orderLimit = Math.min(Math.max(limit * 2, 20), 100);
+  const orderEndpoints = [
+    `/orders/search?seller=${encodeURIComponent(sellerId)}&sort=date_desc&limit=${orderLimit}`,
+    `/orders/search?seller=${encodeURIComponent(sellerId)}&order.status=paid&sort=date_desc&limit=${orderLimit}`,
+  ];
+  const orders = [];
+  const orderErrors = [];
+  for (const endpoint of orderEndpoints) {
+    const result = await meliApiTry(cuenta, endpoint);
+    if (!result.ok) {
+      orderErrors.push(`${endpoint}: ${result.error}`);
+      continue;
+    }
+    const rows = unwrapMeliList(result.data, ['results', 'orders']);
+    if (Array.isArray(rows) && rows.length) {
+      orders.push(...rows);
+      break;
+    }
+  }
+
+  const messages = [];
+  const seen = new Set();
+  const threadErrors = [];
+  for (const order of orders) {
+    if (messages.length >= limit) break;
+    const orderId = String(order.id || order.order_id || '').trim();
+    const packId = String(order.pack_id || order.pack?.id || order.packId || orderId || '').trim();
+    if (!packId || seen.has(packId)) continue;
+    seen.add(packId);
+
+    const threadEndpoints = [
+      `/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}?limit=10&offset=0&tag=post_sale&mark_as_read=false`,
+      `/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}?limit=10&offset=0&mark_as_read=false`,
+    ];
+    for (const threadEndpoint of threadEndpoints) {
+      const thread = await meliApiTry(cuenta, threadEndpoint);
+      if (!thread.ok) {
+        threadErrors.push(`${threadEndpoint}: ${thread.error}`);
+        continue;
+      }
+      const threadMessages = unwrapMeliList(thread.data, ['messages', 'results']).map(normalizeInboxMessageForFrontend);
+      if (!threadMessages.length) continue;
+      const last = threadMessages
+        .filter(x => String(x.from?.user_id || '') !== String(sellerId))
+        .sort((a,b) => new Date(b.message_date?.received || b.message_date?.created || 0) - new Date(a.message_date?.received || a.message_date?.created || 0))[0]
+        || threadMessages.sort((a,b) => new Date(b.message_date?.received || b.message_date?.created || 0) - new Date(a.message_date?.received || a.message_date?.created || 0))[0];
+      messages.push({
+        ...last,
+        pack_id: packId,
+        resource_id: packId,
+        resource: `/packs/${packId}`,
+        order_id: orderId,
+        unread_count: 0,
+        _source: 'recent_orders_fallback',
+      });
+      break;
+    }
+  }
+  return { messages, orderErrors, threadErrors: threadErrors.slice(0, 8) };
+}
+
 async function fetchInboxUnreadMessagesDirect(cuenta, params = {}) {
   const sellerId = await fetchMeliSellerId(cuenta);
   const limit = getInboxLimit(params.limit, 50);
 
-  // Endpoint correcto para pendientes/no leidos segun documentacion MeLi actual:
+  // Endpoint oficial actual para pendientes/no leidos:
   // /marketplace/messages/unread?role=seller&tag=post_sale&user_id=$SELLER_ID
+  // Dejamos variantes porque algunas cuentas aceptan/ignoran user_id o tag distinto.
   const unreadEndpoints = [
     `/marketplace/messages/unread?role=seller&tag=post_sale&user_id=${sellerId}`,
-    `/marketplace/messages/unread?tag=post_sale&user_id=${sellerId}`,
     `/marketplace/messages/unread?role=seller&user_id=${sellerId}`,
+    `/marketplace/messages/unread?tag=post_sale&user_id=${sellerId}`,
+    `/marketplace/messages/unread?role=seller&tag=post_sale`,
+    `/marketplace/messages/unread?role=seller`,
+    `/marketplace/messages/unread`,
   ];
   const errors = [];
+  const attempts = [];
 
   for (const endpoint of unreadEndpoints) {
     const result = await meliApiTry(cuenta, endpoint);
     if (!result.ok) {
       errors.push(`${endpoint}: ${result.error}`);
+      attempts.push({ endpoint, ok: false, error: result.error });
       continue;
     }
 
     const unreadRows = unwrapMeliList(result.data, ['results']).slice(0, limit);
-    const messages = [];
+    attempts.push({ endpoint, ok: true, count: unreadRows.length, userId: result.data?.userId || result.data?.user_id || null });
+    if (!unreadRows.length) continue;
 
+    const messages = [];
     for (const row of unreadRows) {
       const packId = pickInboxPackId(row);
       if (!packId) continue;
 
-      // Armamos un item visible aunque el hilo falle; despues intentamos hidratar fecha/texto
-      // sin marcar como leido.
       let item = normalizeInboxMessageForFrontend({
         ...row,
         pack_id: packId,
         resource_id: packId,
         resource: row.resource || `/packs/${packId}`,
         text: { plain: `Pack ${packId} con ${row.count || 1} mensaje(s) pendiente(s)` },
+        unread_count: row.count || 1,
       });
 
-      const thread = await meliApiTry(cuenta, `/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}?limit=1&offset=0&tag=post_sale&mark_as_read=false`);
-      if (thread.ok) {
-        const last = unwrapMeliList(thread.data, ['messages', 'results']).map(normalizeInboxMessageForFrontend)[0];
+      const threadEndpoints = [
+        `/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}?limit=10&offset=0&tag=post_sale&mark_as_read=false`,
+        `/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}?limit=10&offset=0&mark_as_read=false`,
+      ];
+      for (const threadEndpoint of threadEndpoints) {
+        const thread = await meliApiTry(cuenta, threadEndpoint);
+        if (!thread.ok) continue;
+        const threadMessages = unwrapMeliList(thread.data, ['messages', 'results']).map(normalizeInboxMessageForFrontend);
+        const last = threadMessages
+          .filter(x => String(x.from?.user_id || '') !== String(sellerId))
+          .sort((a,b) => new Date(b.message_date?.received || b.message_date?.created || 0) - new Date(a.message_date?.received || a.message_date?.created || 0))[0]
+          || threadMessages.sort((a,b) => new Date(b.message_date?.received || b.message_date?.created || 0) - new Date(a.message_date?.received || a.message_date?.created || 0))[0];
         if (last) item = { ...last, pack_id: packId, resource_id: packId, resource: row.resource || `/packs/${packId}`, unread_count: row.count || 1 };
+        break;
       }
       messages.push(item);
     }
 
+    if (messages.length) {
+      return {
+        ok: true,
+        direct: true,
+        cuenta: normalizeCuentaKey(cuenta),
+        messages,
+        results: messages,
+        paging: result.data?.paging || null,
+        unreadRaw: result.data,
+        sourceEndpoint: endpoint,
+        attempts,
+      };
+    }
+  }
+
+  // Si no hay pendientes, devolvemos conversaciones recientes con mensajes postventa.
+  // Esto es intencional para que el modulo de Mensajes no quede ciego si el recurso
+  // de pendientes devuelve results: [] o si los mensajes ya fueron marcados como leidos.
+  const fallback = await fetchInboxRecentMessageConversationsDirect(cuenta, sellerId, limit);
+  if (fallback.messages.length) {
     return {
       ok: true,
       direct: true,
       cuenta: normalizeCuentaKey(cuenta),
-      messages,
-      results: messages,
-      paging: result.data?.paging || null,
-      unreadRaw: result.data,
-      sourceEndpoint: endpoint,
+      messages: fallback.messages,
+      results: fallback.messages,
+      paging: null,
+      sourceEndpoint: 'recent_orders_fallback',
+      attempts,
+      fallbackErrors: { orders: fallback.orderErrors, threads: fallback.threadErrors },
     };
   }
 
-  throw new Error(`No se pudieron cargar mensajes pendientes. ${errors[0] || ''}`);
+  return {
+    ok: true,
+    direct: true,
+    cuenta: normalizeCuentaKey(cuenta),
+    messages: [],
+    results: [],
+    paging: null,
+    sourceEndpoint: 'none',
+    attempts,
+    debug: {
+      sellerId,
+      message: errors.length ? 'Mercado Libre no devolvio mensajes en ningun endpoint probado.' : 'Mercado Libre devolvio results: [] en mensajes pendientes y no se encontraron hilos en ventas recientes.',
+      errors,
+      fallbackErrors: { orders: fallback.orderErrors, threads: fallback.threadErrors },
+    },
+  };
 }
 
 async function sendInboxMessageDirect(cuenta, body = {}) {
