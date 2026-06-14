@@ -764,7 +764,8 @@ async function fetchInboxRecentMessageConversationsDirect(cuenta, sellerId, limi
   // buscamos las ventas recientes y consultamos sus hilos sin marcarlos como leidos.
   // Esto evita que la bandeja quede vacia cuando el endpoint de pendientes devuelve []
   // aunque existan conversaciones postventa.
-  const orderLimit = Math.min(Math.max(limit * 2, 20), 100);
+  // Mercado Libre /orders/search acepta como maximo limit=51.
+  const orderLimit = Math.min(Math.max(limit * 2, 20), 51);
   const orderEndpoints = [
     `/orders/search?seller=${encodeURIComponent(sellerId)}&sort=date_desc&limit=${orderLimit}`,
     `/orders/search?seller=${encodeURIComponent(sellerId)}&order.status=paid&sort=date_desc&limit=${orderLimit}`,
@@ -833,12 +834,19 @@ async function fetchInboxUnreadMessagesDirect(cuenta, params = {}) {
   // /marketplace/messages/unread?role=seller&tag=post_sale&user_id=$SELLER_ID
   // Dejamos variantes porque algunas cuentas aceptan/ignoran user_id o tag distinto.
   const unreadEndpoints = [
-    `/marketplace/messages/unread?role=seller&tag=post_sale&user_id=${sellerId}`,
-    `/marketplace/messages/unread?role=seller&user_id=${sellerId}`,
-    `/marketplace/messages/unread?tag=post_sale&user_id=${sellerId}`,
+    // Endpoint actual documentado para mensajes pendientes de lectura.
+    // Primero probamos SIN user_id porque el token ya identifica el caller real.
+    // En tu diagnostico /marketplace/messages/unread devolvia Invalid caller.id.
+    `/messages/unread?role=seller&tag=post_sale`,
+    `/messages/unread?role=seller`,
+    `/messages/unread`,
+    // Variante filtrada por usuario, por compatibilidad con cuentas que lo acepten.
+    `/messages/unread?role=seller&tag=post_sale&user_id=${sellerId}`,
+    // Variante global-selling/marketplace como ultimo recurso.
     `/marketplace/messages/unread?role=seller&tag=post_sale`,
     `/marketplace/messages/unread?role=seller`,
     `/marketplace/messages/unread`,
+    `/marketplace/messages/unread?role=seller&tag=post_sale&user_id=${sellerId}`,
   ];
   const errors = [];
   const attempts = [];
@@ -1720,6 +1728,21 @@ const server = http.createServer((req, res) => {
 
   if (pathName === '/api/me') {
     jsonResp(res, 200, { user: session, loginDisabled: true });
+    return;
+  }
+
+  // Diagnostico Mercado Libre por cuenta: muestra el usuario real del token OAuth.
+  // Uso: /api/meli/me?cuenta=tlc o /api/meli/me?cuenta=topshop
+  if (req.method === 'GET' && pathName === '/api/meli/me') {
+    (async () => {
+      try {
+        const cuenta = normalizeCuentaKey(u.searchParams.get('cuenta') || 'tlc');
+        const me = await meliApi(cuenta, '/users/me');
+        jsonResp(res, 200, { ok: true, cuenta, me, id: me && me.id, nickname: me && me.nickname });
+      } catch (e) {
+        jsonResp(res, 500, { ok: false, error: { message: e.message } });
+      }
+    })();
     return;
   }
 
