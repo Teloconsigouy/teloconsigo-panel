@@ -897,24 +897,54 @@ async function sendInboxMessageDirect(cuenta, body = {}) {
   if (!packId) throw new Error('Falta pack_id');
   if (!text) throw new Error('Falta el texto del mensaje');
 
+  // Mercado Libre 2026: en MLU/Otros el destinatario puede ser el agente de mensajeria,
+  // no siempre el buyer real que viene en el hilo. Probamos primero el agente oficial MLU
+  // y luego el buyer real como compatibilidad.
+  const MLU_MESSAGING_AGENT_ID = '3037204685';
+  const recipientIds = [];
+  recipientIds.push(MLU_MESSAGING_AGENT_ID);
+  if (buyerId && buyerId !== MLU_MESSAGING_AGENT_ID) recipientIds.push(buyerId);
+
   const payloads = [];
-  if (buyerId) payloads.push({ from: { user_id: Number(sellerId) }, to: { user_id: Number(buyerId) }, text: { plain: text } });
-  payloads.push({ text: { plain: text } });
+  for (const toId of recipientIds) {
+    const numericTo = Number(toId);
+    const numericSeller = Number(sellerId);
+    // Formato actual recomendado: text string.
+    payloads.push({ from: { user_id: numericSeller }, to: { user_id: numericTo }, text });
+    // Compatibilidad con respuestas/lecturas que devuelven text.plain.
+    payloads.push({ from: { user_id: numericSeller }, to: { user_id: numericTo }, text: { plain: text } });
+  }
+  // Ultimos fallbacks para cuentas donde el API infiere remitente/destinatario por pack.
   payloads.push({ text });
+  payloads.push({ text: { plain: text } });
 
   const endpoints = [
+    `/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}?tag=post_sale`,
     `/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}`,
+    `/marketplace/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}?tag=post_sale`,
     `/marketplace/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}`,
   ];
+
   const errors = [];
   for (const endpoint of endpoints) {
     for (const payload of payloads) {
       const result = await meliApiTry(cuenta, endpoint, { method: 'POST', body: payload });
-      if (result.ok) return { ok: true, direct: true, cuenta: normalizeCuentaKey(cuenta), pack_id: packId, message: result.data };
-      errors.push(`${endpoint}: ${result.error}`);
+      if (result.ok) {
+        return {
+          ok: true,
+          direct: true,
+          cuenta: normalizeCuentaKey(cuenta),
+          pack_id: packId,
+          sentTo: payload.to?.user_id || null,
+          usedEndpoint: endpoint,
+          message: result.data,
+        };
+      }
+      errors.push(`${endpoint} | payload=${JSON.stringify(payload)} | error=${result.error}`);
     }
   }
-  throw new Error(`No se pudo enviar el mensaje. ${errors[0] || ''}`);
+
+  throw new Error(`No se pudo enviar el mensaje. ${errors.slice(0, 3).join(' || ')}`);
 }
 
 async function handleInboxDirectApi(req, res, u, session) {
