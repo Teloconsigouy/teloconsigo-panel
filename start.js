@@ -643,14 +643,28 @@ function extractPackIdFromMessageResource(value) {
 }
 
 function pickInboxPackId(m) {
-  const direct = m.pack_id || m.packId || m.resource_id || m.resourceId || m.id || '';
+  // En mensajes reales de /messages/packs, el campo id es el ID del mensaje,
+  // NO el pack. Antes se tomaba m.id y la bandeja quedaba con packs falsos
+  // como 019ec0..., por eso luego no podia abrir/responder correctamente.
+  const direct = m.pack_id || m.packId || m.pack?.id || m.order?.pack_id || m.order?.pack?.id || '';
   if (direct) return String(direct).replace(/[^0-9]/g, '') || String(direct);
+
+  const resources = Array.isArray(m.message_resources) ? m.message_resources : [];
+  const packRes = resources.find(r => String(r.name || r.type || '').toLowerCase().includes('pack'));
+  if (packRes && packRes.id) return String(packRes.id || '').replace(/[^0-9]/g, '') || String(packRes.id || '');
+
   const resource = m.resource || m.path || m.href || m.url || m.conversation_status?.path || '';
   const fromResource = extractPackIdFromMessageResource(resource);
   if (fromResource) return fromResource;
-  const resources = Array.isArray(m.message_resources) ? m.message_resources : [];
-  const packRes = resources.find(r => String(r.name || r.type || '').toLowerCase().includes('pack'));
-  return packRes ? String(packRes.id || '') : '';
+
+  // Algunos endpoints de pendientes devuelven el pack como resource_id.
+  // Lo usamos solo si parece un numero largo, para no confundirlo con IDs internos.
+  const resourceId = m.resource_id || m.resourceId || '';
+  if (/^\d{8,}$/.test(String(resourceId))) return String(resourceId);
+
+  // Ultimo recurso para respuestas de unread: id numerico largo.
+  if (/^\d{8,}$/.test(String(m.id || ''))) return String(m.id);
+  return '';
 }
 
 function normalizeInboxMessageForFrontend(m) {
@@ -751,7 +765,7 @@ async function fetchInboxMessagePackDirect(cuenta, params = {}) {
   for (const endpoint of endpoints) {
     const result = await meliApiTry(cuenta, endpoint);
     if (result.ok) {
-      const messages = unwrapMeliList(result.data, ['messages', 'results']).map(normalizeInboxMessageForFrontend);
+      const messages = unwrapMeliList(result.data, ['messages', 'results']).map(msg => normalizeInboxMessageForFrontend({ ...msg, pack_id: packId, resource_id: packId, resource: `/packs/${packId}` }));
       return { ok: true, direct: true, cuenta: normalizeCuentaKey(cuenta), pack_id: packId, messages, results: messages, raw: result.data };
     }
     errors.push(`${endpoint}: ${result.error}`);
@@ -760,16 +774,18 @@ async function fetchInboxMessagePackDirect(cuenta, params = {}) {
 }
 
 async function fetchInboxRecentMessageConversationsDirect(cuenta, sellerId, limit = 50) {
-  // Fallback real: si Mercado Libre no devuelve pendientes en /marketplace/messages/unread,
-  // buscamos las ventas recientes y consultamos sus hilos sin marcarlos como leidos.
-  // Esto evita que la bandeja quede vacia cuando el endpoint de pendientes devuelve []
-  // aunque existan conversaciones postventa.
-  // Mercado Libre /orders/search acepta como maximo limit=51.
-  const orderLimit = Math.min(Math.max(limit * 2, 20), 51);
+  // Estrategia definitiva sin /marketplace/messages/unread:
+  // 1) Mercado Libre SI permite leer un hilo cuando conocemos el pack.
+  // 2) Entonces buscamos ventas recientes.
+  // 3) Por cada venta/pack consultamos /messages/packs/{pack_id}/sellers/{seller_id}
+  //    con mark_as_read=false para no marcar nada como leido desde la app.
+  const orderLimit = Math.min(Math.max(Number(limit || 50), 20), 51);
   const orderEndpoints = [
     `/orders/search?seller=${encodeURIComponent(sellerId)}&sort=date_desc&limit=${orderLimit}`,
     `/orders/search?seller=${encodeURIComponent(sellerId)}&order.status=paid&sort=date_desc&limit=${orderLimit}`,
+    `/orders/search?seller=${encodeURIComponent(sellerId)}&order.status=confirmed&sort=date_desc&limit=${orderLimit}`,
   ];
+
   const orders = [];
   const orderErrors = [];
   for (const endpoint of orderEndpoints) {
@@ -785,164 +801,87 @@ async function fetchInboxRecentMessageConversationsDirect(cuenta, sellerId, limi
     }
   }
 
-  const messages = [];
+  const conversations = [];
   const seen = new Set();
   const threadErrors = [];
+
   for (const order of orders) {
-    if (messages.length >= limit) break;
+    if (conversations.length >= limit) break;
     const orderId = String(order.id || order.order_id || '').trim();
     const packId = String(order.pack_id || order.pack?.id || order.packId || orderId || '').trim();
     if (!packId || seen.has(packId)) continue;
     seen.add(packId);
 
     const threadEndpoints = [
-      `/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}?limit=10&offset=0&tag=post_sale&mark_as_read=false`,
-      `/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}?limit=10&offset=0&mark_as_read=false`,
+      `/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}?limit=50&offset=0&tag=post_sale&mark_as_read=false`,
+      `/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}?limit=50&offset=0&mark_as_read=false`,
     ];
+
     for (const threadEndpoint of threadEndpoints) {
       const thread = await meliApiTry(cuenta, threadEndpoint);
       if (!thread.ok) {
         threadErrors.push(`${threadEndpoint}: ${thread.error}`);
         continue;
       }
-      const threadMessages = unwrapMeliList(thread.data, ['messages', 'results']).map(normalizeInboxMessageForFrontend);
+
+      const rawMessages = unwrapMeliList(thread.data, ['messages', 'results']);
+      const threadMessages = rawMessages.map(msg => normalizeInboxMessageForFrontend({
+        ...msg,
+        pack_id: packId,
+        resource_id: packId,
+        resource: `/packs/${packId}`,
+      }));
       if (!threadMessages.length) continue;
-      const last = threadMessages
-        .filter(x => String(x.from?.user_id || '') !== String(sellerId))
-        .sort((a,b) => new Date(b.message_date?.received || b.message_date?.created || 0) - new Date(a.message_date?.received || a.message_date?.created || 0))[0]
-        || threadMessages.sort((a,b) => new Date(b.message_date?.received || b.message_date?.created || 0) - new Date(a.message_date?.received || a.message_date?.created || 0))[0];
-      messages.push({
-        ...last,
+
+      const sorted = threadMessages.sort((a,b) => new Date(b.message_date?.received || b.message_date?.created || 0) - new Date(a.message_date?.received || a.message_date?.created || 0));
+      const latestBuyer = sorted.find(x => String(x.from?.user_id || '') !== String(sellerId));
+      const latestAny = sorted[0];
+      const latest = latestBuyer || latestAny;
+      if (!latest) continue;
+
+      // Para la lista mostramos una sola fila por pack. Si el ultimo mensaje es del vendedor,
+      // igual dejamos la conversacion visible como fallback reciente, pero priorizamos comprador.
+      conversations.push({
+        ...latest,
         pack_id: packId,
         resource_id: packId,
         resource: `/packs/${packId}`,
         order_id: orderId,
-        unread_count: 0,
-        _source: 'recent_orders_fallback',
+        unread_count: latestBuyer ? 1 : 0,
+        _source: 'orders_search_messages_pack',
       });
       break;
     }
   }
-  return { messages, orderErrors, threadErrors: threadErrors.slice(0, 8) };
+
+  conversations.sort((a,b) => new Date(b.message_date?.received || b.message_date?.created || 0) - new Date(a.message_date?.received || a.message_date?.created || 0));
+  return { messages: conversations.slice(0, limit), orderErrors, threadErrors: threadErrors.slice(0, 12), ordersChecked: orders.length };
 }
 
 async function fetchInboxUnreadMessagesDirect(cuenta, params = {}) {
   const sellerId = await fetchMeliSellerId(cuenta);
   const limit = getInboxLimit(params.limit, 50);
 
-  // Endpoint oficial actual para pendientes/no leidos:
-  // /marketplace/messages/unread?role=seller&tag=post_sale&user_id=$SELLER_ID
-  // Dejamos variantes porque algunas cuentas aceptan/ignoran user_id o tag distinto.
-  const unreadEndpoints = [
-    // Endpoint actual documentado para mensajes pendientes de lectura.
-    // Primero probamos SIN user_id porque el token ya identifica el caller real.
-    // En tu diagnostico /marketplace/messages/unread devolvia Invalid caller.id.
-    `/messages/unread?role=seller&tag=post_sale`,
-    `/messages/unread?role=seller`,
-    `/messages/unread`,
-    // Variante filtrada por usuario, por compatibilidad con cuentas que lo acepten.
-    `/messages/unread?role=seller&tag=post_sale&user_id=${sellerId}`,
-    // Variante global-selling/marketplace como ultimo recurso.
-    `/marketplace/messages/unread?role=seller&tag=post_sale`,
-    `/marketplace/messages/unread?role=seller`,
-    `/marketplace/messages/unread`,
-    `/marketplace/messages/unread?role=seller&tag=post_sale&user_id=${sellerId}`,
-  ];
-  const errors = [];
-  const attempts = [];
-
-  for (const endpoint of unreadEndpoints) {
-    const result = await meliApiTry(cuenta, endpoint);
-    if (!result.ok) {
-      errors.push(`${endpoint}: ${result.error}`);
-      attempts.push({ endpoint, ok: false, error: result.error });
-      continue;
-    }
-
-    const unreadRows = unwrapMeliList(result.data, ['results']).slice(0, limit);
-    attempts.push({ endpoint, ok: true, count: unreadRows.length, userId: result.data?.userId || result.data?.user_id || null });
-    if (!unreadRows.length) continue;
-
-    const messages = [];
-    for (const row of unreadRows) {
-      const packId = pickInboxPackId(row);
-      if (!packId) continue;
-
-      let item = normalizeInboxMessageForFrontend({
-        ...row,
-        pack_id: packId,
-        resource_id: packId,
-        resource: row.resource || `/packs/${packId}`,
-        text: { plain: `Pack ${packId} con ${row.count || 1} mensaje(s) pendiente(s)` },
-        unread_count: row.count || 1,
-      });
-
-      const threadEndpoints = [
-        `/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}?limit=10&offset=0&tag=post_sale&mark_as_read=false`,
-        `/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}?limit=10&offset=0&mark_as_read=false`,
-      ];
-      for (const threadEndpoint of threadEndpoints) {
-        const thread = await meliApiTry(cuenta, threadEndpoint);
-        if (!thread.ok) continue;
-        const threadMessages = unwrapMeliList(thread.data, ['messages', 'results']).map(normalizeInboxMessageForFrontend);
-        const last = threadMessages
-          .filter(x => String(x.from?.user_id || '') !== String(sellerId))
-          .sort((a,b) => new Date(b.message_date?.received || b.message_date?.created || 0) - new Date(a.message_date?.received || a.message_date?.created || 0))[0]
-          || threadMessages.sort((a,b) => new Date(b.message_date?.received || b.message_date?.created || 0) - new Date(a.message_date?.received || a.message_date?.created || 0))[0];
-        if (last) item = { ...last, pack_id: packId, resource_id: packId, resource: row.resource || `/packs/${packId}`, unread_count: row.count || 1 };
-        break;
-      }
-      messages.push(item);
-    }
-
-    if (messages.length) {
-      return {
-        ok: true,
-        direct: true,
-        cuenta: normalizeCuentaKey(cuenta),
-        messages,
-        results: messages,
-        paging: result.data?.paging || null,
-        unreadRaw: result.data,
-        sourceEndpoint: endpoint,
-        attempts,
-      };
-    }
-  }
-
-  // Si no hay pendientes, devolvemos conversaciones recientes con mensajes postventa.
-  // Esto es intencional para que el modulo de Mensajes no quede ciego si el recurso
-  // de pendientes devuelve results: [] o si los mensajes ya fueron marcados como leidos.
+  // IMPORTANTE:
+  // El endpoint /marketplace/messages/unread devuelve "Invalid caller.id" en estas cuentas,
+  // pero el endpoint por pack funciona perfecto. Por eso la bandeja se arma desde ventas
+  // recientes + hilos por pack.
   const fallback = await fetchInboxRecentMessageConversationsDirect(cuenta, sellerId, limit);
-  if (fallback.messages.length) {
-    return {
-      ok: true,
-      direct: true,
-      cuenta: normalizeCuentaKey(cuenta),
-      messages: fallback.messages,
-      results: fallback.messages,
-      paging: null,
-      sourceEndpoint: 'recent_orders_fallback',
-      attempts,
-      fallbackErrors: { orders: fallback.orderErrors, threads: fallback.threadErrors },
-    };
-  }
-
   return {
     ok: true,
     direct: true,
     cuenta: normalizeCuentaKey(cuenta),
-    messages: [],
-    results: [],
+    messages: fallback.messages,
+    results: fallback.messages,
     paging: null,
-    sourceEndpoint: 'none',
-    attempts,
-    debug: {
+    sourceEndpoint: 'orders_search_messages_pack',
+    debug: params.debug ? {
       sellerId,
-      message: errors.length ? 'Mercado Libre no devolvio mensajes en ningun endpoint probado.' : 'Mercado Libre devolvio results: [] en mensajes pendientes y no se encontraron hilos en ventas recientes.',
-      errors,
-      fallbackErrors: { orders: fallback.orderErrors, threads: fallback.threadErrors },
-    },
+      ordersChecked: fallback.ordersChecked,
+      orderErrors: fallback.orderErrors,
+      threadErrors: fallback.threadErrors,
+      note: 'Se omite /marketplace/messages/unread porque devuelve Invalid caller.id; se leen hilos desde orders/search + messages/packs.'
+    } : undefined,
   };
 }
 
