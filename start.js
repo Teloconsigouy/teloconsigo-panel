@@ -765,7 +765,11 @@ async function fetchInboxMessagePackDirect(cuenta, params = {}) {
   for (const endpoint of endpoints) {
     const result = await meliApiTry(cuenta, endpoint);
     if (result.ok) {
-      const messages = unwrapMeliList(result.data, ['messages', 'results']).map(msg => normalizeInboxMessageForFrontend({ ...msg, pack_id: packId, resource_id: packId, resource: `/packs/${packId}` }));
+      const messages = unwrapMeliList(result.data, ['messages', 'results'])
+        .map(msg => normalizeInboxMessageForFrontend({ ...msg, pack_id: packId, resource_id: packId, resource: `/packs/${packId}` }))
+        // En el drawer de la conversacion mostramos como una mensajeria normal:
+        // mensajes antiguos arriba y el ultimo mensaje abajo.
+        .sort((a, b) => new Date(a.message_date?.received || a.message_date?.created || 0) - new Date(b.message_date?.received || b.message_date?.created || 0));
       return { ok: true, direct: true, cuenta: normalizeCuentaKey(cuenta), pack_id: packId, messages, results: messages, raw: result.data };
     }
     errors.push(`${endpoint}: ${result.error}`);
