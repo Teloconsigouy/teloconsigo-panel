@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TELOCONSIGO — Creador de Publicaciones IA</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#F0F4F0;--surface:#FFFFFF;--border:#D4DDD4;--border2:#B8C8B8;--green:#1A5C1A;--green-mid:#2E7D2E;--green-light:rgba(26,92,26,.08);--green-border:rgba(26,92,26,.25);--text:#0E1A0E;--muted:#5C7060;--muted2:#9CB09C;--red:#DC2626;--yellow:#F59E0B;--blue:#2563EB}
+html,body{background:var(--bg);color:var(--text);font-family:'Inter','Segoe UI',Arial,sans-serif;min-height:100vh}
+header{background:var(--surface);border-bottom:1px solid var(--border);padding:0 48px;height:64px;display:flex;align-items:center;justify-content:space-between}
+.logo-text{font-family:'Syne',sans-serif;font-weight:800;font-size:1.4rem;letter-spacing:-.04em;color:var(--green);text-transform:uppercase}
+.header-right{display:flex;align-items:center;gap:18px;font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
+.back{padding:8px 12px;border:1px solid var(--border);border-radius:5px;color:var(--muted);text-decoration:none;background:#fff}.back:hover{border-color:var(--green);color:var(--green)}
+.page-title-bar{padding:32px 48px 24px;display:flex;align-items:flex-end;justify-content:space-between;gap:20px;border-bottom:1px solid var(--border);background:var(--surface)}
+.page-title{font-family:'Syne',sans-serif;font-size:1.6rem;font-weight:800;letter-spacing:-.03em}.page-sub{font-size:.86rem;color:var(--muted);margin-top:6px;line-height:1.5}.badge{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--green-border);background:var(--green-light);color:var(--green);padding:7px 12px;border-radius:100px;font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em}
+.wrap{padding:28px 48px 80px;display:grid;grid-template-columns:380px 1fr;gap:18px;align-items:start}.card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:22px;box-shadow:0 8px 22px rgba(27,27,47,.04)}.card h2{font-size:.8rem;text-transform:uppercase;letter-spacing:.16em;color:var(--muted);margin-bottom:18px}.field{margin-bottom:15px}.field label{display:block;font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:7px}input,select,textarea{width:100%;border:1px solid var(--border);background:#fff;border-radius:6px;padding:11px 12px;font-family:inherit;font-size:.92rem;color:var(--text);outline:none}textarea{min-height:170px;resize:vertical;line-height:1.55}input:focus,select:focus,textarea:focus{border-color:var(--green);box-shadow:0 0 0 3px var(--green-light)}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.checks{display:flex;gap:10px;flex-wrap:wrap}.check{display:flex;gap:8px;align-items:center;border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-size:.86rem;color:var(--muted);cursor:pointer}.check input{width:auto}.btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.btn{border:1px solid var(--border);background:#fff;color:var(--muted);padding:11px 14px;border-radius:6px;font-family:inherit;font-size:.78rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;cursor:pointer}.btn.primary{background:var(--green);border-color:var(--green);color:#fff}.btn.primary:hover{background:var(--green-mid)}.btn.danger{color:var(--red);border-color:rgba(220,38,38,.25)}.btn:disabled{opacity:.55;cursor:not-allowed}.notice{border:1px solid var(--border);background:#fbfdfb;border-radius:7px;padding:13px 14px;font-size:.86rem;color:var(--muted);line-height:1.5;margin-bottom:16px}.notice.warn{border-color:rgba(245,158,11,.35);background:rgba(245,158,11,.08);color:#8a5a00}.notice.ok{border-color:var(--green-border);background:var(--green-light);color:var(--green)}.preview-grid{display:grid;grid-template-columns:1fr 290px;gap:16px}.mini{font-size:.78rem;color:var(--muted);line-height:1.45}.meta{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}.pill{border:1px solid var(--border);border-radius:7px;padding:11px;background:#fbfdfb}.pill b{display:block;font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px}.pill span{font-size:.92rem;font-weight:700;color:var(--text)}.img-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.img-card{border:1px solid var(--border);border-radius:7px;background:#fbfdfb;overflow:hidden;position:relative}.img-card.not-selected{opacity:.45}.img-card.removed{display:none}.img-card img{width:100%;height:105px;object-fit:cover;background:#f5f5f5;display:block}.img-actions{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:7px 8px;border-top:1px solid var(--border);font-size:.68rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;min-height:34px}.img-actions label{display:flex;align-items:center;gap:5px;cursor:pointer}.img-actions input{width:auto}.img-del{border:1px solid rgba(220,38,38,.25);background:#fff;color:var(--red);font-size:.64rem;font-weight:900;text-transform:uppercase;cursor:pointer;padding:4px 6px;border-radius:5px;line-height:1}.img-del:hover{text-decoration:underline}.img-count{font-size:.72rem;color:var(--muted);margin:-8px 0 10px;line-height:1.4}.payload{white-space:pre-wrap;max-height:360px;overflow:auto;background:#0f1a0f;color:#d8f3d8;border-radius:7px;padding:14px;font-size:.76rem;line-height:1.45}.drafts{margin-top:18px}.draft-item{border:1px solid var(--border);border-radius:7px;padding:12px;margin-bottom:10px;background:#fbfdfb;cursor:pointer}.draft-item:hover{border-color:var(--green-border)}.draft-title{font-weight:800;font-size:.88rem;margin-bottom:5px}.attr-card{border:1px solid var(--border);border-radius:8px;background:#fbfdfb;padding:14px;margin-bottom:12px}.attr-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}.attr-title{font-weight:800;color:var(--text);font-size:.9rem}.attr-id{font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}.attr-help{font-size:.72rem;color:var(--muted);line-height:1.35;margin-top:6px}.attr-card.required{border-color:var(--green-border)}.attr-card.missing{border-color:rgba(220,38,38,.35);background:rgba(220,38,38,.035)}.tabs{display:flex;gap:8px;margin-bottom:14px}.tab{border:1px solid var(--border);background:#fff;border-radius:100px;padding:8px 12px;font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;cursor:pointer;color:var(--muted)}.tab.active{background:var(--green);border-color:var(--green);color:#fff}.hidden{display:none!important}@media(max-width:1050px){.wrap{grid-template-columns:1fr;padding:22px}.preview-grid{grid-template-columns:1fr}.meta{grid-template-columns:1fr 1fr}header,.page-title-bar{padding-left:22px;padding-right:22px}}
+</style>
+</head>
+<body>
+<header><div class="logo-text">Teloconsigo</div><div class="header-right"><a class="back" href="/index.html">← Panel</a><span id="clock">—</span></div></header>
+<div class="page-title-bar"><div><div class="page-title">Creador de Publicaciones IA</div><div class="page-sub">Versión 103: publica la descripción real en Mercado Libre después de crear el artículo.</div></div><span class="badge">v103 descripción MeLi</span></div>
+<main class="wrap">
+<section class="card">
+  <h2>Entrada del producto</h2>
+  <div class="notice">Pegá un link, precio y moneda como hacías en Telegram. El panel descarga la página, corrige texto, detecta marca/modelo, genera contenido, detecta categoría MLU, muestra atributos reales y prepara el payload.</div>
+  <div class="field"><label>Link del producto</label><input id="url" placeholder="https://link-del-producto.com"></div>
+  <div class="row"><div class="field"><label>Precio</label><input id="price" type="number" min="1" step="0.01" placeholder="1500"></div><div class="field"><label>Moneda</label><select id="currency"><option>UYU</option><option>USD</option><option>ARS</option></select></div></div>
+  <div class="field"><label>Stock inicial</label><input id="stock" type="number" min="1" value="50"></div>
+  <div class="field"><label>Cuentas</label><div class="checks"><label class="check"><input type="checkbox" id="accTlc" checked> TLC</label><label class="check"><input type="checkbox" id="accTop" checked> TOP SHOP</label></div></div>
+  <div class="btns"><button class="btn primary" id="analyzeBtn">Analizar producto</button><button class="btn" id="clearBtn">Limpiar</button></div>
+  <div class="drafts"><h2 style="margin-top:22px">Borradores guardados</h2><div id="draftsList" class="mini">Cargando...</div></div>
+</section>
+<section class="card">
+  <div class="tabs"><button class="tab active" data-tab="preview">Vista previa</button><button class="tab" data-tab="attrs">Atributos</button><button class="tab" data-tab="payload">Payload</button></div>
+  <div id="status" class="notice warn">Todavía no hay producto analizado.</div>
+  <div id="previewTab">
+    <div class="meta"><div class="pill"><b>Categoría</b><span id="catName">—</span></div><div class="pill"><b>ID MLU</b><span id="catId">—</span></div><div class="pill"><b>Precio</b><span id="priceMeta">—</span></div><div class="pill"><b>Stock</b><span id="stockMeta">—</span></div></div>
+    <div class="preview-grid"><div><div class="field"><label>Título Mercado Libre</label><input id="titleOut" maxlength="60"></div><div class="field"><label>Descripción</label><textarea id="descOut"></textarea></div><div class="row"><div class="field"><label>Marca</label><input id="brandOut" placeholder="INGCO"></div><div class="field"><label>Modelo</label><input id="modelOut" placeholder="CAGLI221153"></div></div><div class="notice" style="margin:10px 0">Los datos específicos no son fijos. Después de analizar la categoría, Mercado Libre arma en la pestaña <b>Atributos</b> los campos reales que pide para ese producto.</div><div class="field"><label>GTIN / Código de barras</label><input id="gtinOut" placeholder="EAN / UPC / GTIN. Mercado Libre lo exige en algunas marcas"><div class="mini" style="margin-top:6px">Si tenés el GTIN real, cargalo acá. Si no tenés código de barras, el sistema puede intentar publicar como marca Genérica, igual que hacía el workflow viejo de n8n.</div></div><label style="display:flex;gap:8px;align-items:flex-start;margin:8px 0 14px;font-size:12px;color:#425247"><input type="checkbox" id="genericNoGtin" checked style="width:auto;margin-top:2px"><span>Si no tengo GTIN, intentar publicar como marca <b>Genérica</b> para evitar el bloqueo de Mercado Libre.</span></label><div id="sizeGuideBox" class="notice warn" style="display:none;margin:12px 0 14px">
+  <b>Guía de talles por producto</b><br>
+  Esta categoría puede requerir grilla de talles. Completá la tabla con los talles/medidas del producto; la app intentará crear la guía en Mercado Libre y asociarla automáticamente.<br><br><b>Si ya creaste una guía en Mercado Libre</b>, pegá acá la URL de esa guía o el número que aparece al final de la URL. La app lee la guía y busca sola la fila del talle.
+  <div class="field" style="margin-top:10px"><label>URL de guía de talles creada en Mercado Libre</label><input id="sizeChartIdOrUrl" placeholder="Pegá acá la URL completa: https://www.mercadolibre.com.uy/moda/talles/221081730-.../modificar/..."></div>
+  <div style="overflow:auto;margin-top:10px">
+    <table style="width:100%;border-collapse:collapse;font-size:12px;background:#fff">
+      <thead><tr>
+        <th style="border:1px solid #d7e2d7;padding:7px;text-align:left">Usar</th>
+        <th style="border:1px solid #d7e2d7;padding:7px;text-align:left">Talle UY</th>
+        <th style="border:1px solid #d7e2d7;padding:7px;text-align:left">Largo pie desde (cm)</th>
+        <th style="border:1px solid #d7e2d7;padding:7px;text-align:left">Largo pie hasta (cm)</th>
+        <th style="border:1px solid #d7e2d7;padding:7px;text-align:left">Talle marca</th>
+        <th style="border:1px solid #d7e2d7;padding:7px;text-align:left"></th>
+      </tr></thead>
+      <tbody id="sizeGuideRows"></tbody>
+    </table>
+  </div>
+  <div class="btns" style="margin-top:10px"><button type="button" class="btn" id="addSizeRowBtn">Agregar talle</button><button type="button" class="btn" id="autoSizeRowsBtn">Autocompletar talles</button></div>
+</div><div class="btns"><button class="btn primary" id="saveBtn" disabled>Guardar borrador</button><button class="btn" id="rebuildBtn" disabled>Actualizar payload</button><button class="btn" id="recalcAttrsBtn" disabled>Recalcular atributos MeLi</button><button class="btn danger" id="publishBtn" disabled>🚀 Publicar en Mercado Libre</button></div></div><aside><h2>Imágenes encontradas</h2><div id="imageCount" class="img-count">Seleccioná las fotos que querés usar. Las borradas no van al payload.</div><div class="notice" style="padding:10px;margin-bottom:10px"><b>Agregar fotos manuales</b><br><span class="mini">Podés cargar fotos desde tu PC antes de publicar. Se suben junto con la publicación en ambas cuentas seleccionadas.</span><input id="manualImages" type="file" accept="image/*" multiple style="margin-top:10px"><div class="btns" style="margin-top:8px"><button class="btn" id="addManualImagesBtn" type="button">Agregar fotos</button><button class="btn danger" id="clearManualImagesBtn" type="button">Quitar manuales</button></div></div><div id="images" class="img-grid"></div></aside></div>
+  </div>
+  <div id="attrsTab" class="hidden"><div class="notice">Estos atributos vienen directo de Mercado Libre para la categoría detectada. La IA los autocompleta cuando puede, pero todos quedan libres para escribir. Si cambiás el título, usá “Recalcular atributos MeLi”.</div><div id="attrsSummary" class="notice ok">—</div><div id="attrsList" class="mini">—</div></div>
+  <div id="payloadTab" class="hidden"><pre id="payload" class="payload">{}</pre></div>
+</section>
+</main>
+<script>
+let currentDraft=null;
+function tick(){document.getElementById('clock').textContent=new Date().toLocaleTimeString('es-UY',{hour:'2-digit',minute:'2-digit'});}tick();setInterval(tick,30000);
+function accounts(){const a=[];if(document.getElementById('accTlc').checked)a.push('tlc');if(document.getElementById('accTop').checked)a.push('topshop');return a;}
+function money(v){return Number(v||0).toLocaleString('es-UY');}
+function setStatus(text,type='warn'){const el=document.getElementById('status');el.className='notice '+type;el.textContent=text;}
+function escapeAttr(v){return String(v||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
+function refreshPayloadText(){const tech={meliPayload:currentDraft?.meliPayload||{},publishResults:currentDraft?.publishResults||null,lastPublishPayload:currentDraft?.lastPublishPayload||null};document.getElementById('payload').textContent=JSON.stringify(tech,null,2);}
+function getPayloadAttrValue(id){const attrs=currentDraft?.meliPayload?.attributes||[];const a=attrs.find(x=>String(x.id).toUpperCase()===String(id).toUpperCase());return a?.value_name||a?.value_id||'';}
+function setPayloadAttrValue(id,value){if(!currentDraft)return;if(!currentDraft.attributeValues)currentDraft.attributeValues={};currentDraft.attributeValues[id]=value;if(!currentDraft.meliPayload)currentDraft.meliPayload={attributes:[]};if(!Array.isArray(currentDraft.meliPayload.attributes))currentDraft.meliPayload.attributes=[];let attrs=currentDraft.meliPayload.attributes.filter(a=>String(a.id).toUpperCase()!==String(id).toUpperCase());if(String(value||'').trim())attrs.push({id,value_name:String(value).trim()});currentDraft.meliPayload.attributes=attrs;refreshPayloadText();}
+function defaultAttrValue(a){const id=String(a.id||'').toUpperCase();const existing=getPayloadAttrValue(a.id);if(existing)return existing;const byId={BRAND:document.getElementById('brandOut')?.value||currentDraft?.brand||'Generica',MODEL:document.getElementById('modelOut')?.value||currentDraft?.model||'',GENDER:currentDraft?.gender||'Mujer',COLOR:currentDraft?.color||'',SIZE:currentDraft?.size||'',POWER_SUPPLY_TYPE:document.getElementById('powerOut')?.value||currentDraft?.powerSource||'Batería',POWER_SOURCE:document.getElementById('powerOut')?.value||currentDraft?.powerSource||'Batería',VOLTAGE:document.getElementById('voltageOut')?.value||currentDraft?.voltage||'',DISC_DIAMETER:currentDraft?.diameter||'',DIAMETER:currentDraft?.diameter||'',MOTOR_TYPE:currentDraft?.motor||'',ITEM_CONDITION:'Nuevo',GTIN:document.getElementById('gtinOut')?.value||currentDraft?.gtin||'',EMPTY_GTIN_REASON:''};return byId[id]||'';}
+function attrIsRequired(a){const t=a?.tags||{};const id=String(a?.id||'').toUpperCase();return t.required===true||t.catalog_required===true||t.conditional_required===true||t.new_required===true||id==='GTIN'||id==='EMPTY_GTIN_REASON'||id==='SIZE_GRID_ID'||id==='SIZE_GRID_ROW_ID';}
+function visibleAttributes(){if(!currentDraft)return[];const req=currentDraft.requiredAttributes||[];const all=currentDraft.allAttributes||[];const useful=new Set(['BRAND','MODEL','GENDER','COLOR','SIZE','GTIN','EMPTY_GTIN_REASON','SIZE_GRID_ID','SIZE_GRID_ROW_ID','MANUFACTURER','MATERIAL','MAIN_COLOR','FOOTWEAR_TYPE','RECOMMENDED_USES','HEIGHT','WIDTH','LENGTH','DEPTH','WEIGHT','REQUIRES_ASSEMBLY','INCLUDES_ASSEMBLY_MANUAL','POWER_SUPPLY_TYPE','POWER_SOURCE','VOLTAGE','DISC_DIAMETER','DIAMETER','MOTOR_TYPE']);const out=[];const seen=new Set();function add(a,force){if(!a||!a.id)return;const id=String(a.id).toUpperCase();if(seen.has(id))return;if(force||attrIsRequired(a)||useful.has(id)||(a.tags&&(a.tags.catalog_listing_eligible||a.tags.catalog_required))){seen.add(id);out.push(a);}}
+req.forEach(a=>add(a,true));all.forEach(a=>add(a,false));return out;}
+function attrCompleteness(){const attrs=(currentDraft?.requiredAttributes||[]);let total=0;let filled=0;const noGtin=document.getElementById('genericNoGtin')?document.getElementById('genericNoGtin').checked:true;const gtinVal=document.getElementById('gtinOut')?document.getElementById('gtinOut').value.trim():'';for(const a of attrs){const id=String(a.id||'').toUpperCase();if(noGtin&&!gtinVal&&(id==='GTIN'||id==='EMPTY_GTIN_REASON'))continue;total++;const v=currentDraft?.attributeValues?.[a.id]||getPayloadAttrValue(a.id)||defaultAttrValue(a);if(String(v||'').trim())filled++;}return {total,filled,missing:Math.max(0,total-filled)};}
+function renderAttributes(){const box=document.getElementById('attrsList');const summary=document.getElementById('attrsSummary');if(!currentDraft){box.textContent='—';if(summary)summary.textContent='—';return;}const attrs=visibleAttributes();if(!attrs.length){box.textContent='Sin atributos detectados para esta categoría.';if(summary)summary.textContent='No hay atributos detectados para esta categoría.';return;}const requiredSet=new Set((currentDraft.requiredAttributes||[]).map(a=>String(a.id||'').toUpperCase()));box.innerHTML=attrs.map((a,idx)=>{const val=escapeAttr(currentDraft.attributeValues?.[a.id]||defaultAttrValue(a));const opts=[...new Set((a.values||[]).map(v=>v.name).filter(Boolean))];const listId=`attr_options_${idx}`;const input=`<input class="attr-input" data-id="${escapeAttr(a.id)}" value="${val}" list="${listId}" placeholder="Escribí ${escapeAttr(a.name||a.id)}">${opts.length?`<datalist id="${listId}">${opts.map(o=>`<option value="${escapeAttr(o)}"></option>`).join('')}</datalist>`:''}`;const idUpper=String(a.id||'').toUpperCase();const isReq=requiredSet.has(idUpper);const noGtin=document.getElementById('genericNoGtin')?document.getElementById('genericNoGtin').checked:true;const gtinVal=document.getElementById('gtinOut')?document.getElementById('gtinOut').value.trim():'';const gtinCovered=(idUpper==='GTIN'||idUpper==='EMPTY_GTIN_REASON')&&!gtinVal&&noGtin;const complete=!!val||gtinCovered||!isReq;const state=isReq?(complete?(gtinCovered?'🟢 Cubierto sin GTIN':'🟢 Completo'):'🔴 Obligatorio'):'⚪ Opcional/recomendado';const special=(idUpper==='SIZE_GRID_ID'||idUpper==='SIZE_GRID_ROW_ID');return `<div class="attr-card ${isReq?'required':'optional'} ${complete?'':'missing'}"><div class="attr-head"><div><div class="attr-title">${escapeAttr(a.name||a.id)} <span style="font-size:.75rem;color:${complete?'var(--green)':'var(--red)'}">${state}</span></div><div class="attr-id">${escapeAttr(a.id)} · ${escapeAttr(a.value_type||'')} ${a.tags&&a.tags.synthetic?'· requisito especial':''}</div></div></div>${input}${special?`<div class="attr-help"><b>Requisito especial de moda/calzado:</b> Mercado Libre puede exigir una grilla de talles. Si no tenés el ID de grilla/fila, esta categoría puede seguir fallando al publicar aunque completes el resto.</div>`:''}${gtinCovered?`<div class="attr-help">Como marcaste publicar sin código de barras, el sistema intentará publicar como marca Genérica y no bloqueará por GTIN antes del intento.</div>`:''}${opts.length?`<div class="attr-help">Opciones reales de MeLi como ayuda: ${opts.slice(0,16).map(escapeAttr).join(', ')}</div>`:''}${a.tooltip?`<div class="attr-help">${escapeAttr(a.tooltip)}</div>`:''}</div>`;}).join('');box.querySelectorAll('.attr-input').forEach(el=>{el.onchange=el.oninput=()=>{setPayloadAttrValue(el.dataset.id,el.value);el.closest('.attr-card')?.classList.toggle('missing',!String(el.value||'').trim()&&requiredSet.has(String(el.dataset.id||'').toUpperCase()));const c=attrCompleteness();if(summary){summary.className='notice '+(c.missing?'warn':'ok');summary.textContent=`Atributos obligatorios completos: ${c.filled}/${c.total}. ${c.missing?`Faltan ${c.missing} dato(s) obligatorios.`:'Listo para intentar publicar según los requisitos detectados.'}`;}setStatus('Atributo actualizado. Guardá el borrador para persistir el cambio.','ok');};if(el.value)setPayloadAttrValue(el.dataset.id,el.value);});const c=attrCompleteness();if(summary){summary.className='notice '+(c.missing?'warn':'ok');summary.textContent=`Atributos obligatorios completos: ${c.filled}/${c.total}. ${c.missing?`Faltan ${c.missing} dato(s) obligatorios.`:'Listo para intentar publicar según los requisitos detectados.'}`;}refreshPayloadText();}
+
+function isManualImage(src){return /^data:image\//i.test(String(src||''));}
+function addManualImageDataUrl(dataUrl,name){
+  if(!currentDraft){setStatus('Primero analizá un producto y después agregá fotos manuales.','warn');return;}
+  if(!Array.isArray(currentDraft.allImages))currentDraft.allImages=[];
+  if(!Array.isArray(currentDraft.images))currentDraft.images=[];
+  if(!Array.isArray(currentDraft.manualImages))currentDraft.manualImages=[];
+  if(!currentDraft.allImages.includes(dataUrl))currentDraft.allImages.push(dataUrl);
+  if(!currentDraft.images.includes(dataUrl))currentDraft.images.push(dataUrl);
+  if(!currentDraft.manualImages.includes(dataUrl))currentDraft.manualImages.push(dataUrl);
+}
+async function addManualImagesFromInput(){
+  const input=document.getElementById('manualImages');
+  const files=Array.from(input?.files||[]).filter(f=>/^image\//i.test(f.type));
+  if(!files.length){setStatus('Seleccioná una o más imágenes desde tu PC.','warn');return;}
+  if(!currentDraft){setStatus('Primero analizá el producto y después agregá las fotos.','warn');return;}
+  const max=12;
+  const picked=files.slice(0,max);
+  await Promise.all(picked.map(file=>new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>{addManualImageDataUrl(String(r.result||''),file.name);resolve();};r.onerror=()=>reject(r.error||new Error('No se pudo leer la imagen'));r.readAsDataURL(file);}))).catch(e=>setStatus(e.message||String(e),'warn'));
+  input.value='';
+  renderImages();
+  setStatus(`${picked.length} foto(s) manual(es) agregada(s). Al publicar se subirán a Mercado Libre en las cuentas seleccionadas.`,'ok');
+}
+function clearManualImages(){
+  if(!currentDraft)return;
+  const manuals=new Set(currentDraft.manualImages||[]);
+  currentDraft.allImages=(currentDraft.allImages||[]).filter(x=>!manuals.has(x)&&!isManualImage(x));
+  currentDraft.images=(currentDraft.images||[]).filter(x=>!manuals.has(x)&&!isManualImage(x));
+  currentDraft.manualImages=[];
+  renderImages();
+  setStatus('Fotos manuales quitadas.','ok');
+}
+function updatePayloadPictures(){if(!currentDraft)return;const selected=Array.isArray(currentDraft.images)?currentDraft.images:[];if(currentDraft.meliPayload){currentDraft.meliPayload.pictures=selected.slice(0,8).map(source=>({source}));}refreshPayloadText();const count=document.getElementById('imageCount');if(count)count.textContent=`${selected.length} foto(s) seleccionada(s) para publicar. Podés desmarcar o borrar las que no quieras usar.`;}
+function imagePreviewSrc(src){src=String(src||'');if(/^data:image\//i.test(src))return src;if(/^https?:\/\//i.test(src))return '/api/publicador-image?url='+encodeURIComponent(src);return src;}
+function renderImages(){const box=document.getElementById('images');if(!currentDraft){box.innerHTML='<div class="mini">Sin imágenes detectadas.</div>';return;}if(!Array.isArray(currentDraft.allImages)||!currentDraft.allImages.length){currentDraft.allImages=[...(currentDraft.images||[])];}if(!Array.isArray(currentDraft.images))currentDraft.images=[...(currentDraft.allImages||[])];const all=currentDraft.allImages||[];if(!all.length){box.innerHTML='<div class="mini">Sin imágenes detectadas.</div>';updatePayloadPictures();return;}box.innerHTML=all.map((src,i)=>{const checked=(currentDraft.images||[]).includes(src);const preview=imagePreviewSrc(src);return `<div class="img-card ${checked?'':'not-selected'}" data-src="${escapeAttr(src)}"><img src="${escapeAttr(preview)}" title="${escapeAttr(src)}" onerror="this.style.display='none';this.parentElement.classList.add('img-broken')"><div class="img-actions"><label><input type="checkbox" class="img-check" ${checked?'checked':''}> usar</label><button class="img-del" type="button">borrar</button></div></div>`}).join('');box.querySelectorAll('.img-check').forEach(ch=>{ch.onchange=()=>{const card=ch.closest('.img-card');const src=card.dataset.src;if(ch.checked){if(!currentDraft.images.includes(src))currentDraft.images.push(src);card.classList.remove('not-selected');}else{currentDraft.images=currentDraft.images.filter(x=>x!==src);card.classList.add('not-selected');}updatePayloadPictures();};});box.querySelectorAll('.img-del').forEach(btn=>{btn.onclick=()=>{const card=btn.closest('.img-card');const src=card.dataset.src;currentDraft.allImages=(currentDraft.allImages||[]).filter(x=>x!==src);currentDraft.images=(currentDraft.images||[]).filter(x=>x!==src);renderImages();setStatus('Imagen quitada de la vista previa y del payload. Guardá el borrador para persistir el cambio.','ok');};});updatePayloadPictures();}
+
+function shouldShowSizeGuide(){
+  if(!currentDraft)return false;
+  const cat=((currentDraft.categoryName||'')+' '+(currentDraft.categoryId||'')+' '+(currentDraft.domainId||'')).toLowerCase();
+  const attrs=[...(currentDraft.requiredAttributes||[]),...(currentDraft.allAttributes||[])].map(a=>String(a.id||'').toUpperCase());
+  return attrs.includes('SIZE_GRID_ID')||attrs.includes('SIZE_GRID_ROW_ID')||/calzado|pantuf|zapato|bota|champion|sandalia|ropa|vestido|remera|pantal[oó]n|slipper|sneaker|shoe/.test(cat);
+}
+function inferFootFromSize(n){
+  n=Number(String(n||'').match(/\d+/)?.[0]||0);
+  const map={35:[22.5,23],36:[23,23.5],37:[23.5,24],38:[24,24.5],39:[24.5,25],40:[25,25.5],41:[25.5,26],42:[26,26.5],43:[26.5,27],44:[27,27.5],45:[27.5,28]};
+  const r=map[n]||[Math.max(20,n-14),Math.max(20.5,n-13.5)];
+  return {from:String(r[0]).replace('.',','),to:String(r[1]).replace('.',',')};
+}
+function autoSizeGuideRows(){
+  const txt=[currentDraft?.titulo_meli,currentDraft?.descripcion_meli,currentDraft?.scrapedTitle,currentDraft?.scrapedDescription].join(' ');
+  let nums=[];
+  const range=txt.match(/\b(\d{2})\s*[-–/]\s*(\d{2})\b/);
+  if(range){const a=Number(range[1]),b=Number(range[2]);if(a>=15&&b>=a&&b-a<=10){for(let i=a;i<=b;i++)nums.push(i);}}
+  if(!nums.length){(txt.match(/\b\d{2}\b/g)||[]).forEach(x=>{const n=Number(x);if(n>=15&&n<=60&&!nums.includes(n))nums.push(n);});}
+  if(!nums.length)nums=[38,39];
+  currentDraft.sizeGuideRows=nums.slice(0,12).map((n,i)=>{const f=inferFootFromSize(n);return {size:String(n),foot_from:f.from,foot_to:f.to,manufacturer_size:String(n),publish:i===0};});
+  if(nums.length){setPayloadAttrValue('SIZE',String(nums[0]));if(!currentDraft.attributeValues)currentDraft.attributeValues={};currentDraft.attributeValues.SIZE=String(nums[0]);}
+}
+function renderSizeGuide(){
+  const box=document.getElementById('sizeGuideBox');
+  const body=document.getElementById('sizeGuideRows');
+  if(!box||!body)return;
+  const show=shouldShowSizeGuide();
+  box.style.display=show?'block':'none';
+  if(!show)return;
+  const urlField=document.getElementById('sizeChartIdOrUrl');if(urlField)urlField.value=currentDraft.sizeChartIdOrUrl||currentDraft.sizeChartUrl||currentDraft.sizeGridId||'';
+  if(!Array.isArray(currentDraft.sizeGuideRows)||!currentDraft.sizeGuideRows.length)autoSizeGuideRows();
+  body.innerHTML=(currentDraft.sizeGuideRows||[]).map((r,i)=>`<tr data-i="${i}">
+    <td style="border:1px solid #d7e2d7;padding:6px"><input type="radio" name="publishSizeRow" class="sg-pub" ${r.publish?'checked':''} style="width:auto"></td>
+    <td style="border:1px solid #d7e2d7;padding:6px"><input class="sg-size" value="${escapeAttr(r.size||'')}" placeholder="38"></td>
+    <td style="border:1px solid #d7e2d7;padding:6px"><input class="sg-from" value="${escapeAttr(r.foot_from||'')}" placeholder="24"></td>
+    <td style="border:1px solid #d7e2d7;padding:6px"><input class="sg-to" value="${escapeAttr(r.foot_to||'')}" placeholder="24,5"></td>
+    <td style="border:1px solid #d7e2d7;padding:6px"><input class="sg-man" value="${escapeAttr(r.manufacturer_size||r.size||'')}" placeholder="38"></td>
+    <td style="border:1px solid #d7e2d7;padding:6px"><button type="button" class="btn sg-del" style="padding:6px 8px;font-size:11px">Borrar</button></td>
+  </tr>`).join('');
+  function sync(){
+    currentDraft.sizeGuideRows=[...body.querySelectorAll('tr')].map((tr,idx)=>({
+      size:tr.querySelector('.sg-size').value.trim(),
+      foot_from:tr.querySelector('.sg-from').value.trim(),
+      foot_to:tr.querySelector('.sg-to').value.trim(),
+      manufacturer_size:tr.querySelector('.sg-man').value.trim(),
+      publish:tr.querySelector('.sg-pub').checked
+    })).filter(r=>r.size);
+  }
+  body.querySelectorAll('input').forEach(el=>{el.oninput=el.onchange=()=>{if(el.classList.contains('sg-pub')){body.querySelectorAll('.sg-pub').forEach(x=>{if(x!==el)x.checked=false;});}sync();refreshPayloadText();};});
+  body.querySelectorAll('.sg-del').forEach(btn=>btn.onclick=()=>{btn.closest('tr').remove();sync();renderSizeGuide();});
+  document.getElementById('addSizeRowBtn').onclick=()=>{currentDraft.sizeGuideRows=currentDraft.sizeGuideRows||[];const last=currentDraft.sizeGuideRows[currentDraft.sizeGuideRows.length-1];const next=last&&last.size?String(Number(String(last.size).match(/\d+/)?.[0]||37)+1):'38';const f=inferFootFromSize(next);currentDraft.sizeGuideRows.push({size:next,foot_from:f.from,foot_to:f.to,manufacturer_size:next,publish:!currentDraft.sizeGuideRows.length});renderSizeGuide();};
+  document.getElementById('autoSizeRowsBtn').onclick=()=>{autoSizeGuideRows();renderSizeGuide();};
+}
+function fillDraft(d){currentDraft=d;if(!Array.isArray(currentDraft.allImages)||!currentDraft.allImages.length)currentDraft.allImages=[...(currentDraft.images||[])];if(!Array.isArray(currentDraft.images))currentDraft.images=[...(currentDraft.allImages||[])];document.getElementById('catName').textContent=d.categoryName||'—';document.getElementById('catId').textContent=d.categoryId||'—';document.getElementById('priceMeta').textContent=`${money(d.price)} ${d.currency||'UYU'}`;document.getElementById('stockMeta').textContent=d.stock||50;document.getElementById('titleOut').value=d.titulo_meli||'';document.getElementById('descOut').value=d.descripcion_meli||'';document.getElementById('brandOut').value=d.brand||'Generica';document.getElementById('modelOut').value=d.model||'';document.getElementById('gtinOut').value=d.gtin||d.GTIN||getPayloadAttrValue('GTIN')||'';if(document.getElementById('genericNoGtin'))document.getElementById('genericNoGtin').checked=d.noGtinGenericFallback!==false;renderImages();renderAttributes();renderSizeGuide();const sg=document.getElementById('sizeChartIdOrUrl');if(sg)sg.value=d.sizeChartIdOrUrl||d.sizeChartUrl||d.sizeGridId||'';document.getElementById('saveBtn').disabled=false;document.getElementById('rebuildBtn').disabled=false;document.getElementById('publishBtn').disabled=false;document.getElementById('recalcAttrsBtn').disabled=false;setStatus(d.aiNote||'Vista previa generada correctamente. Revisá antes de guardar.',d.aiAvailable===false?'warn':'ok');}
+function collectEdited(){if(!currentDraft)return null;const d={...currentDraft};d.titulo_meli=document.getElementById('titleOut').value.trim();d.descripcion_meli=document.getElementById('descOut').value.trim();d.brand=document.getElementById('brandOut').value.trim()||'Generica';d.model=document.getElementById('modelOut').value.trim();d.gtin=document.getElementById('gtinOut')?document.getElementById('gtinOut').value.trim():'';d.noGtinGenericFallback=document.getElementById('genericNoGtin')?document.getElementById('genericNoGtin').checked:true;d.price=Number(document.getElementById('price').value||d.price);d.currency=document.getElementById('currency').value;d.stock=Number(document.getElementById('stock').value||d.stock||50);d.accounts=accounts();d.images=Array.isArray(currentDraft.images)?[...currentDraft.images]:[];d.sizeChartIdOrUrl=document.getElementById('sizeChartIdOrUrl')?document.getElementById('sizeChartIdOrUrl').value.trim():'';d.sizeGuideRows=Array.isArray(currentDraft.sizeGuideRows)?currentDraft.sizeGuideRows.map(r=>({...r})):[];d.allImages=Array.isArray(currentDraft.allImages)?[...currentDraft.allImages]:[...d.images];d.manualImages=Array.isArray(currentDraft.manualImages)?[...currentDraft.manualImages]:d.images.filter(isManualImage);d.attributeValues={};document.querySelectorAll('.attr-input').forEach(el=>{if(String(el.value||'').trim())d.attributeValues[el.dataset.id]=el.value.trim();});const pubRow=d.sizeGuideRows.find(r=>r.publish)||d.sizeGuideRows[0];if(pubRow&&pubRow.size){d.size=String(pubRow.size);d.attributeValues.SIZE=String(pubRow.size);}if(d.gtin)d.attributeValues.GTIN=d.gtin;if(d.meliPayload){d.meliPayload={...d.meliPayload,pictures:d.images.slice(0,8).map(source=>({source}))};let attrs=Array.isArray(d.meliPayload.attributes)?d.meliPayload.attributes.filter(a=>!d.attributeValues[a.id]):[];for(const [id,value] of Object.entries(d.attributeValues)){attrs.push({id,value_name:value});}d.meliPayload.attributes=attrs;}return d;}
+async function api(body){const r=await fetch('/api/publicador',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||'Error');return data;}
+document.getElementById('analyzeBtn').onclick=async()=>{try{setStatus('Analizando producto...','warn');document.getElementById('analyzeBtn').disabled=true;const data=await api({action:'analizar',url:document.getElementById('url').value,price:document.getElementById('price').value,currency:document.getElementById('currency').value,stock:document.getElementById('stock').value,accounts:accounts()});fillDraft(data.draft);}catch(e){setStatus(e.message,'warn');}finally{document.getElementById('analyzeBtn').disabled=false;}};
+document.getElementById('rebuildBtn').onclick=()=>{const d=collectEdited();if(!d)return;currentDraft=d;renderAttributes();updatePayloadPictures();setStatus('Cambios aplicados a la vista previa. Guardá el borrador para persistirlos.','ok');};
+document.getElementById('recalcAttrsBtn').onclick=async()=>{try{const d=collectEdited();if(!d)return;setStatus('Consultando Mercado Libre con el título actual y recalculando atributos...','warn');document.getElementById('recalcAttrsBtn').disabled=true;const data=await api({action:'recalcular_atributos',title:d.titulo_meli,draft:d});fillDraft(data.draft);document.querySelector('[data-tab="attrs"]').click();setStatus(data.message||'Atributos recalculados desde Mercado Libre. Revisá y completá los campos faltantes.','ok');}catch(e){setStatus(e.message,'warn');}finally{document.getElementById('recalcAttrsBtn').disabled=false;}};
+document.getElementById('saveBtn').onclick=async()=>{try{const d=collectEdited();const data=await api({action:'save_draft',draft:d});fillDraft(data.draft);await loadDrafts();setStatus('Borrador guardado en /data/publicador-borradores.json.','ok');}catch(e){setStatus(e.message,'warn');}};
+document.getElementById('publishBtn').onclick=async()=>{
+  try{
+    const d=collectEdited();
+    if(!d)return;
+    if(!d.accounts||!d.accounts.length){setStatus('Seleccioná TLC, TOP SHOP o ambas cuentas antes de publicar.','warn');return;}
+    const c=attrCompleteness();
+    if(c.missing>0){document.querySelector('[data-tab="attrs"]').click();setStatus(`Faltan ${c.missing} atributo(s) obligatorio(s). Completalos antes de publicar.`, 'warn');return;}
+    const imgs=Array.isArray(d.images)?d.images.length:0;
+    if(!imgs){setStatus('Seleccioná al menos una foto antes de publicar.','warn');return;}
+    const cuentas=d.accounts.map(x=>x==='topshop'?'TOP SHOP':'TLC').join(' + ');
+    const ok=confirm(`Vas a publicar esta publicación real en Mercado Libre.\n\nCuenta(s): ${cuentas}\nTítulo: ${d.titulo_meli}\nPrecio: ${d.price} ${d.currency}\nStock: ${d.stock}\nFotos: ${imgs}\n\n¿Confirmás?`);
+    if(!ok)return;
+    document.getElementById('publishBtn').disabled=true;
+    setStatus('Publicando en Mercado Libre... no cierres esta pantalla.','warn');
+    const data=await api({action:'publicar',draft:d});
+    currentDraft=data.draft||d;
+    refreshPayloadText();
+    await loadDrafts();
+    const lines=(data.results||[]).map(r=>{
+      if(r.ok)return `${r.cuenta.toUpperCase()}: publicada ${r.itemId||''}${r.permalink?' - '+r.permalink:''}`;
+      return `${r.cuenta.toUpperCase()}: ERROR ${r.error||''}${r.detail?' - '+r.detail:''}`;
+    });
+    currentDraft.publishResults=data.results||[];
+    currentDraft.lastPublishPayload=data.payload||currentDraft.meliPayload;
+    refreshPayloadText();
+    setStatus(`${data.complete?'Publicación creada correctamente.':'Publicación parcial o con errores.'} ${lines.join(' | ')}`, data.complete?'ok':'warn');
+    alert(lines.join('\n'));
+  }catch(e){
+    setStatus('Error al publicar: '+e.message,'warn');
+    alert('Error al publicar: '+e.message+'\n\nAbrí la pestaña PAYLOAD para ver el último JSON preparado.');
+  }finally{
+    document.getElementById('publishBtn').disabled=false;
+  }
+};
+document.getElementById('clearBtn').onclick=()=>{currentDraft=null;document.querySelectorAll('input,textarea').forEach(el=>{if(!['accTlc','accTop'].includes(el.id))el.value='';});document.getElementById('stock').value=50;document.getElementById('currency').value='UYU';setStatus('Formulario limpio.','warn');};
+const addManualBtn=document.getElementById('addManualImagesBtn');if(addManualBtn)addManualBtn.onclick=addManualImagesFromInput;const manualInput=document.getElementById('manualImages');if(manualInput)manualInput.onchange=addManualImagesFromInput;const clearManualBtn=document.getElementById('clearManualImagesBtn');if(clearManualBtn)clearManualBtn.onclick=clearManualImages;
+document.querySelectorAll('.tab').forEach(btn=>btn.onclick=()=>{document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));btn.classList.add('active');['preview','attrs','payload'].forEach(t=>document.getElementById(t+'Tab').classList.toggle('hidden',t!==btn.dataset.tab));});
+async function loadDrafts(){const r=await fetch('/api/publicador?action=drafts');const data=await r.json();const list=document.getElementById('draftsList');if(!data.drafts||!data.drafts.length){list.textContent='Sin borradores todavía.';return;}list.innerHTML=data.drafts.slice(0,20).map(d=>`<div class="draft-item" data-id="${d.id}"><div class="draft-title">${(d.titulo_meli||d.scrapedTitle||'Sin título').replace(/</g,'&lt;')}</div><div>${money(d.price)} ${d.currency||'UYU'} · ${d.categoryName||'Sin categoría'}</div><button class="btn mini-del" data-del="${d.id}" type="button" style="margin-top:8px;padding:6px 8px;font-size:11px;color:#b42318;border-color:#f1b8b2;background:#fff">Borrar borrador</button></div>`).join('');list.querySelectorAll('.draft-item').forEach(el=>el.onclick=(ev)=>{if(ev.target&&ev.target.dataset&&ev.target.dataset.del)return;const d=data.drafts.find(x=>String(x.id)===String(el.dataset.id));if(d){document.getElementById('url').value=d.url||'';document.getElementById('price').value=d.price||'';document.getElementById('currency').value=d.currency||'UYU';document.getElementById('stock').value=d.stock||50;fillDraft(d);}});list.querySelectorAll('[data-del]').forEach(btn=>btn.onclick=async(ev)=>{ev.stopPropagation();const id=btn.dataset.del;if(!confirm('¿Borrar este borrador?'))return;await api({action:'delete_draft',id});if(currentDraft&&String(currentDraft.id)===String(id)){currentDraft=null;clearForm();}await loadDrafts();setStatus('Borrador eliminado.','ok');});}
+loadDrafts();
+</script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════
 //  TELOCONSIGO + TOP SHOP — Panel de Control
-//  v49 LOCAL DEV — Publicaciones directas MeLi + vinculaciones simples
+//  v53 LOCAL DEV REPARADO — base v50 persistencia + Publicador IA
 // ═══════════════════════════════════════════════
 
 const http   = require('http');
@@ -9,29 +9,27 @@ const path   = require('path');
 const crypto = require('crypto');
 
 // Carga variables locales desde .env cuando se ejecuta en PC. En Railway usa Variables.
-try { require('dotenv').config(); } catch {}
+try { require('dotenv').config({ path: path.join(__dirname, '.env') }); } catch (e) { console.warn('dotenv no disponible:', e.message); }
 
-const PORT = Number(process.env.PORT || 8080);
+const PORT = 8080;
 
 
 // ═══════════════════════════════════════════════
 //  ESTADOS PERSISTENTES DE BANDEJA
 //  Guarda leído/no leído, pendientes, descartados y reclamos en JSON.
 // ═══════════════════════════════════════════════
-const DEFAULT_DATA_DIR = path.join(__dirname, 'data');
-const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : DEFAULT_DATA_DIR;
+const DATA_DIR = path.join(__dirname, 'data');
 const STATE_FILE = path.join(DATA_DIR, 'inbox-state.json');
 const AUDIT_FILE = path.join(DATA_DIR, 'audit-log.json');
 const PUBLICATIONS_CACHE_FILE = path.join(DATA_DIR, 'publications-cache.json');
-const PRECIOS_FILE = path.join(DATA_DIR, 'precios.json');
-const BUNDLED_PRECIOS_FILE = path.join(DEFAULT_DATA_DIR, 'precios.json');
-const ROOT_PRECIOS_FILE = path.join(__dirname, 'precios.json');
+const PUBLICADOR_DRAFTS_FILE = path.join(DATA_DIR, 'publicador-borradores.json');
 
 const MODULES = {
   meliads: { label: 'MeLi ADS', pages: ['/meliads.html'], api: ['/api/meli'] },
   inbox: { label: 'Bandeja MeLi', pages: ['/inbox.html'], api: ['/api/inbox', '/api/state'] },
   prices: { label: 'Lista de Precios', pages: ['/precios.html'], api: [] },
   publications: { label: 'Publicaciones', pages: ['/publicaciones.html'], api: ['/api/publications'] },
+  publicador: { label: 'Creador de Publicaciones', pages: ['/publicador.html'], api: ['/api/publicador'] },
   analytics: { label: 'Analytics General', pages: ['/analytics.html'], api: [] },
   automation: { label: 'Alertas & Automatización', pages: ['/automatizacion.html'], api: [] },
   config: { label: 'Configuración', pages: ['/configuracion.html'], api: [] },
@@ -108,228 +106,6 @@ function saveAuditLog(data) {
 }
 
 
-// ═══════════════════════════════════════════════
-//  LISTA DE PRECIOS — Base local JSON sin Drive
-// ═══════════════════════════════════════════════
-const PRECIOS_VAT_RATE = 0.22;
-
-function defaultPreciosDb() {
-  return { version: 1, products: [], updatedAt: new Date().toISOString() };
-}
-function loadPreciosDb() {
-  ensureDataDir();
-  if (!fs.existsSync(PRECIOS_FILE)) {
-    // Railway/local: si DATA_DIR apunta a un Volume vacio, sembramos la base inicial.
-    // Primero intenta /data/precios.json del repo y luego precios.json en la raiz.
-    // No pisa cambios si PRECIOS_FILE ya existe.
-    if (BUNDLED_PRECIOS_FILE !== PRECIOS_FILE && fs.existsSync(BUNDLED_PRECIOS_FILE)) {
-      fs.copyFileSync(BUNDLED_PRECIOS_FILE, PRECIOS_FILE);
-    } else if (ROOT_PRECIOS_FILE !== PRECIOS_FILE && fs.existsSync(ROOT_PRECIOS_FILE)) {
-      fs.copyFileSync(ROOT_PRECIOS_FILE, PRECIOS_FILE);
-    } else {
-      const initial = defaultPreciosDb();
-      fs.writeFileSync(PRECIOS_FILE, JSON.stringify(initial, null, 2));
-      return initial;
-    }
-  }
-  try {
-    const data = JSON.parse(fs.readFileSync(PRECIOS_FILE, 'utf8'));
-    return { ...defaultPreciosDb(), ...data, products: Array.isArray(data.products) ? data.products : [] };
-  } catch (e) {
-    try { fs.copyFileSync(PRECIOS_FILE, PRECIOS_FILE + '.broken-' + Date.now()); } catch {}
-    const initial = defaultPreciosDb();
-    fs.writeFileSync(PRECIOS_FILE, JSON.stringify(initial, null, 2));
-    return initial;
-  }
-}
-function savePreciosDb(db) {
-  ensureDataDir();
-  const products = (db.products || []).map((p, i) => ({ ...p, rowNumber: i + 2 }));
-  const clean = { ...db, products, updatedAt: new Date().toISOString() };
-  fs.writeFileSync(PRECIOS_FILE, JSON.stringify(clean, null, 2));
-  return clean;
-}
-function preciosParseNumber(value) {
-  if (value === null || value === undefined || value === '') return 0;
-  if (typeof value === 'number') return value;
-  let str = String(value).trim();
-  if (str.includes(',') && str.includes('.')) str = str.replace(/\./g, '').replace(',', '.');
-  else if (str.includes(',')) str = str.replace(',', '.');
-  str = str.replace(/[^\d.-]/g, '');
-  const num = parseFloat(str);
-  return Number.isNaN(num) ? 0 : num;
-}
-function preciosRound2(num) { return Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100; }
-function preciosText(v) { return String(v || '').trim(); }
-function preciosModo(v) { const m = String(v || '').trim().toLowerCase(); return (m === 'pvp_descuento' || m === 'pvp proveedor + descuento') ? 'pvp_descuento' : 'costo_directo'; }
-function preciosMoneda(v) { const m = String(v || '').trim().toUpperCase(); return (m === 'USD' || m === 'UYU') ? m : m; }
-function preciosVatFromGross(gross) { const g = preciosParseNumber(gross); return preciosRound2(g - (g / (1 + PRECIOS_VAT_RATE))); }
-function preciosComision(pvp, pct) { return preciosRound2(preciosParseNumber(pvp) * (preciosParseNumber(pct) / 100)); }
-function preciosIvaDgi(costo, pvp, pct) { return preciosRound2(preciosVatFromGross(pvp) - preciosVatFromGross(costo) - preciosVatFromGross(preciosComision(pvp, pct))); }
-function preciosGain(costo, pvp, pct, fijo) { return preciosRound2((preciosParseNumber(pvp) - preciosParseNumber(costo)) - preciosIvaDgi(costo, pvp, pct) - preciosComision(pvp, pct) - preciosParseNumber(fijo)); }
-function preciosMargin(costo, pvp, pct, fijo) { const venta = preciosParseNumber(pvp); return venta <= 0 ? 0 : preciosRound2((preciosGain(costo, venta, pct, fijo) / venta) * 100); }
-function preciosMetrics(costo, pvp, pct, fijo, acos, promo) {
-  const c = preciosRound2(costo), venta = preciosRound2(pvp), cm = preciosParseNumber(pct), f = preciosParseNumber(fijo), a = preciosParseNumber(acos), pr = preciosParseNumber(promo);
-  const descuentoPromocionImporte = preciosRound2(venta * (pr / 100));
-  const ventaFinal = preciosRound2(venta - descuentoPromocionImporte);
-  const costoPublicidadAcos = preciosRound2(ventaFinal * (a / 100));
-  const comisionMlImporteFinal = preciosComision(ventaFinal, cm);
-  const ivaDgiFinal = preciosIvaDgi(c, ventaFinal, cm);
-  const gananciaAntesPublicidad = preciosRound2((ventaFinal - c) - ivaDgiFinal - comisionMlImporteFinal - f);
-  const gananciaFinal = preciosRound2(gananciaAntesPublicidad - costoPublicidadAcos);
-  const margenFinal = ventaFinal > 0 ? preciosRound2((gananciaFinal / ventaFinal) * 100) : 0;
-  const acosMaximoRentable = ventaFinal > 0 ? preciosRound2(Math.max(0, gananciaAntesPublicidad / ventaFinal * 100)) : 0;
-  const costoPublicidadMaximo = preciosRound2(Math.max(0, gananciaAntesPublicidad));
-  return {
-    precioProveedor: c, pvp: venta, comisionMlPct: cm, comisionMlImporte: preciosComision(venta, cm), ivaComisionMl: preciosVatFromGross(preciosComision(venta, cm)), envioCostoFijo: f,
-    ivaCompra: preciosVatFromGross(c), ivaVenta: preciosVatFromGross(venta), ivaDgi: preciosIvaDgi(c, venta, cm), gananciaReal: preciosGain(c, venta, cm, f), margenReal: preciosMargin(c, venta, cm, f),
-    acos: a, descuentoPromocion: pr, descuentoPromocionImporte, ventaFinal, costoPublicidadAcos, gananciaAntesPublicidad, acosMaximoRentable, costoPublicidadMaximo, comisionMlImporteFinal, ivaComisionMlFinal: preciosVatFromGross(comisionMlImporteFinal), ivaVentaFinal: preciosVatFromGross(ventaFinal), ivaDgiFinal, gananciaFinal, margenFinal
-  };
-}
-function preciosNormalizeInput(data) {
-  const modoCosto = preciosModo(data.modoCosto);
-  const pvpProveedor = preciosParseNumber(data.pvpProveedor);
-  const descuentoProveedorPct = preciosParseNumber(data.descuentoProveedorPct);
-  const precioProveedorIngresado = preciosParseNumber(data.precioProveedor);
-  const pvpIngresado = preciosParseNumber(data.pvp);
-  const precioProveedor = modoCosto === 'pvp_descuento' ? preciosRound2(pvpProveedor * (1 - descuentoProveedorPct / 100)) : preciosRound2(precioProveedorIngresado);
-  const pvp = modoCosto === 'pvp_descuento' ? preciosRound2(pvpProveedor) : preciosRound2(pvpIngresado);
-  return {
-    originalRowNumber: preciosParseNumber(data.originalRowNumber), articulo: preciosText(data.articulo), codigoTLC: preciosText(data.codigoTLC), proveedor: preciosText(data.proveedor), codigoProveedor: preciosText(data.codigoProveedor), codigoFabrica: preciosText(data.codigoFabrica), moneda: preciosMoneda(data.moneda), modoCosto,
-    precioProveedor, pvpProveedor, descuentoProveedorPct, pvp, comisionMlPct: preciosParseNumber(data.comisionMlPct), envioCostoFijo: preciosParseNumber(data.envioCostoFijo), acos: preciosParseNumber(data.acos), descuentoPromocion: preciosParseNumber(data.descuentoPromocion)
-  };
-}
-function preciosIncomplete(data) {
-  const fields = [];
-  if (!preciosText(data.articulo)) fields.push('Artículo');
-  if (!preciosText(data.codigoTLC)) fields.push('Código TLC');
-  if (!preciosText(data.codigoProveedor)) fields.push('Código Proveedor');
-  if (!preciosText(data.proveedor)) fields.push('Proveedor');
-  if (!preciosText(data.moneda)) fields.push('Moneda');
-  if (preciosParseNumber(data.precioProveedor) <= 0) fields.push('Precio Proveedor');
-  if (preciosParseNumber(data.pvp) <= 0) fields.push('PVP');
-  if (preciosModo(data.modoCosto) === 'pvp_descuento' && preciosParseNumber(data.pvpProveedor) <= 0) fields.push('PVP Proveedor');
-  return fields;
-}
-function preciosValidate(data, opts = {}) {
-  if (opts.isUpdate && !data.originalRowNumber) throw new Error('Falta la fila original del producto.');
-  if (!opts.allowIncompleteCore) {
-    if (!data.articulo) throw new Error('El Artículo es obligatorio.');
-    if (!data.codigoTLC) throw new Error('El Código TLC es obligatorio.');
-  }
-  if (!data.moneda) throw new Error('La Moneda es obligatoria.');
-  if (data.moneda !== 'USD' && data.moneda !== 'UYU') throw new Error('La Moneda debe ser USD o UYU.');
-  if (data.modoCosto === 'pvp_descuento') {
-    if (data.pvpProveedor <= 0) throw new Error('En modo PVP proveedor + descuento, el PVP Proveedor debe ser mayor a 0.');
-    if (data.descuentoProveedorPct < 0 || data.descuentoProveedorPct > 100) throw new Error('El Descuento Proveedor % debe estar entre 0 y 100.');
-  } else {
-    if (data.precioProveedor < 0) throw new Error('El Precio Proveedor no puede ser negativo.');
-    if (data.pvp <= 0) throw new Error('El PVP debe ser mayor a 0.');
-  }
-  if (data.comisionMlPct < 0) throw new Error('La Comisión ML % no puede ser negativa.');
-  if (data.envioCostoFijo < 0) throw new Error('El Envío / Costo fijo no puede ser negativo.');
-  if (data.acos < 0) throw new Error('El ACOS % no puede ser negativo.');
-  if (data.descuentoPromocion < 0 || data.descuentoPromocion > 100) throw new Error('El Descuento Promoción % debe estar entre 0 y 100.');
-}
-function preciosResponse(data, extra = {}) {
-  const base = { success: true, articulo: data.articulo, codigoTLC: data.codigoTLC, proveedor: data.proveedor, codigoProveedor: data.codigoProveedor, codigoFabrica: data.codigoFabrica, moneda: data.moneda, modoCosto: data.modoCosto, pvpProveedor: data.pvpProveedor, descuentoProveedorPct: data.descuentoProveedorPct, ...preciosMetrics(data.precioProveedor, data.pvp, data.comisionMlPct, data.envioCostoFijo, data.acos, data.descuentoPromocion) };
-  const incompleteFields = preciosIncomplete(base);
-  return { ...base, incompleto: incompleteFields.length > 0, incompleteFields, ...extra };
-}
-function preciosFindIndex(db, idOrRow) {
-  const n = preciosParseNumber(idOrRow);
-  if (n >= 2 && n - 2 < db.products.length) return n - 2;
-  return db.products.findIndex(p => String(p.id) === String(idOrRow) || String(p.codigoTLC) === String(idOrRow));
-}
-function preciosEnsureUnique(db, data, excludedIndex = -1) {
-  const proveedor = preciosText(data.proveedor).toLowerCase();
-  const codigo = preciosText(data.codigoTLC);
-  if (!codigo) return;
-  const found = db.products.findIndex((p, i) => i !== excludedIndex && preciosText(p.codigoTLC) === codigo && preciosText(p.proveedor).toLowerCase() === proveedor);
-  if (found >= 0) throw new Error('Ya existe un producto con ese Código TLC para ese mismo proveedor.');
-}
-async function handlePreciosApi(req, res, pathName, session) {
-  try {
-    const db = loadPreciosDb();
-    const parts = pathName.split('/').filter(Boolean);
-    const id = parts[2] || '';
-
-    if (req.method === 'GET' && pathName === '/api/precios') {
-      jsonResp(res, 200, { ok: true, products: db.products.map((p, i) => ({ ...p, rowNumber: i + 2 })) });
-      return;
-    }
-    if (req.method === 'POST' && pathName === '/api/precios/preview') {
-      const body = await readBody(req);
-      const normalized = preciosNormalizeInput(body);
-      preciosValidate(normalized, { allowIncompleteCore: true });
-      jsonResp(res, 200, preciosResponse(normalized));
-      return;
-    }
-    if (req.method === 'POST' && pathName === '/api/precios/target-price') {
-      const body = await readBody(req);
-      const normalized = preciosNormalizeInput(body);
-      preciosValidate(normalized, { allowIncompleteCore: true });
-      const targetMarginPct = preciosParseNumber(body.targetMarginPct);
-      if (targetMarginPct <= -99) throw new Error('El margen objetivo debe ser mayor a -99%.');
-      if (targetMarginPct >= 95) throw new Error('El margen objetivo debe ser menor a 95%.');
-      let low = Math.max(0.01, normalized.precioProveedor + normalized.envioCostoFijo);
-      let high = Math.max(low * 2, 1);
-      let guard = 0;
-      while (preciosMetrics(normalized.precioProveedor, high, normalized.comisionMlPct, normalized.envioCostoFijo, normalized.acos, normalized.descuentoPromocion).margenFinal < targetMarginPct && guard < 60) { high *= 2; guard++; }
-      if (guard >= 60) throw new Error('No se pudo calcular un precio para ese margen objetivo.');
-      for (let i = 0; i < 60; i++) {
-        const mid = (low + high) / 2;
-        const margin = preciosMetrics(normalized.precioProveedor, mid, normalized.comisionMlPct, normalized.envioCostoFijo, normalized.acos, normalized.descuentoPromocion).margenFinal;
-        if (margin < targetMarginPct) low = mid; else high = mid;
-      }
-      const suggestedPvp = preciosRound2(high);
-      const response = preciosResponse({ ...normalized, pvp: suggestedPvp });
-      jsonResp(res, 200, { ...response, targetMarginPct: preciosRound2(targetMarginPct), suggestedPvp, achievedMarginPct: preciosMetrics(normalized.precioProveedor, suggestedPvp, normalized.comisionMlPct, normalized.envioCostoFijo, normalized.acos, normalized.descuentoPromocion).margenFinal });
-      return;
-    }
-    if (req.method === 'POST' && pathName === '/api/precios') {
-      const body = await readBody(req);
-      const normalized = preciosNormalizeInput(body);
-      preciosValidate(normalized);
-      preciosEnsureUnique(db, normalized);
-      const item = preciosResponse(normalized, { id: crypto.randomBytes(8).toString('hex'), rowNumber: db.products.length + 2 });
-      db.products.push(item);
-      savePreciosDb(db);
-      audit(session, 'precios_create', { codigoTLC: item.codigoTLC, articulo: item.articulo });
-      jsonResp(res, 200, item);
-      return;
-    }
-    if (req.method === 'PUT' && parts[0] === 'api' && parts[1] === 'precios' && id) {
-      const body = await readBody(req);
-      const idx = preciosFindIndex(db, id);
-      if (idx < 0) throw new Error('No se encontró el producto.');
-      const normalized = preciosNormalizeInput({ ...body, originalRowNumber: idx + 2 });
-      preciosValidate(normalized, { isUpdate: true });
-      preciosEnsureUnique(db, normalized, idx);
-      const old = db.products[idx] || {};
-      const item = preciosResponse(normalized, { id: old.id || crypto.randomBytes(8).toString('hex'), rowNumber: idx + 2, originalRowNumber: idx + 2 });
-      db.products[idx] = item;
-      savePreciosDb(db);
-      audit(session, 'precios_update', { codigoTLC: item.codigoTLC, articulo: item.articulo });
-      jsonResp(res, 200, item);
-      return;
-    }
-    if (req.method === 'DELETE' && parts[0] === 'api' && parts[1] === 'precios' && id) {
-      const idx = preciosFindIndex(db, id);
-      if (idx < 0) throw new Error('No se encontró el producto.');
-      const removed = db.products.splice(idx, 1)[0];
-      savePreciosDb(db);
-      audit(session, 'precios_delete', { codigoTLC: removed.codigoTLC, articulo: removed.articulo });
-      jsonResp(res, 200, { success: true });
-      return;
-    }
-    jsonResp(res, 404, { error: 'Ruta de precios no encontrada' });
-  } catch (e) {
-    jsonResp(res, 500, { error: { message: e.message } });
-  }
-}
-
-
 function defaultPublicationsCache() {
   return {
     tlc: [],
@@ -385,6 +161,1769 @@ function savePublicationsCache(data) {
   };
   fs.writeFileSync(PUBLICATIONS_CACHE_FILE, JSON.stringify(clean, null, 2));
   return clean;
+}
+
+
+function defaultPublicadorDrafts() {
+  return { drafts: [], updatedAt: null };
+}
+
+function loadPublicadorDrafts() {
+  ensureDataDir();
+  if (!fs.existsSync(PUBLICADOR_DRAFTS_FILE)) {
+    const initial = defaultPublicadorDrafts();
+    fs.writeFileSync(PUBLICADOR_DRAFTS_FILE, JSON.stringify(initial, null, 2));
+    return initial;
+  }
+  try {
+    const data = JSON.parse(fs.readFileSync(PUBLICADOR_DRAFTS_FILE, 'utf8'));
+    return { drafts: Array.isArray(data.drafts) ? data.drafts : [], updatedAt: data.updatedAt || null };
+  } catch {
+    try { fs.copyFileSync(PUBLICADOR_DRAFTS_FILE, PUBLICADOR_DRAFTS_FILE + '.broken-' + Date.now()); } catch {}
+    const initial = defaultPublicadorDrafts();
+    fs.writeFileSync(PUBLICADOR_DRAFTS_FILE, JSON.stringify(initial, null, 2));
+    return initial;
+  }
+}
+
+function savePublicadorDrafts(data) {
+  ensureDataDir();
+  const clean = { drafts: Array.isArray(data.drafts) ? data.drafts.slice(-300) : [], updatedAt: new Date().toISOString() };
+  fs.writeFileSync(PUBLICADOR_DRAFTS_FILE, JSON.stringify(clean, null, 2));
+  return clean;
+}
+
+function decodeHtmlEntities(text) {
+  let s = String(text || '');
+  const named = {
+    amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ',
+    aacute: 'á', eacute: 'é', iacute: 'í', oacute: 'ó', uacute: 'ú', ntilde: 'ñ',
+    Aacute: 'Á', Eacute: 'É', Iacute: 'Í', Oacute: 'Ó', Uacute: 'Ú', Ntilde: 'Ñ',
+    deg: '°', ordm: 'º', frac12: '½', bull: '•'
+  };
+  s = s.replace(/&([a-zA-Z][a-zA-Z0-9]+);/g, (_, n) => named[n] || `&${n};`);
+  s = s.replace(/&#(\d+);/g, (_, n) => {
+    try { return String.fromCodePoint(Number(n)); } catch { return _; }
+  });
+  s = s.replace(/&#x([0-9a-fA-F]+);/g, (_, n) => {
+    try { return String.fromCodePoint(parseInt(n, 16)); } catch { return _; }
+  });
+  return s;
+}
+
+function cleanPublicadorText(v) {
+  return decodeHtmlEntities(String(v || ''))
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n\s+/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function escapePlainText(v) {
+  return cleanPublicadorText(v).replace(/\s+/g, ' ').trim();
+}
+
+function getMetaContent(htmlStr, keys) {
+  for (const key of keys) {
+    const re1 = new RegExp(`<meta[^>]+(?:property|name)=["']${key}["'][^>]+content=["']([^"']+)["'][^>]*>`, 'i');
+    const re2 = new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${key}["'][^>]*>`, 'i');
+    const m = htmlStr.match(re1) || htmlStr.match(re2);
+    if (m) return decodeHtmlEntities(m[1]);
+  }
+  return '';
+}
+
+function normalizePublicadorImageUrl(src, pageUrl) {
+  if (!src || typeof src !== 'string') return '';
+  src = decodeHtmlEntities(src)
+    .replace(/\\u002F/gi, '/')
+    .replace(/\\\//g, '/')
+    .replace(/\\u0026/gi, '&')
+    .replace(/\\u003D/gi, '=')
+    .trim();
+  src = src.replace(/^['\"]+|['\"]+$/g, '');
+  if (src.startsWith('//')) src = 'https:' + src;
+  if (src.startsWith('/')) {
+    try { src = new URL(src, pageUrl).toString(); } catch {}
+  }
+  return src;
+}
+
+
+function isUsefulPublicadorImage(src) {
+  const low = String(src || '').toLowerCase();
+  if (!low.startsWith('http')) return false;
+  if (low.includes('logo') || low.includes('icon') || low.includes('sprite') || low.includes('banner') || low.includes('avatar') || low.includes('favicon')) return false;
+  if (low.includes('mlstatic.com')) return true;
+  if (low.includes('makerworld') || low.includes('bambulab') || low.includes('bblmw.com') || low.includes('makerworld.bblmw.com')) return true;
+  if (low.includes('image') || low.includes('picture') || low.includes('photo') || low.includes('thumb') || low.includes('cover')) return true;
+  return /\.(jpg|jpeg|png|webp)(\?|$)/i.test(low);
+}
+
+function decodePossibleImageUrl(v, pageUrl='') {
+  let src = String(v || '').trim();
+  if (!src) return '';
+  try { src = JSON.parse('"' + src.replace(/"/g, '\\"') + '"'); } catch {}
+  src = decodeHtmlEntities(src)
+    .replace(/\\u002F/gi, '/')
+    .replace(/\\u0026/gi, '&')
+    .replace(/\\u003D/gi, '=')
+    .replace(/\\\//g, '/')
+    .replace(/&amp;/gi, '&')
+    .trim();
+  try {
+    if (/^https?%3a%2f%2f/i.test(src)) src = decodeURIComponent(src);
+  } catch {}
+  src = src.replace(/^['"]+|['"]+$/g, '');
+  if (src.startsWith('//')) src = 'https:' + src;
+  if (src.startsWith('/')) {
+    try { src = new URL(src, pageUrl).toString(); } catch {}
+  }
+  return src;
+}
+
+function normalizePublicadorImageUrl(src, pageUrl) {
+  src = decodePossibleImageUrl(src, pageUrl);
+  if (/mlstatic\.com/i.test(src)) {
+    // Cuando sea posible, preferir versiones grandes de Mercado Libre.
+    src = src.replace(/-S\.(jpg|jpeg|png|webp)(\?|$)/i, '-O.$1$2')
+             .replace(/-I\.(jpg|jpeg|png|webp)(\?|$)/i, '-O.$1$2')
+             .replace(/-V\.(jpg|jpeg|png|webp)(\?|$)/i, '-O.$1$2');
+  }
+  return src;
+}
+
+function collectImageUrlsDeep(obj, pageUrl='', out=[], depth=0) {
+  if (!obj || depth > 10 || out.length > 80) return out;
+  if (typeof obj === 'string') {
+    const s = decodePossibleImageUrl(obj, pageUrl);
+    if (isUsefulPublicadorImage(s)) out.push(s);
+    const re = /(https?:\\?\/\\?\/[^"'<>\s\\]+|https?:\/\/[^"'<>\s]+)/gi;
+    let m;
+    while ((m = re.exec(obj)) !== null && out.length < 80) {
+      const u = decodePossibleImageUrl(m[1], pageUrl);
+      if (isUsefulPublicadorImage(u)) out.push(u);
+    }
+    return out;
+  }
+  if (Array.isArray(obj)) {
+    obj.forEach(x => collectImageUrlsDeep(x, pageUrl, out, depth+1));
+    return out;
+  }
+  if (typeof obj === 'object') {
+    for (const [k,v] of Object.entries(obj)) {
+      const key = String(k).toLowerCase();
+      if (typeof v === 'string' && /(image|picture|photo|thumbnail|thumb|cover|src|url|secure_url|permalink)/i.test(key)) {
+        const u = decodePossibleImageUrl(v, pageUrl);
+        if (isUsefulPublicadorImage(u)) out.push(u);
+      }
+      collectImageUrlsDeep(v, pageUrl, out, depth+1);
+    }
+  }
+  return out;
+}
+
+function extractJsonBlocksFromHtml(htmlStr) {
+  const blocks = [];
+  const re = /<script[^>]*>([\s\S]*?)<\/script>/gi;
+  let m;
+  while ((m = re.exec(String(htmlStr || ''))) !== null) {
+    const t = (m[1] || '').trim();
+    if (!t) continue;
+    const candidates = [];
+    if (/^\s*[\[{]/.test(t)) candidates.push(t);
+    const next = t.match(/self\.__next_f\.push\(\[\d+,\s*["']([\s\S]*?)["']\]\)/);
+    if (next) candidates.push(next[1]);
+    const state = t.match(/(?:window\.__PRELOADED_STATE__|__PRELOADED_STATE__|__INITIAL_STATE__|__NEXT_DATA__)\s*=\s*({[\s\S]*?})\s*;?\s*$/);
+    if (state) candidates.push(state[1]);
+    for (const c of candidates) {
+      let cleaned = c;
+      try { cleaned = JSON.parse('"' + cleaned.replace(/"/g,'\\"') + '"'); } catch {}
+      try { blocks.push(JSON.parse(cleaned)); } catch { blocks.push(cleaned); }
+    }
+  }
+  return blocks;
+}
+
+function extractPublicadorImages(htmlStr, pageUrl) {
+  const images = [];
+  const seen = new Set();
+  function addImage(src) {
+    src = normalizePublicadorImageUrl(src, pageUrl);
+    if (!isUsefulPublicadorImage(src)) return;
+    const clean = src.split('#')[0];
+    if (seen.has(clean)) return;
+    seen.add(clean);
+    images.push(clean);
+  }
+
+  // Mantiene lo anterior: og/twitter/meta.
+  const ogImg = getMetaContent(htmlStr, ['og:image', 'twitter:image', 'image']);
+  if (ogImg) addImage(ogImg);
+
+  // img/source srcset y data-srcset.
+  const srcSetRegex = /<(?:img|source)[^>]+(?:srcset|data-srcset)=['"]([^'"]+)['"][^>]*>/gi;
+  let sm;
+  while ((sm = srcSetRegex.exec(htmlStr)) !== null && images.length < 30) {
+    const candidates = sm[1].split(',').map(x => x.trim().split(/\s+/)[0]).filter(Boolean);
+    for (const c of candidates.reverse()) addImage(c);
+  }
+
+  // img, data-src, data-zoom, poster, links preload.
+  const attrRegex = /<(?:img|source|link|meta|video)[^>]+(?:content|href|poster|data-zoom|data-full|data-src|data-original|data-lazy|src)=['"]([^'"]+)['"][^>]*>/gi;
+  let m;
+  while ((m = attrRegex.exec(htmlStr)) !== null && images.length < 40) addImage(m[1]);
+
+  // URLs directas normales y escapadas dentro de JSON/scripts.
+  const urlRegexes = [
+    /https?:\\?\/\\?\/[^"'<>\s]+?(?:mlstatic\.com|makerworld|bambulab|bblmw\.com)[^"'<>\s]*/gi,
+    /https?:\/\/[^"'<>\s]+?(?:\.jpg|\.jpeg|\.png|\.webp)(?:[^"'<>\s]*)?/gi,
+    /https?%3A%2F%2F[^"'<>\s]+?(?:jpg|jpeg|png|webp|mlstatic\.com|bblmw\.com)[^"'<>\s]*/gi
+  ];
+  for (const re of urlRegexes) {
+    let mm;
+    while ((mm = re.exec(htmlStr)) !== null && images.length < 60) addImage(mm[0]);
+  }
+
+  // JSON interno (Next/MakerWorld/MercadoLibre). Captura cualquier campo tipo image/url/src profundo.
+  for (const block of extractJsonBlocksFromHtml(htmlStr)) {
+    collectImageUrlsDeep(block, pageUrl).forEach(addImage);
+  }
+
+  const isMeli = /mercadolibre\./i.test(pageUrl || '') || /mlstatic\.com/i.test(htmlStr || '');
+  const ordered = isMeli
+    ? [...images.filter(x => /mlstatic\.com/i.test(x)), ...images.filter(x => !/mlstatic\.com/i.test(x))]
+    : images;
+  return Array.from(new Set(ordered)).slice(0, 12);
+}
+
+function extractMeliIdsFromUrlOrHtml(url, htmlStr) {
+  const rawUrl = String(url || '');
+  const rawHtml = String(htmlStr || '');
+  const decodedUrl = (() => { try { return decodeURIComponent(rawUrl); } catch { return rawUrl; } })();
+  const decodedHtml = (() => { try { return decodeURIComponent(rawHtml); } catch { return rawHtml; } })();
+  const text = `${decodedUrl} ${decodedHtml}`;
+
+  function normItem(id) {
+    if (!id) return '';
+    id = String(id).trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (/^\d+$/.test(id)) id = `MLU${id}`;
+    return /^MLU\d{6,}$/.test(id) ? id : '';
+  }
+  function normCatalog(id) {
+    if (!id) return '';
+    id = String(id).trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    return /^MLU\d{6,}$/.test(id) ? id : '';
+  }
+  function normUserProduct(id) {
+    if (!id) return '';
+    id = String(id).trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    return /^MLUU\d{6,}$/.test(id) ? id : '';
+  }
+
+  let itemId = '';
+  let catalogId = '';
+  let userProductId = '';
+  try {
+    const u = new URL(decodedUrl);
+    const paramsToCheck = ['item_id','itemId','itemIdFrom','item_id_from','recommended_item_id','wid','reco_item_id'];
+    const hashParams = new URLSearchParams(String(u.hash || '').replace(/^#/, '').replace(/^polycard_client=/, 'polycard_client='));
+    for (const p of paramsToCheck) {
+      itemId = normItem(u.searchParams.get(p)) || normItem(hashParams.get(p));
+      if (itemId) break;
+    }
+    const pdp = u.searchParams.get('pdp_filters') || u.searchParams.get('pdp_filters[]') || hashParams.get('pdp_filters') || '';
+    if (!itemId && pdp) {
+      const m = String(pdp).match(/(?:item_id|itemId)\s*[:=]\s*(MLU-?\d{6,})/i);
+      if (m) itemId = normItem(m[1]);
+    }
+    const upm = u.pathname.match(/\/(?:up|user-products?)\/(MLUU-?\d{6,})/i);
+    if (upm) userProductId = normUserProduct(upm[1]);
+    const cm = u.pathname.match(/\/p\/(MLU-?\d{6,})/i);
+    if (cm) catalogId = normCatalog(cm[1]);
+    const im = u.pathname.match(/\/(MLU-?\d{6,})(?:[\/_-]|$)/i);
+    if (im && !/\/p\//i.test(u.pathname)) itemId = itemId || normItem(im[1]);
+  } catch {}
+
+  if (!itemId) {
+    const priorityPatterns = [
+      /[?&#](?:wid|item_id|itemId|recommended_item_id)=\s*(MLU-?\d{6,})/i,
+      /(?:wid|item_id|itemId|itemIdFrom|item_id_from|recommended_item_id)\s*[:=]\s*["']?(MLU-?\d{6,})/i,
+      /(?:item_id|itemId|recommended_item_id|wid)[^A-Z0-9]{0,60}(MLU-?\d{6,})/i,
+      /["'](?:item_id|itemId|id)["']\s*:\s*["'](MLU-?\d{6,})["']/i
+    ];
+    for (const re of priorityPatterns) {
+      const m = text.match(re);
+      if (m) { itemId = normItem(m[1]); break; }
+    }
+  }
+  if (!catalogId) {
+    const cm = text.match(/\/p\/(MLU-?\d{6,})/i) || text.match(/["']catalog_product_id["']\s*:\s*["'](MLU-?\d{6,})["']/i);
+    if (cm) catalogId = normCatalog(cm[1]);
+  }
+  if (!userProductId) {
+    const um = text.match(/\/(?:up|user-products?)\/(MLUU-?\d{6,})/i) || text.match(/\b(MLUU-?\d{6,})\b/i);
+    if (um) userProductId = normUserProduct(um[1]);
+  }
+  if (!itemId) {
+    const all = [...text.matchAll(/\b(MLU-?\d{8,})\b/gi)].map(m => normItem(m[1])).filter(Boolean);
+    itemId = all.find(id => id !== catalogId) || '';
+  }
+  return { itemId, catalogId, userProductId };
+}
+
+function extractMeliItemIdFromUrlOrHtml(url, htmlStr) {
+  return extractMeliIdsFromUrlOrHtml(url, htmlStr).itemId;
+}
+
+async function fetchMeliJson(url, token='') {
+  try {
+    const headers = {
+      'Accept': 'application/json',
+      'User-Agent': 'Mozilla/5.0 TLC-Publicador/3.0',
+      'X-Format-New': 'true'
+    };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const r = await fetch(url, { headers });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch {
+    return null;
+  }
+}
+
+function imagesFromMeliObject(data) {
+  const out = [];
+  function addPic(p) {
+    if (!p) return;
+    if (typeof p === 'string') out.push(p);
+    else out.push(p.secure_url || p.url || p.max_size || p.thumbnail || p.secure_thumbnail || p.src || p.picture || p.full_size || '');
+  }
+  if (Array.isArray(data)) data.forEach(x => imagesFromMeliObject(x).forEach(u => out.push(u)));
+  if (Array.isArray(data?.pictures)) data.pictures.forEach(addPic);
+  if (Array.isArray(data?.images)) data.images.forEach(addPic);
+  if (Array.isArray(data?.results)) data.results.forEach(x => imagesFromMeliObject(x).forEach(u => out.push(u)));
+  if (Array.isArray(data?.variations)) data.variations.forEach(v => imagesFromMeliObject(v).forEach(u => out.push(u)));
+  if (data?.body) imagesFromMeliObject(data.body).forEach(u => out.push(u));
+  const buyBox = data?.buy_box_winner || data?.buyBoxWinner;
+  if (buyBox) imagesFromMeliObject(buyBox).forEach(u => out.push(u));
+  collectImageUrlsDeep(data).forEach(u => out.push(u));
+  return Array.from(new Set(out.filter(Boolean).map(u => normalizePublicadorImageUrl(u, ''))));
+}
+
+function collectMeliItemIdsDeep(obj, out = [], depth = 0) {
+  if (!obj || depth > 8 || out.length > 30) return out;
+  function add(v) {
+    const id = String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (/^MLU\d{6,}$/.test(id) && !out.includes(id)) out.push(id);
+  }
+  if (typeof obj === 'string') {
+    for (const m of obj.matchAll(/\bMLU-?\d{6,}\b/gi)) add(m[0]);
+    return out;
+  }
+  if (Array.isArray(obj)) { obj.forEach(x => collectMeliItemIdsDeep(x, out, depth + 1)); return out; }
+  if (typeof obj === 'object') {
+    for (const [k,v] of Object.entries(obj)) {
+      if (/^(id|item_id|itemId|itemIdFrom|item_id_from|winner_item_id)$/i.test(k)) add(v);
+      collectMeliItemIdsDeep(v, out, depth + 1);
+    }
+  }
+  return out;
+}
+
+async function fetchMeliItemImagesFromPublicApi(itemId, catalogId = '', cuenta = '', userProductId = '') {
+  const urls = [];
+  const tried = new Set();
+  function addEndpoint(u) { if (u && !tried.has(u)) { tried.add(u); urls.push(u); } }
+
+  if (itemId) {
+    addEndpoint(`https://api.mercadolibre.com/items/${encodeURIComponent(itemId)}`);
+    addEndpoint(`https://api.mercadolibre.com/items?ids=${encodeURIComponent(itemId)}`);
+  }
+  if (userProductId) {
+    addEndpoint(`https://api.mercadolibre.com/user-products/${encodeURIComponent(userProductId)}`);
+    addEndpoint(`https://api.mercadolibre.com/user-products/${encodeURIComponent(userProductId)}/items`);
+  }
+  if (catalogId) {
+    addEndpoint(`https://api.mercadolibre.com/products/${encodeURIComponent(catalogId)}`);
+    addEndpoint(`https://api.mercadolibre.com/products/${encodeURIComponent(catalogId)}/items`);
+    addEndpoint(`https://api.mercadolibre.com/sites/MLU/search?catalog_product_id=${encodeURIComponent(catalogId)}`);
+  }
+
+  let token = '';
+  if (cuenta) {
+    try { token = await getMeliAccessToken(cuenta); } catch {}
+  }
+
+  const images = [];
+  const itemIdsFound = new Set(itemId ? [itemId] : []);
+  for (const endpoint of urls) {
+    let data = await fetchMeliJson(endpoint);
+    let found = imagesFromMeliObject(data);
+    collectMeliItemIdsDeep(data).forEach(id => itemIdsFound.add(id));
+    if ((!found.length || endpoint.includes('/user-products/')) && token) {
+      data = await fetchMeliJson(endpoint, token);
+      found = imagesFromMeliObject(data);
+      collectMeliItemIdsDeep(data).forEach(id => itemIdsFound.add(id));
+    }
+    if (found.length) images.push(...found);
+  }
+
+  // Los links /p/ y /up/ a veces devuelven solo IDs de ofertas. Pedimos esas publicaciones reales.
+  for (const id of Array.from(itemIdsFound).slice(0, 8)) {
+    if (images.length >= 12) break;
+    let data = await fetchMeliJson(`https://api.mercadolibre.com/items/${encodeURIComponent(id)}`);
+    let found = imagesFromMeliObject(data);
+    if (!found.length && token) {
+      data = await fetchMeliJson(`https://api.mercadolibre.com/items/${encodeURIComponent(id)}`, token);
+      found = imagesFromMeliObject(data);
+    }
+    if (found.length) images.push(...found);
+  }
+
+  return Array.from(new Set(images)).slice(0, 12);
+}
+
+
+function extractMakerWorldIdsFromUrl(url) {
+  const raw = String(url || '');
+  let designId = '';
+  let profileId = '';
+  const m1 = raw.match(/\/models\/(\d+)/i);
+  if (m1) designId = m1[1];
+  const m2 = raw.match(/[?#&]profileId[-=](\d+)/i) || raw.match(/profileId-(\d+)/i) || raw.match(/[?#&]profileId=(\d+)/i);
+  if (m2) profileId = m2[1];
+  return { designId, profileId };
+}
+
+function imagesFromMakerWorldObject(data) {
+  const out = [];
+  function add(v) {
+    if (!v) return;
+    if (typeof v === 'string') out.push(v);
+    else if (typeof v === 'object') {
+      out.push(v.url || v.src || v.image || v.imageUrl || v.cover || v.coverUrl || v.thumbnail || v.thumbnailUrl || v.largeUrl || v.originalUrl || v.fileUrl || '');
+    }
+  }
+  if (!data) return [];
+  if (Array.isArray(data)) data.forEach(x => imagesFromMakerWorldObject(x).forEach(add));
+  if (typeof data === 'object') {
+    const buckets = [
+      data.images, data.imageList, data.pictures, data.pictureList, data.covers, data.coverImages,
+      data.modelImages, data.renderImages, data.gallery, data.galleryImages, data.previewImages,
+      data.data?.images, data.data?.imageList, data.data?.pictures, data.data?.coverImages,
+      data.design?.images, data.design?.imageList, data.design?.pictures,
+      data.model?.images, data.model?.imageList,
+      data.instances, data.data?.instances, data.printProfiles, data.profiles
+    ];
+    buckets.forEach(b => {
+      if (Array.isArray(b)) b.forEach(add);
+      else add(b);
+    });
+    collectImageUrlsDeep(data).forEach(add);
+  }
+  return Array.from(new Set(out.filter(Boolean)));
+}
+
+async function fetchMakerWorldImagesFromPublicApi(pageUrl) {
+  const ids = extractMakerWorldIdsFromUrl(pageUrl);
+  if (!ids.designId) return [];
+  const endpoints = [
+    `https://api.bambulab.com/v1/design-service/design/${encodeURIComponent(ids.designId)}?trafficSource=browse&visitHistory=false`,
+    `https://makerworld.com/api/v1/design-service/design/${encodeURIComponent(ids.designId)}?trafficSource=browse&visitHistory=false`,
+    `https://api.bambulab.com/v1/design-service/design/${encodeURIComponent(ids.designId)}`,
+    `https://makerworld.com/api/v1/design-service/design/${encodeURIComponent(ids.designId)}`,
+  ];
+  if (ids.profileId) {
+    endpoints.push(`https://api.bambulab.com/v1/design-service/instance/${encodeURIComponent(ids.profileId)}/f3mf?type=preview`);
+    endpoints.push(`https://makerworld.com/api/v1/design-service/instance/${encodeURIComponent(ids.profileId)}/f3mf?type=preview`);
+  }
+  const headers = {
+    'Accept': 'application/json, text/plain, */*',
+    'Accept-Language': 'es-UY,es;q=0.9,en;q=0.8',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36',
+    'Origin': 'https://makerworld.com',
+    'Referer': pageUrl,
+  };
+  const images = [];
+  for (const endpoint of endpoints) {
+    try {
+      const r = await fetch(endpoint, { headers, redirect: 'follow' });
+      if (!r.ok) continue;
+      const txt = await r.text();
+      let data = null;
+      try { data = JSON.parse(txt); } catch { data = txt; }
+      imagesFromMakerWorldObject(data).forEach(u => images.push(u));
+      // Tambien extrae URLs crudas si la respuesta vino como texto/JSON escapado.
+      extractPublicadorImages(txt, pageUrl).forEach(u => images.push(u));
+    } catch {}
+  }
+  return Array.from(new Set(images));
+}
+
+function mergePublicadorImages(primary = [], extra = [], pageUrl = '') {
+  const out = [];
+  const seen = new Set();
+  for (const raw of [...extra, ...primary]) {
+    const src = normalizePublicadorImageUrl(raw, pageUrl);
+    if (!isUsefulPublicadorImage(src)) continue;
+    const key = src.split('#')[0];
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(key);
+    if (out.length >= 12) break;
+  }
+  return out;
+}
+
+function parseJsonLdProducts(htmlStr) {
+  const found = [];
+  const re = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  let m;
+  while ((m = re.exec(htmlStr)) !== null) {
+    try {
+      const raw = decodeHtmlEntities(m[1]).trim();
+      const data = JSON.parse(raw);
+      const arr = Array.isArray(data) ? data : [data];
+      for (const item of arr) {
+        if (!item) continue;
+        if (item['@graph']) arr.push(...item['@graph']);
+        const type = String(item['@type'] || '').toLowerCase();
+        if (type.includes('product')) found.push(item);
+      }
+    } catch {}
+  }
+  return found;
+}
+
+function inferProductFacts(text, title) {
+  const all = `${title || ''}\n${text || ''}`;
+  const upper = all.toUpperCase();
+  const facts = {};
+  const knownBrands = ['INGCO','TOTAL','STANLEY','DEWALT','BLACK+DECKER','BLACK & DECKER','BOSCH','MAKITA','MILWAUKEE','TRAMONTINA','HOTECH'];
+  facts.brand = knownBrands.find(b => upper.includes(b.replace('&', '&'))) || '';
+  const modelMatch = upper.match(/\b([A-Z]{2,}[A-Z0-9-]{3,}\d{2,}[A-Z0-9-]*)\b/);
+  if (modelMatch) facts.model = modelMatch[1];
+  const diameter = all.match(/(115\s*mm|4\s*[½1\/2-]+\s*['"]?|4\s*1\/2|4½)/i);
+  if (diameter) facts.diameter = diameter[1].replace(/\s+/g, ' ').trim();
+  const voltage = all.match(/\b(12|18|20|21|40|42)\s*V\b/i);
+  if (voltage) facts.voltage = `${voltage[1]}V`;
+  const watts = all.match(/\b(\d{3,4})\s*W\b/i);
+  if (watts) facts.power = `${watts[1]}W`;
+  if (/BRUSHLESS|SIN CARBONES/i.test(all)) facts.motor = 'Brushless';
+  if (/BATER[IÍ]A|BAT\b|INAL[AÁ]MBR|CORDLESS|P20S/i.test(all)) facts.powerSource = 'Batería';
+  else if (/EL[ÉE]CTRICA|CABLE|220V|230V/i.test(all)) facts.powerSource = 'Eléctrica';
+  if (/AMOLADORA|ESMERIL/i.test(all)) facts.productType = 'Amoladora angular';
+  else if (/TALADRO/i.test(all)) facts.productType = 'Taladro';
+  else if (/SIERRA/i.test(all)) facts.productType = 'Sierra';
+  facts.includesBattery = !/BATER[IÍ]A\s+Y\s+CARGADOR\s+(SE\s+)?VENDEN\s+POR\s+SEPARADO|SOLD\s+SEPARATELY/i.test(all);
+  if (/BATER[IÍ]A\s+Y\s+CARGADOR\s+(SE\s+)?VENDEN\s+POR\s+SEPARADO|SOLD\s+SEPARATELY/i.test(all)) facts.batteryNote = 'No incluye batería ni cargador';
+  return facts;
+}
+
+function buildFallbackPublicadorContent(input) {
+  const facts = inferProductFacts(input.scrapedDescription, input.scrapedTitle);
+  const parts = [];
+  if (facts.productType) parts.push(facts.productType);
+  if (facts.brand) parts.push(facts.brand);
+  if (facts.diameter) parts.push(facts.diameter.replace(/4\s*[½1\/2-]+\s*['"]?/i, '4 1/2'));
+  if (facts.voltage) parts.push(facts.voltage);
+  if (facts.motor) parts.push(facts.motor);
+  if (facts.model) parts.push(facts.model);
+  let title = parts.join(' ') || String(input.scrapedTitle || 'Producto').substring(0, 60);
+  title = title.replace(/\s+/g, ' ').trim().substring(0, 60);
+
+  const bullets = [];
+  if (facts.productType) bullets.push(`Tipo de producto: ${facts.productType}.`);
+  if (facts.brand) bullets.push(`Marca: ${facts.brand}.`);
+  if (facts.model) bullets.push(`Modelo: ${facts.model}.`);
+  if (facts.voltage) bullets.push(`Voltaje: ${facts.voltage}.`);
+  if (facts.power) bullets.push(`Potencia: ${facts.power}.`);
+  if (facts.diameter) bullets.push(`Diámetro de disco: ${facts.diameter}.`);
+  if (facts.motor) bullets.push('Motor brushless sin carbones, con mejor eficiencia y menor mantenimiento.');
+  if (facts.batteryNote) bullets.push(facts.batteryNote + '.');
+  const base = bullets.length ? bullets.join('\n') : input.scrapedDescription;
+  const desc = `${title}\n\n${base}\n\nProducto ideal para trabajos de corte, desbaste y mantenimiento. Revisá las características antes de comprar para confirmar que se ajusta al uso que necesitás.`;
+  return {
+    titulo_meli: title,
+    descripcion_meli: desc.substring(0, 5000),
+    condicion: 'new',
+    tipo_publicacion: 'gold_special',
+    brand: facts.brand || 'Generica',
+    model: facts.model || '',
+    productType: facts.productType || '',
+    powerSource: facts.powerSource || '',
+    voltage: facts.voltage || '',
+    diameter: facts.diameter || '',
+    motor: facts.motor || '',
+    batteryNote: facts.batteryNote || '',
+  };
+}
+
+function parsePublicadorHtml(html, pageUrl) {
+  const htmlStr = typeof html === 'string' ? html : JSON.stringify(html || '');
+  const jsonProducts = parseJsonLdProducts(htmlStr);
+  const product = jsonProducts[0] || {};
+  const h1 = htmlStr.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+  const titleTag = htmlStr.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const ogTitle = getMetaContent(htmlStr, ['og:title', 'twitter:title']);
+  const metaDesc = getMetaContent(htmlStr, ['og:description', 'description', 'twitter:description']);
+  const rawTitle = product.name || h1?.[1] || ogTitle || titleTag?.[1] || 'Producto sin titulo';
+
+  let bodyText = cleanPublicadorText(htmlStr);
+  const descriptionCandidates = [
+    product.description,
+    metaDesc,
+    ...Array.from(htmlStr.matchAll(/<p[^>]*>([\s\S]{40,900}?)<\/p>/gi)).map(x => x[1]),
+    ...Array.from(htmlStr.matchAll(/<li[^>]*>([\s\S]{10,250}?)<\/li>/gi)).map(x => x[1]),
+  ].filter(Boolean).map(cleanPublicadorText).filter(Boolean);
+  const rawDescription = descriptionCandidates.join('\n').substring(0, 2500) || bodyText.substring(0, 1200) || 'Sin descripcion disponible';
+  const scrapedTitle = escapePlainText(rawTitle).replace(/\s*[-|]\s*INGCO.*$/i, '').substring(0, 300);
+  const scrapedDescription = cleanPublicadorText(rawDescription).substring(0, 2500);
+  const facts = inferProductFacts(scrapedDescription, scrapedTitle);
+  return {
+    scrapedTitle,
+    scrapedDescription,
+    images: extractPublicadorImages(htmlStr, pageUrl),
+    extractedFacts: facts,
+    brand: facts.brand || '',
+    model: facts.model || '',
+    productType: facts.productType || '',
+    powerSource: facts.powerSource || '',
+    voltage: facts.voltage || '',
+    diameter: facts.diameter || '',
+    motor: facts.motor || '',
+    batteryNote: facts.batteryNote || '',
+  };
+}
+
+async function generatePublicadorContent(input) {
+  const fallback = buildFallbackPublicadorContent(input);
+  const apiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_APIKEY || '';
+  if (!apiKey) return { ...fallback, aiAvailable: false, aiNote: 'Falta OPENAI_API_KEY. Se genero una version inteligente local, pero sin IA real.' };
+  try {
+    const r = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: process.env.PUBLICADOR_OPENAI_MODEL || 'gpt-4o-mini',
+        temperature: 0.2,
+        messages: [
+          { role: 'system', content: 'Sos especialista en publicaciones de Mercado Libre Uruguay. Extraes marca, modelo, tipo de producto y atributos tecnicos desde paginas de proveedores. Responde SOLO JSON valido, sin markdown.' },
+          { role: 'user', content: `Producto a analizar:\nURL: ${input.url}\nTITULO ORIGINAL: ${input.scrapedTitle}\nDESCRIPCION / DATOS EXTRAIDOS:\n${input.scrapedDescription}\n\nDatos detectados por reglas: ${JSON.stringify(input.extractedFacts || {})}\n\nDevolve SOLO este JSON:\n{\n  "titulo_meli": "maximo 60 caracteres, claro, con marca/modelo y dato clave",\n  "descripcion_meli": "descripcion comercial limpia en espanol, minimo 120 palabras, sin HTML y sin inventar caracteristicas",\n  "brand": "marca real",\n  "model": "modelo/codigo real",\n  "productType": "tipo de producto",\n  "powerSource": "Bateria / Electrica / Manual / Otro",\n  "voltage": "ej: 20V",\n  "diameter": "ej: 115 mm",\n  "motor": "ej: Brushless",\n  "batteryNote": "nota sobre bateria/cargador si corresponde",\n  "condicion": "new",\n  "tipo_publicacion": "gold_special"\n}` }
+        ],
+      }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error?.message || `OpenAI ${r.status}`);
+    const raw = data.choices?.[0]?.message?.content || '';
+    const parsed = JSON.parse(String(raw).replace(/```json/gi, '').replace(/```/g, '').trim());
+    return {
+      ...fallback,
+      ...parsed,
+      titulo_meli: String(parsed.titulo_meli || fallback.titulo_meli).substring(0, 60),
+      descripcion_meli: String(parsed.descripcion_meli || fallback.descripcion_meli).replace(/<[^>]+>/g, '').substring(0, 5000),
+      brand: parsed.brand || fallback.brand,
+      model: parsed.model || fallback.model,
+      condicion: parsed.condicion || 'new',
+      tipo_publicacion: parsed.tipo_publicacion || 'gold_special',
+      aiAvailable: true,
+    };
+  } catch (e) {
+    return { ...fallback, aiAvailable: false, aiNote: `No se pudo usar IA: ${e.message}. Se uso extraccion inteligente local.` };
+  }
+}
+
+async function detectPublicadorCategory(title) {
+  try {
+    const url = new URL('https://api.mercadolibre.com/sites/MLU/domain_discovery/search');
+    url.searchParams.set('q', title || 'producto');
+    url.searchParams.set('limit', '1');
+    const r = await fetch(url);
+    const data = await r.json();
+    const first = Array.isArray(data) ? data[0] : data;
+    return { categoryId: first?.category_id || 'MLU1574', categoryName: first?.category_name || 'Otros', domainId: first?.domain_id || first?.domainId || '' };
+  } catch {
+    return { categoryId: 'MLU1574', categoryName: 'Otros' };
+  }
+}
+
+async function getPublicadorCategoryAttributes(categoryId) {
+  try {
+    const r = await fetch(`https://api.mercadolibre.com/categories/${encodeURIComponent(categoryId)}/attributes`);
+    const data = await r.json();
+    const attrs = Array.isArray(data) ? data : [];
+    return attrs.map(attr => ({
+      id: attr.id,
+      name: attr.name,
+      value_type: attr.value_type || 'string',
+      type: attr.type || '',
+      tags: attr.tags || {},
+      tooltip: attr.tooltip || '',
+      hierarchy: attr.hierarchy || '',
+      relevance: attr.relevance || 0,
+      values: (attr.values || []).slice(0, 60).map(v => ({ id: v.id, name: v.name })),
+    })).filter(a => a.id);
+  } catch {
+    return [];
+  }
+}
+
+function isPublicadorRequiredAttr(attr) {
+  const t = attr?.tags || {};
+  const id = String(attr?.id || '').toUpperCase();
+  return t.required === true || t.catalog_required === true || t.conditional_required === true || t.new_required === true || id === 'GTIN' || id === 'EMPTY_GTIN_REASON';
+}
+
+function addSyntheticSpecialRequirements(attrs, category = {}) {
+  // v85: modo publicación rápida estable.
+  // No agregamos campos sintéticos como SIZE_GRID_ID/SIZE_GRID_ROW_ID al formulario.
+  // Esos IDs no son datos operativos que el usuario pueda conocer. Si Mercado Libre
+  // exige grilla de talles, se informa claramente al publicar y se deja el borrador
+  // guardado para terminarlo/editarlos en Mercado Libre.
+  return Array.isArray(attrs) ? [...attrs] : [];
+}
+
+async function getPublicadorRequiredAttributes(categoryId, category = {}) {
+  const all = await getPublicadorCategoryAttributes(categoryId);
+  const enriched = addSyntheticSpecialRequirements(all, category);
+  return enriched.filter(isPublicadorRequiredAttr);
+}
+
+function pickEmptyGtinReasonFromAttributes(requiredAttrs, preferred) {
+  const prefRaw = String(preferred || '').trim().toLowerCase();
+  const attr = (Array.isArray(requiredAttrs) ? requiredAttrs : []).find(a => String(a && a.id || '').toUpperCase() === 'EMPTY_GTIN_REASON');
+  const values = Array.isArray(attr && attr.values) ? attr.values : [];
+  function norm(x) { return String(x || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
+  const priorities = [prefRaw, 'unregistered', 'no registrado', 'nao registrado', 'não registrado', 'otro', 'other', 'kit', 'artesanal', 'craft'].filter(Boolean);
+  for (const want of priorities) {
+    const nw = norm(want);
+    const found = values.find(v => norm(v.name) === nw || norm(v.id) === nw || norm(v.name).includes(nw) || norm(v.id).includes(nw));
+    if (found) return { id: 'EMPTY_GTIN_REASON', value_id: String(found.id || '').trim() || undefined, value_name: String(found.name || '').trim() || undefined };
+  }
+  // Para la API, en varias integraciones el valor correcto se manda como value_id textual:
+  // unregistered / other / kit / craft. No usar value_name solo, porque Mercado Libre lo rechaza.
+  const fallback = prefRaw && ['craft','kit','unregistered','other'].includes(prefRaw) ? prefRaw : 'unregistered';
+  return { id: 'EMPTY_GTIN_REASON', value_id: fallback };
+}
+
+function buildPublicadorPayload(data) {
+  let familyName = String(data.titulo_meli || data.scrapedTitle || 'Producto').replace(/\s+/g, ' ').trim().substring(0, 60);
+  const requiredAttrs = Array.isArray(data.requiredAttributes) ? data.requiredAttributes : [];
+  const noGtinLoaded = !String(data.gtin || data.GTIN || '').trim();
+  const genericWithoutGtin = !!(data.noGtinGenericFallback || data.forceGenericNoGtin) && noGtinLoaded;
+  if (genericWithoutGtin) {
+    const realBrand = String(data.brand || '').trim();
+    if (realBrand && realBrand.toLowerCase() !== 'generica' && realBrand.toLowerCase() !== 'genérica') {
+      const safeBrand = realBrand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const cleaned = familyName.replace(new RegExp('^\\s*' + safeBrand + '\\s*[-–—:]?\\s*', 'i'), '').replace(new RegExp('\\s+' + safeBrand + '\\s*$', 'i'), '').replace(/\s+/g, ' ').trim();
+      if (cleaned.length >= 8) familyName = cleaned.substring(0, 60);
+    }
+  }
+  const attrDefaults = {
+    BRAND: genericWithoutGtin ? 'Generica' : (data.brand || 'Generica'),
+    MODEL: data.model || familyName.substring(0, 30),
+    POWER_SUPPLY_TYPE: data.powerSource || 'Batería',
+    POWER_SOURCE: data.powerSource || 'Batería',
+    VOLTAGE: data.voltage || '',
+    DISC_DIAMETER: data.diameter || '',
+    DIAMETER: data.diameter || '',
+    MOTOR_TYPE: data.motor || '',
+    GTIN: data.gtin || data.GTIN || '',
+    EMPTY_GTIN_REASON: data.emptyGtinReason || data.EMPTY_GTIN_REASON || 'No registrado',
+    EMPTY_GTIN_REASON_ID: data.emptyGtinReasonId || data.EMPTY_GTIN_REASON_ID || '17055160',
+  };
+
+  // Para crear publicaciones, Mercado Libre rechaza atributos que no pertenecen
+  // a la categoria. Por seguridad enviamos solo los atributos que MeLi devolvio
+  // para la categoria detectada, mas los valores editados por el usuario.
+  const allAttrsForPayload = Array.isArray(data.allAttributes) ? data.allAttributes : [];
+  const allowedIds = new Set([...requiredAttrs, ...allAttrsForPayload].map(a => String(a.id || '').trim()).filter(Boolean));
+  const hasGtinDefinition = requiredAttrs.some(a => String(a.id || '').toUpperCase() === 'GTIN');
+  // Si el usuario carga GTIN manualmente, lo dejamos pasar aunque no venga en la lista visible.
+  if (String(data.gtin || data.GTIN || '').trim()) allowedIds.add('GTIN');
+  // Aunque algunas categorias no lo devuelven completo en /attributes, MeLi lo acepta como sustituto condicional del GTIN.
+  allowedIds.add('EMPTY_GTIN_REASON');
+  const attributes = [];
+  function pushAttr(id, value) {
+    id = String(id || '').trim();
+    value = String(value || '').trim();
+    if (!id || !value) return;
+    if (allowedIds.size && !allowedIds.has(id)) return;
+    if (attributes.some(a => String(a.id) === id)) return;
+    attributes.push({ id, value_name: value });
+  }
+  function pushAttrObj(obj) {
+    if (!obj || !obj.id) return;
+    const id = String(obj.id).trim();
+    if (!id) return;
+    if (allowedIds.size && !allowedIds.has(id)) return;
+    if (attributes.some(a => String(a.id) === id)) return;
+    const clean = { id };
+    if (obj.value_id !== undefined && obj.value_id !== null && String(obj.value_id).trim()) clean.value_id = String(obj.value_id).trim();
+    if (obj.value_name !== undefined && obj.value_name !== null && String(obj.value_name).trim()) clean.value_name = String(obj.value_name).trim();
+    if (clean.value_id || clean.value_name) attributes.push(clean);
+  }
+
+  const editedValues = data.attributeValues && typeof data.attributeValues === 'object' ? data.attributeValues : {};
+  for (const id of Object.keys(editedValues || {})) { if (id && String(editedValues[id] || '').trim()) allowedIds.add(id); }
+  for (const attr of requiredAttrs) {
+    const id = String(attr.id || '').trim();
+    if (!id) continue;
+    const upperId = id.toUpperCase();
+    const manual = editedValues[id];
+    if (upperId === 'GTIN') {
+      const gtin = manual !== undefined ? String(manual || '').trim() : String(attrDefaults.GTIN || '').trim();
+      if (gtin) pushAttr(id, gtin);
+      continue;
+    }
+    if (manual !== undefined && String(manual).trim()) {
+      pushAttr(id, manual);
+    } else if (attrDefaults[id]) {
+      pushAttr(id, attrDefaults[id]);
+    } else if (attr.values && attr.values.length) {
+      pushAttr(id, attr.values[0].name);
+    } else if (!['number', 'number_unit'].includes(attr.value_type)) {
+      pushAttr(id, 'Estandar');
+    }
+  }
+
+  const hasGtinValue = attributes.some(a => String(a.id || '').toUpperCase() === 'GTIN' && String(a.value_name || a.value_id || '').trim());
+  const forceGenericNoGtin = genericWithoutGtin && !hasGtinValue;
+  if (forceGenericNoGtin) {
+    const idx = attributes.findIndex(a => String(a.id || '').toUpperCase() === 'BRAND');
+    if (idx >= 0) attributes[idx] = { id: 'BRAND', value_name: 'Generica' };
+    else attributes.unshift({ id: 'BRAND', value_name: 'Generica' });
+    for (let i = attributes.length - 1; i >= 0; i--) {
+      if (String(attributes[i].id || '').toUpperCase() === 'EMPTY_GTIN_REASON') attributes.splice(i, 1);
+    }
+  } else if (!hasGtinValue) {
+    const preferredReason = data.emptyGtinReasonId || data.EMPTY_GTIN_REASON_ID || data.emptyGtinReason || data.EMPTY_GTIN_REASON || 'unregistered';
+    pushAttrObj(pickEmptyGtinReasonFromAttributes(requiredAttrs, preferredReason));
+  }
+
+
+  // Si el producto es de moda/calzado y la IA puso SIZE = "Único" pero el título/descrición trae talles reales,
+  // usamos el primer talle detectado. Esto evita enviar "Único" en zapatos/pantuflas con talle 38, 39, etc.
+  try {
+    const sizeIdx = attributes.findIndex(a => String(a.id || '').toUpperCase() === 'SIZE');
+    const currentSize = sizeIdx >= 0 ? String(attributes[sizeIdx].value_name || attributes[sizeIdx].value_id || '').trim() : '';
+    const textForSizes = [familyName, data.descripcion_meli, data.scrapedTitle, data.scrapedDescription].filter(Boolean).join(' ');
+    const detectedSizes = extractAllNumericSizes(textForSizes).filter(x => /^\d{2}$/.test(String(x)));
+    if (detectedSizes.length && (!currentSize || /^(único|unico|a medida)$/i.test(currentSize))) {
+      if (sizeIdx >= 0) attributes[sizeIdx] = { id: 'SIZE', value_name: detectedSizes[0] };
+      else attributes.push({ id: 'SIZE', value_name: detectedSizes[0] });
+      data.sizeGuideRows = Array.isArray(data.sizeGuideRows) && data.sizeGuideRows.length ? data.sizeGuideRows : detectedSizes.slice(0, 12).map((n, i) => {
+        const base = Number(String(n).match(/\d+/)?.[0] || 38);
+        const from = (base >= 35 && base <= 45) ? (22.5 + (base - 35) * 0.5) : Math.max(20, base - 14);
+        return { size: String(n), manufacturer_size: String(n), foot_from: String(from), foot_to: String(from + 0.5), publish: i === 0 };
+      });
+    }
+  } catch {}
+
+  return {
+    // Mercado Libre en categorias catalogables/family_name rechaza title en el POST inicial.
+    // El titulo visible queda controlado por family_name para esta llamada.
+    family_name: familyName,
+    category_id: data.categoryId || 'MLU1574',
+    price: Number(data.price) || 100,
+    currency_id: data.currency || 'UYU',
+    available_quantity: Number(data.stock) || 50,
+    buying_mode: 'buy_it_now',
+    listing_type_id: data.tipo_publicacion || 'gold_special',
+    condition: data.condicion || 'new',
+    description: { plain_text: String(data.descripcion_meli || '').replace(/<[^>]+>/g, '').substring(0, 5000) || 'Producto importado automaticamente' },
+    pictures: (Array.isArray(data.images) ? data.images : []).slice(0, 8).map(source => ({ source })),
+    attributes,
+  };
+}
+
+
+
+function normalizeEmptyGtinReason(reason) {
+  if (reason && typeof reason === 'object') {
+    const id = String(reason.id || reason.value_id || '').trim();
+    const name = String(reason.name || reason.value_name || '').trim();
+    if (id) return { value_id: id, value_name: name || undefined };
+    if (name) return normalizeEmptyGtinReason(name);
+  }
+  const raw = String(reason || '').trim().toLowerCase();
+  const map = {
+    'artesanal': { value_id: 'craft' },
+    'craft': { value_id: 'craft' },
+    'kit': { value_id: 'kit' },
+    'no registrado': { value_id: 'unregistered' },
+    'não registrado': { value_id: 'unregistered' },
+    'nao registrado': { value_id: 'unregistered' },
+    'unregistered': { value_id: 'unregistered' },
+    'otro': { value_id: 'other' },
+    'other': { value_id: 'other' },
+  };
+  return map[raw] || { value_id: 'unregistered' };
+}
+
+function setEmptyGtinReasonOnPayload(payload, reason) {
+  if (!payload || !Array.isArray(payload.attributes)) return;
+  const normalized = normalizeEmptyGtinReason(reason || 'unregistered');
+  payload.attributes = payload.attributes.filter(a => String(a.id || '').toUpperCase() !== 'EMPTY_GTIN_REASON');
+  payload.attributes.push({ id: 'EMPTY_GTIN_REASON', value_id: normalized.value_id });
+}
+
+function getEmptyGtinReasonValuesFromDraft(draft) {
+  const attrs = Array.isArray(draft && draft.requiredAttributes) ? draft.requiredAttributes : [];
+  const attr = attrs.find(a => String(a.id || '').toUpperCase() === 'EMPTY_GTIN_REASON');
+  const fromMeli = Array.isArray(attr && attr.values)
+    ? attr.values.map(v => ({ id: String(v && v.id || '').trim(), name: String(v && v.name || '').trim() })).filter(v => v.id || v.name)
+    : [];
+  const fixed = [
+    { id: 'unregistered', name: 'No registrado' },
+    { id: 'other', name: 'Otro' },
+    { id: 'craft', name: 'Artesanal' },
+    { id: 'kit', name: 'Kit' },
+  ];
+  const seen = new Set();
+  return [...fromMeli, ...fixed].filter(v => {
+    const key = String(v.id || v.name || '').toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function forceGenericBrandNoGtinPayload(payload) {
+  const clean = JSON.parse(JSON.stringify(payload || {}));
+  const oldFamily = String(clean.family_name || clean.title || '').replace(/\s+/g, ' ').trim();
+  const brandAttr = Array.isArray(clean.attributes) ? clean.attributes.find(a => String(a.id || '').toUpperCase() === 'BRAND') : null;
+  const realBrand = String(brandAttr && (brandAttr.value_name || brandAttr.value_id) || '').trim();
+  if (realBrand && !/^gen[eé]rica$/i.test(realBrand)) {
+    const safeBrand = realBrand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const cleaned = oldFamily.replace(new RegExp('^\\s*' + safeBrand + '\\s*[-–—:]?\\s*', 'i'), '').replace(new RegExp('\\s+' + safeBrand + '\\s*$', 'i'), '').replace(/\s+/g, ' ').trim();
+    if (cleaned.length >= 8) clean.family_name = cleaned.substring(0, 60);
+  }
+  delete clean.title;
+  clean.attributes = Array.isArray(clean.attributes) ? clean.attributes : [];
+  clean.attributes = clean.attributes.filter(a => !['EMPTY_GTIN_REASON','GTIN'].includes(String(a.id || '').toUpperCase()));
+  const idx = clean.attributes.findIndex(a => String(a.id || '').toUpperCase() === 'BRAND');
+  if (idx >= 0) clean.attributes[idx] = { id: 'BRAND', value_name: 'Generica' };
+  else clean.attributes.unshift({ id: 'BRAND', value_name: 'Generica' });
+  clean._tlcNoGtinFallback = 'brand_generica';
+  return clean;
+}
+
+function errorNeedsFashionGridRetry(response) {
+  const txt = JSON.stringify(response || {});
+  return /SIZE_GRID_ID|fashion_grid|missing\.fashion_grid/i.test(txt);
+}
+
+
+async function detectPublicadorCategoryCandidates(query, limit = 12) {
+  try {
+    const url = new URL('https://api.mercadolibre.com/sites/MLU/domain_discovery/search');
+    url.searchParams.set('q', query || 'producto hogar');
+    url.searchParams.set('limit', String(limit));
+    const r = await fetch(url);
+    const data = await r.json().catch(() => []);
+    const arr = Array.isArray(data) ? data : (data ? [data] : []);
+    const seen = new Set();
+    return arr.map(x => ({
+      categoryId: x?.category_id || '',
+      categoryName: x?.category_name || '',
+      domainId: x?.domain_id || x?.domainId || '',
+    })).filter(x => {
+      if (!x.categoryId || seen.has(x.categoryId)) return false;
+      seen.add(x.categoryId);
+      return true;
+    });
+  } catch {
+    return [];
+  }
+}
+
+async function categoryRequiresFashionGrid(categoryId) {
+  const attrs = await getPublicadorCategoryAttributes(categoryId);
+  return attrs.some(a => String(a.id || '').toUpperCase() === 'SIZE_GRID_ID' && isPublicadorRequiredAttr(a));
+}
+
+function buildDraftForAlternateCategory(originalDraft, category, allAttributes) {
+  const draft = JSON.parse(JSON.stringify(originalDraft || {}));
+  draft.categoryId = category.categoryId;
+  draft.categoryName = category.categoryName || 'Categoria alternativa';
+  draft.domainId = category.domainId || '';
+  draft.allAttributes = Array.isArray(allAttributes) ? allAttributes : [];
+  draft.requiredAttributes = addSyntheticSpecialRequirements(draft.allAttributes, category).filter(isPublicadorRequiredAttr);
+  draft.noGtinGenericFallback = true;
+  draft.forceGenericNoGtin = true;
+  // Si caemos a categoria alternativa, evitamos arrastrar atributos especificos de moda que generan grillas.
+  draft.attributeValues = draft.attributeValues && typeof draft.attributeValues === 'object' ? { ...draft.attributeValues } : {};
+  delete draft.attributeValues.SIZE_GRID_ID;
+  delete draft.attributeValues.SIZE_GRID_ROW_ID;
+  return draft;
+}
+
+async function findQuickPublishCategoryWithoutFashionGrid(payload, draft) {
+  const baseName = String(payload?.family_name || draft?.titulo_meli || draft?.scrapedTitle || 'producto').replace(/\s+/g, ' ').trim();
+  const genericQueries = [
+    baseName,
+    baseName.replace(/\b(botas?|zapatos?|pantuflas?|calzado|talle|talles|mujer|hombre|niño|niña|unisex)\b/gi, ' ').replace(/\s+/g, ' ').trim(),
+    'producto hogar decoracion',
+    'producto para el hogar',
+    'articulo hogar',
+    'otros productos hogar'
+  ].filter(Boolean);
+  const tried = new Set();
+  const errors = [];
+  for (const q of genericQueries) {
+    const candidates = await detectPublicadorCategoryCandidates(q, 12);
+    for (const cat of candidates) {
+      if (!cat.categoryId || tried.has(cat.categoryId) || cat.categoryId === 'MLU1574') continue;
+      tried.add(cat.categoryId);
+      const attrs = await getPublicadorCategoryAttributes(cat.categoryId);
+      const hasGrid = attrs.some(a => String(a.id || '').toUpperCase() === 'SIZE_GRID_ID' && isPublicadorRequiredAttr(a));
+      if (hasGrid) { errors.push(`${cat.categoryId} ${cat.categoryName}: requiere grilla`); continue; }
+      // Debe ser una categoria hoja publicable; si no es hoja, MeLi avisara en el POST.
+      return { ...cat, allAttributes: attrs, searchQuery: q, tried: Array.from(tried), errors };
+    }
+  }
+  return { categoryId: '', categoryName: '', allAttributes: [], tried: Array.from(tried), errors };
+}
+
+async function tryQuickPublishWithoutFashionGrid(cuenta, token, payload, draft) {
+  // v88: primero intenta crear/reusar grilla real de talles; si no, prueba categorias alternativas.
+  // Esto evita quedar trabado cuando MeLi exige SIZE_GRID_ID en moda/calzado.
+  const baseName = String(payload?.family_name || draft?.titulo_meli || draft?.scrapedTitle || 'producto').replace(/\s+/g, ' ').trim();
+  const genericQueries = [
+    baseName,
+    baseName.replace(/\b(botas?|zapatos?|pantuflas?|calzado|talle|talles|mujer|hombre|niño|niña|unisex)\b/gi, ' ').replace(/\s+/g, ' ').trim(),
+    'producto hogar decoracion',
+    'producto para el hogar',
+    'articulo hogar',
+    'otros productos hogar',
+    'souvenir regalo hogar',
+    'accesorio hogar'
+  ].filter(Boolean);
+
+  const tried = new Set();
+  const attempts = [];
+
+  async function postCandidate(cat, attrs, searchQuery) {
+    const altDraft = buildDraftForAlternateCategory(draft, cat, attrs || []);
+    let altPayload = cleanMeliCreatePayload(buildPublicadorPayload(altDraft));
+    altPayload.category_id = cat.categoryId;
+    delete altPayload.title;
+    delete altPayload.variations;
+
+    // Mantener payload simple: familia + stock raiz, sin atributos de talle/grilla.
+    if (!altPayload.available_quantity) altPayload.available_quantity = Number(payload.available_quantity || draft.stock || 50) || 50;
+    altPayload.attributes = Array.isArray(altPayload.attributes) ? altPayload.attributes.filter(a => !['SIZE_GRID_ID','SIZE_GRID_ROW_ID','SIZE','GENDER'].includes(String(a.id || '').toUpperCase())) : [];
+    const brandIdx = altPayload.attributes.findIndex(a => String(a.id || '').toUpperCase() === 'BRAND');
+    if (brandIdx >= 0) altPayload.attributes[brandIdx] = { id: 'BRAND', value_name: 'Generica' };
+    else altPayload.attributes.unshift({ id: 'BRAND', value_name: 'Generica' });
+
+    const r = await fetch('https://api.mercadolibre.com/items', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify(cleanMeliCreatePayload(altPayload)),
+    });
+    const raw = await r.text();
+    let response = null;
+    try { response = raw ? JSON.parse(raw) : {}; } catch { response = { raw }; }
+    let descriptionResult = null;
+    if (r.ok && response?.id) {
+      descriptionResult = await postMeliItemDescription(token, response.id, altPayload?.description?.plain_text || payload?.description?.plain_text);
+      response._tlc_description_result = descriptionResult;
+    }
+    return { ok: r.ok && !!response?.id, status: r.status, response, payload: altPayload, alt: { ...cat, searchQuery }, descriptionResult };
+  }
+
+  for (const q of genericQueries) {
+    const candidates = await detectPublicadorCategoryCandidates(q, 12);
+    for (const cat of candidates) {
+      if (!cat.categoryId || tried.has(cat.categoryId) || cat.categoryId === 'MLU1574') continue;
+      tried.add(cat.categoryId);
+      let attrs = [];
+      try { attrs = await getPublicadorCategoryAttributes(cat.categoryId); } catch { attrs = []; }
+      const hasGrid = attrs.some(a => String(a.id || '').toUpperCase() === 'SIZE_GRID_ID' && isPublicadorRequiredAttr(a));
+      if (hasGrid) {
+        attempts.push(`${cat.categoryId} ${cat.categoryName || ''}: requiere grilla`);
+        continue;
+      }
+      const attempt = await postCandidate(cat, attrs, q);
+      if (attempt.ok) {
+        attempt.tried = Array.from(tried);
+        attempt.attempts = attempts;
+        return attempt;
+      }
+      const causes = Array.isArray(attempt.response?.cause) ? attempt.response.cause.map(c => [c.code, c.message].filter(Boolean).join(': ')).filter(Boolean) : [];
+      attempts.push(`${cat.categoryId} ${cat.categoryName || ''}: ${attempt.response?.error || attempt.response?.message || 'error'}${causes.length ? ' - ' + causes.join(' | ') : ''}`.trim());
+    }
+  }
+
+  return { ok: false, message: 'No encontre una categoria alternativa publicable sin grilla de talles.', alt: { tried: Array.from(tried), errors: attempts.slice(0, 20) } };
+}
+
+function getAttrValueFromPayload(payload, id) {
+  const attr = (Array.isArray(payload && payload.attributes) ? payload.attributes : [])
+    .find(a => String(a && a.id || '').toUpperCase() === String(id || '').toUpperCase());
+  return String(attr && (attr.value_name || attr.value_id) || '').trim();
+}
+
+function extractFirstNumericSize(value, fallbackText) {
+  const text = `${value || ''} ${fallbackText || ''}`;
+  const m = text.match(/\b(\d{1,2})(?:\s*[-\/ ]\s*\d{1,2})?\b/);
+  return m ? m[1] : String(value || '').trim() || 'Unico';
+}
+
+function extractFootLengthCm(text) {
+  const s = String(text || '');
+  const m = s.match(/(?:suela|pie|plantilla|largo)[^\d]{0,30}(\d{2}(?:[.,]\d)?)\s*cm/i) || s.match(/\b(\d{2}(?:[.,]\d)?)\s*cm\b/i);
+  if (!m) return '';
+  return String(m[1]).replace(',', '.') + ' cm';
+}
+
+function normalizeMeliChartDomainId(rawDomainId) {
+  return String(rawDomainId || '').trim().toUpperCase();
+}
+
+function stripMeliSiteFromDomain(rawDomainId) {
+  return normalizeMeliChartDomainId(rawDomainId).replace(/^(MLU|MLA|MLB|MLM|MCO|MPE|MLC|MEC)-/i, '').toUpperCase();
+}
+
+function chartDomainCandidates(rawDomainId) {
+  const raw = normalizeMeliChartDomainId(rawDomainId);
+  const stripped = stripMeliSiteFromDomain(rawDomainId);
+  const out = [];
+  function add(domain_id, includeSite, label) {
+    if (!domain_id) return;
+    const key = domain_id + '::' + (includeSite ? 'site' : 'nosite');
+    if (out.some(x => x.key === key)) return;
+    out.push({ key, domain_id, includeSite, label });
+  }
+  // Segun la documentacion de guias de talle, el POST /catalog/charts recibe normalmente
+  // domain_id sin prefijo de sitio + site_id. Dejamos variantes para compatibilidad porque
+  // algunas respuestas de domain_discovery vienen como MLU-SLIPPERS.
+  add(stripped, true, 'stripped_with_site');
+  add(raw, false, 'raw_no_site');
+  add(raw, true, 'raw_with_site');
+  add(stripped, false, 'stripped_no_site');
+  return out;
+}
+
+function meliGenderValue(genderText) {
+  const t = String(genderText || '').toLowerCase();
+  if (/hombre|masculino|man\b/.test(t)) return { id: '339666', name: 'Hombre' };
+  if (/niña|nina|girl/.test(t)) return { id: '339668', name: 'Niñas' };
+  if (/niño|nino|boy/.test(t)) return { id: '339667', name: 'Niños' };
+  if (/beb[eé]|infantil|kid/.test(t)) return { id: '1915949', name: 'Sin género infantil' };
+  if (/unisex|sin g[eé]nero|gender neutral/.test(t)) return { id: '110461', name: 'Sin género' };
+  return { id: '339665', name: 'Mujer' };
+}
+
+function formatSizeForChart(size, mainAttr) {
+  const n = extractFirstNumericSize(size, size);
+  const id = String(mainAttr || '').toUpperCase();
+  if ((id === 'AR_SIZE' || id === 'W_AR_SIZE' || id === 'M_AR_SIZE') && /^\d+$/.test(n)) return n + ' AR';
+  if (id === 'UY_SIZE' && /^\d+$/.test(n)) return n + ' UY';
+  return n;
+}
+
+function extractAllNumericSizes(text) {
+  const t = String(text || '');
+  const out = [];
+  const ranges = t.match(/\b(\d{2})\s*[-–/]\s*(\d{2})\b/g) || [];
+  for (const r of ranges) {
+    const m = r.match(/(\d{2})\D+(\d{2})/);
+    if (m) {
+      const a = Number(m[1]), b = Number(m[2]);
+      if (a >= 15 && a <= 60 && b >= a && b <= 60 && b - a <= 8) {
+        for (let n = a; n <= b; n++) out.push(String(n));
+      }
+    }
+  }
+  const singles = t.match(/\b(?:talle|t|nro|numero|número)?\s*(\d{2})\b/gi) || [];
+  for (const x of singles) {
+    const m = x.match(/(\d{2})/);
+    if (m) {
+      const n = Number(m[1]);
+      if (n >= 15 && n <= 60) out.push(String(n));
+    }
+  }
+  const uniq = [];
+  for (const x of out) if (!uniq.includes(x)) uniq.push(x);
+  return uniq.length ? uniq : [extractFirstNumericSize(text, text) || '38'];
+}
+
+function chartMainAttributeCandidates(payload, draft) {
+  const gender = getAttrValueFromPayload(payload, 'GENDER') || String(draft && draft.gender || 'Mujer');
+  const g = meliGenderValue(gender).name;
+  // En calzado MeLi suele aceptar el talle local como AR_SIZE. Dejamos varias alternativas
+  // porque el atributo principal depende del dominio/ficha tecnica de MeLi.
+  if (/hombre/i.test(g)) return ['UY_SIZE', 'AR_SIZE', 'M_AR_SIZE', 'MANUFACTURER_SIZE', 'SIZE'];
+  if (/mujer/i.test(g)) return ['UY_SIZE', 'AR_SIZE', 'W_AR_SIZE', 'MANUFACTURER_SIZE', 'SIZE'];
+  return ['UY_SIZE', 'AR_SIZE', 'MANUFACTURER_SIZE', 'SIZE'];
+}
+
+
+async function getMeliUserIdFromToken(token) {
+  try {
+    const r = await fetch('https://api.mercadolibre.com/users/me', {
+      headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' }
+    });
+    const j = await r.json().catch(() => ({}));
+    return j && j.id ? Number(j.id) : null;
+  } catch {
+    return null;
+  }
+}
+
+
+function parseMeliSizeChartId(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+
+  // URLs del editor web de Mercado Libre Uruguay tienen esta forma:
+  // /moda/talles/221081730-baba7d83-e348-4819-a7a7-3db02eb5a08e/modificar/2300121
+  // El ID real de la guía es TODO el segmento después de /talles/, no solo el primer número.
+  let m = raw.match(/\/talles\/([^\/?#]+)/i);
+  if (m && m[1]) return decodeURIComponent(m[1]).trim();
+
+  // También aceptamos URLs/endpoints de API o valores pegados manualmente.
+  m = raw.match(/\/catalog\/charts\/([^\/?#]+)/i);
+  if (m && m[1]) return decodeURIComponent(m[1]).trim();
+
+  // ID compuesto típico de grilla: número + UUID.
+  m = raw.match(/\b(\d{5,}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b/i);
+  if (m) return m[1];
+
+  // Fallback histórico: algunos endpoints/devuelven solo número.
+  m = raw.match(/\b([0-9]{5,})\b/);
+  return m ? m[1] : '';
+}
+
+function meliSizeChartIdCandidates(value) {
+  const raw = String(value || '').trim();
+  const first = parseMeliSizeChartId(raw);
+  const out = [];
+  function add(x) { x = String(x || '').trim(); if (x && !out.includes(x)) out.push(x); }
+  add(first);
+  // Si viene ID compuesto, probamos también el prefijo numérico porque algunos endpoints lo usan.
+  const prefix = first.match(/^(\d{5,})-/);
+  if (prefix) add(prefix[1]);
+  const anyNum = raw.match(/\b([0-9]{5,})\b/);
+  if (anyNum) add(anyNum[1]);
+  return out;
+}
+
+async function fetchMeliSizeChartById(token, chartId) {
+  const ids = meliSizeChartIdCandidates(chartId);
+  if (!ids.length) return null;
+  const urls = [];
+  for (const id of ids) {
+    urls.push(`https://api.mercadolibre.com/catalog/charts/${encodeURIComponent(id)}`);
+    urls.push(`https://api.mercadolibre.com/catalog/charts/${encodeURIComponent(id)}?site_id=MLU`);
+  }
+  for (const url of urls) {
+    try {
+      const r = await fetch(url, { headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' }});
+      const txt = await r.text();
+      let j = null;
+      try { j = txt ? JSON.parse(txt) : {}; } catch { j = { raw: txt }; }
+      if (r.ok && j && (j.id || Array.isArray(j.rows))) return j;
+    } catch {}
+  }
+  return null;
+}
+
+function normalizeSizeTokenForCompare(v) {
+  return String(v || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/,/g,'.').replace(/[^0-9a-z.]+/g,'');
+}
+
+function findMeliSizeChartRow(chart, wantedSize) {
+  const rows = Array.isArray(chart && chart.rows) ? chart.rows : [];
+  if (!rows.length) return null;
+  const wantedRaw = String(wantedSize || '').trim();
+  const wanted = normalizeSizeTokenForCompare(wantedRaw);
+  const wantedNum = (wantedRaw.match(/\d+(?:[.,]\d+)?/) || [''])[0].replace(',', '.');
+  for (const row of rows) {
+    const attrs = Array.isArray(row.attributes) ? row.attributes : [];
+    const txt = normalizeSizeTokenForCompare(JSON.stringify(attrs));
+    if (wanted && txt.includes(wanted)) return row;
+    if (wantedNum && new RegExp(`(^|[^0-9])${wantedNum.replace('.', '\\.')}(?:[^0-9]|$)`).test(txt)) return row;
+  }
+  return rows[0] || null;
+}
+
+function applySizeGridToRootPayload(basePayload, chartId, rowId) {
+  const p = JSON.parse(JSON.stringify(basePayload || {}));
+  p.attributes = Array.isArray(p.attributes) ? p.attributes.filter(a => !['SIZE_GRID_ID','SIZE_GRID_ROW_ID'].includes(String(a.id || '').toUpperCase())) : [];
+  p.attributes.push({ id: 'SIZE_GRID_ID', value_name: String(chartId) });
+  p.attributes.push({ id: 'SIZE_GRID_ROW_ID', value_name: String(rowId) });
+  delete p.title;
+  delete p.variations;
+  return p;
+}
+
+async function useProvidedFashionSizeChart(token, payload, draft, selectedSize) {
+  const raw = draft && (draft.sizeChartIdOrUrl || draft.sizeChartUrl || draft.sizeGridUrl || draft.sizeGridId || draft.SIZE_GRID_ID || draft.attributeValues?.SIZE_GRID_ID);
+  const chartId = parseMeliSizeChartId(raw);
+  if (!chartId) return null;
+  const chart = await fetchMeliSizeChartById(token, chartId);
+  if (!chart) throw new Error('No pude leer la guía de talles indicada en Mercado Libre. Verificá que la guía sea de la misma cuenta y esté guardada.');
+  const row = findMeliSizeChartRow(chart, selectedSize);
+  if (!row || !row.id) throw new Error('Leí la guía, pero no encontré una fila de talle compatible con ' + selectedSize + '.');
+  return {
+    payload: applySizeGridToRootPayload(payload, chart.id || chartId, row.id),
+    variationPayload: buildFashionVariationPayload(payload, chart.id || chartId, row.id, { size: selectedSize || getAttrValueFromPayload(payload, 'SIZE') || '38' }),
+    chart,
+    chartAttempt: 'provided_chart'
+  };
+}
+
+function pickSizeChartFromSearchResponse(data, wantedSize) {
+  const charts = Array.isArray(data?.results) ? data.results : (Array.isArray(data) ? data : (Array.isArray(data?.charts) ? data.charts : []));
+  const sizeText = String(wantedSize || '').toLowerCase().replace(/[^0-9a-z]/g, '');
+  for (const chart of charts) {
+    const rows = Array.isArray(chart?.rows) ? chart.rows : [];
+    if (!rows.length) continue;
+    let row = rows[0];
+    for (const r of rows) {
+      const attrs = Array.isArray(r.attributes) ? r.attributes : [];
+      const txt = JSON.stringify(attrs).toLowerCase().replace(/[^0-9a-z]/g, '');
+      if (sizeText && txt.includes(sizeText)) { row = r; break; }
+    }
+    if (chart.id && row && row.id) return { chart, row };
+  }
+  return null;
+}
+
+async function searchExistingFashionSizeChart(token, rawDomainId, genderValue, size) {
+  const sellerId = await getMeliUserIdFromToken(token);
+  if (!sellerId) return null;
+  const domain = stripMeliSiteFromDomain(rawDomainId);
+  const bodies = [
+    { domain_id: domain, site_id: 'MLU', type: 'SPECIFIC', seller_id: sellerId, attributes: [{ id: 'GENDER', values: [{ id: genderValue.id, value: genderValue.name, name: genderValue.name }] }] },
+    { domain_id: domain, site_id: 'MLU', seller_id: sellerId, attributes: [{ id: 'GENDER', values: [{ id: genderValue.id, value: genderValue.name, name: genderValue.name }] }] },
+    { domain_id: domain, site_id: 'MLU', type: 'SPECIFIC', seller_id: sellerId }
+  ];
+  for (const body of bodies) {
+    try {
+      const r = await fetch('https://api.mercadolibre.com/catalog/charts/search', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const txt = await r.text();
+      const j = txt ? JSON.parse(txt) : {};
+      if (r.ok) {
+        const found = pickSizeChartFromSearchResponse(j, size);
+        if (found) return { ...found, searchPayload: body };
+      }
+    } catch {}
+  }
+  return null;
+}
+
+
+function normalizeCmNumber(v){
+  const m=String(v||'').replace(',', '.').match(/\d+(?:\.\d+)?/);
+  return m?m[0]:'';
+}
+function normalizeManualSizeGuideRows(draft, fallbackText){
+  const rows=Array.isArray(draft&&draft.sizeGuideRows)?draft.sizeGuideRows:[];
+  const clean=[];
+  for(const r of rows){
+    const size=String(r.size||r.uy_size||r.UY_SIZE||r.manufacturer_size||'').trim();
+    if(!size)continue;
+    const from=normalizeCmNumber(r.foot_from||r.footLengthFrom||r.from||'');
+    const to=normalizeCmNumber(r.foot_to||r.footLengthTo||r.to||'');
+    clean.push({size, manufacturer_size:String(r.manufacturer_size||size).trim(), foot_from:from, foot_to:to, publish:!!r.publish});
+  }
+  if(clean.length){ if(!clean.some(r=>r.publish)) clean[0].publish=true; return clean; }
+  const nums=extractAllNumericSizes(fallbackText||'');
+  return nums.map((n,i)=>{
+    const base=Number(String(n).match(/\d+/)?.[0]||38);
+    const from=(base>=35&&base<=45)?(22.5+(base-35)*0.5):Math.max(20,base-14);
+    return {size:String(n), manufacturer_size:String(n), foot_from:String(from), foot_to:String(from+0.5), publish:i===0};
+  });
+}
+async function getGridSpecMainCandidates(token, rawDomainId){
+  const out=[];
+  for(const cand of chartDomainCandidates(rawDomainId)){
+    try{
+      const r=await fetch(`https://api.mercadolibre.com/domains/${encodeURIComponent(cand.domain_id)}/technical_specs?section=grids`,{method:'POST',headers:{'Authorization':`Bearer ${token}`,'Content-Type':'application/json','Accept':'application/json'},body:'{}'});
+      const j=await r.json().catch(()=>({}));
+      const txt=JSON.stringify(j||{});
+      const re=/"id"\s*:\s*"([A-Z0-9_]*SIZE[A-Z0-9_]*)"/g;
+      let m; while((m=re.exec(txt))){
+        const id=m[1];
+        if(!out.includes(id)&&!['SIZE_GRID_ID','SIZE_GRID_ROW_ID'].includes(id)) out.push(id);
+      }
+    }catch{}
+  }
+  return out;
+}
+function attrTagsArray(a) {
+  const t = a && a.tags;
+  if (Array.isArray(t)) return t.map(x => String(x || '').toLowerCase());
+  if (t && typeof t === 'object') return Object.keys(t).filter(k => t[k]).map(k => String(k || '').toLowerCase());
+  return [];
+}
+
+function walkTechnicalSpecAttributes(node, out = []) {
+  if (!node || typeof node !== 'object') return out;
+  if (Array.isArray(node.attributes)) {
+    for (const a of node.attributes) if (a && a.id) out.push(a);
+  }
+  if (Array.isArray(node.components)) {
+    for (const c of node.components) walkTechnicalSpecAttributes(c, out);
+  }
+  if (node.input) walkTechnicalSpecAttributes(node.input, out);
+  if (Array.isArray(node.groups)) {
+    for (const g of node.groups) walkTechnicalSpecAttributes(g, out);
+  }
+  return out;
+}
+
+async function getFashionGridTechnicalSpec(token, rawDomainId, genderValue) {
+  const domains = chartDomainCandidates(rawDomainId).map(x => x.domain_id);
+  const seen = new Set();
+  let lastError = '';
+  for (const domain of domains) {
+    if (!domain || seen.has(domain)) continue;
+    seen.add(domain);
+    const bodies = [
+      {
+        domain_id: domain,
+        site_id: 'MLU',
+        type: 'SPECIFIC',
+        attributes: [{ id: 'GENDER', values: [{ id: genderValue.id, value: genderValue.name, name: genderValue.name }] }]
+      },
+      {
+        site_id: 'MLU',
+        type: 'SPECIFIC',
+        attributes: [{ id: 'GENDER', values: [{ id: genderValue.id, value: genderValue.name, name: genderValue.name }] }]
+      },
+      {}
+    ];
+    for (const body of bodies) {
+      try {
+        const r = await fetch(`https://api.mercadolibre.com/domains/${encodeURIComponent(domain)}/technical_specs?section=grids`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const txt = await r.text();
+        let j = null;
+        try { j = txt ? JSON.parse(txt) : {}; } catch { j = { raw: txt }; }
+        if (!r.ok) {
+          lastError = (j && (j.message || j.error)) || `technical_specs ${r.status}`;
+          continue;
+        }
+        const attrs = walkTechnicalSpecAttributes(j, []);
+        if (!attrs.length) continue;
+        const mainCandidates = [];
+        const rowRequired = [];
+        const globalRequired = [];
+        for (const a of attrs) {
+          const id = String(a.id || '').toUpperCase();
+          const tags = attrTagsArray(a);
+          const isMain = tags.includes('main_attribute_candidate');
+          const isRequired = tags.includes('required');
+          const isGridFilter = tags.includes('grid_filter') || tags.includes('grid_template_required') || tags.includes('fixed');
+          if (isMain && !mainCandidates.includes(id)) mainCandidates.push(id);
+          if (isRequired) {
+            if (isGridFilter || ['GENDER','BRAND'].includes(id)) {
+              if (!globalRequired.some(x => String(x.id || '').toUpperCase() === id)) globalRequired.push(a);
+            } else {
+              if (!rowRequired.some(x => String(x.id || '').toUpperCase() === id)) rowRequired.push(a);
+            }
+          }
+        }
+        return { domain, raw: j, attrs, mainCandidates, rowRequired, globalRequired, sourceBody: body };
+      } catch (e) {
+        lastError = e.message || String(e);
+      }
+    }
+  }
+  return { domain: stripMeliSiteFromDomain(rawDomainId), attrs: [], mainCandidates: [], rowRequired: [], globalRequired: [], error: lastError };
+}
+
+function valueForSizeChartAttribute(attrId, row, genderValue, brand, mainAttr) {
+  const id = String(attrId || '').toUpperCase();
+  const rawSize = String(row.size || row.manufacturer_size || '38').trim();
+  if (id === 'GENDER') return { id: genderValue.id, name: genderValue.name };
+  if (id === 'BRAND') return { name: brand || 'Generica' };
+  if (id === 'FOOT_LENGTH') {
+    const v = normalizeCmNumber(row.foot_from || row.foot_to || '');
+    return { name: (v || '24') + ' cm' };
+  }
+  if (id === 'FOOT_LENGTH_TO') {
+    const v = normalizeCmNumber(row.foot_to || row.foot_from || '');
+    return { name: (v || '24.5') + ' cm' };
+  }
+  if (id === 'MANUFACTURER_SIZE') return { name: String(row.manufacturer_size || rawSize) };
+  if (id.endsWith('_SIZE') || id === 'SIZE') return { name: formatSizeForChart(rawSize, id) };
+  return { name: String(row[id] || row[id.toLowerCase()] || row.manufacturer_size || rawSize || 'Estándar') };
+}
+
+function makeChartRowAttributes(spec, mainAttr, row, genderValue, brand) {
+  const ids = [];
+  function add(id) {
+    id = String(id || '').toUpperCase();
+    if (!id || ids.includes(id)) return;
+    ids.push(id);
+  }
+  add(mainAttr);
+  for (const a of spec.rowRequired || []) add(a.id);
+  // En calzado de Uruguay suele aparecer FOOT_LENGTH como requerido aunque el endpoint a veces no lo devuelva claramente.
+  if (!ids.includes('FOOT_LENGTH')) add('FOOT_LENGTH');
+  const attrs = [];
+  for (const id of ids) {
+    if (['GENDER','BRAND','SIZE_GRID_ID','SIZE_GRID_ROW_ID'].includes(id)) continue;
+    attrs.push({ id, values: [valueForSizeChartAttribute(id, row, genderValue, brand, mainAttr)] });
+  }
+  return attrs;
+}
+
+function buildFashionVariationPayload(basePayload, chartId, rowId, row) {
+  const p = JSON.parse(JSON.stringify(basePayload || {}));
+  const title = String(p.family_name || p.title || 'Producto').substring(0, 60);
+  delete p.family_name;
+  p.title = title;
+  const qty = Number(p.available_quantity || 1) || 1;
+  delete p.available_quantity;
+  p.attributes = Array.isArray(p.attributes) ? p.attributes.filter(a => !['SIZE_GRID_ID','SIZE_GRID_ROW_ID','SIZE'].includes(String(a.id || '').toUpperCase())) : [];
+  const color = getAttrValueFromPayload(basePayload, 'COLOR') || 'Marrón';
+  const sizeName = String(row && row.size || getAttrValueFromPayload(basePayload, 'SIZE') || '38');
+  p.variations = [{
+    price: Number(p.price || 0) || 1,
+    available_quantity: qty,
+    attribute_combinations: [
+      { id: 'COLOR', value_name: color },
+      { id: 'SIZE', value_name: sizeName }
+    ],
+    attributes: [
+      { id: 'SIZE_GRID_ID', value_name: String(chartId) },
+      { id: 'SIZE_GRID_ROW_ID', value_name: String(rowId) }
+    ]
+  }];
+  return p;
+}
+
+async function createFashionSizeChartForPayload(cuenta, token, payload, draft) {
+  const rawDomainId = String(draft && (draft.domainId || draft.domain_id || draft.domain) || '').trim();
+  if (!rawDomainId) throw new Error('Falta domain_id de Mercado Libre para crear grilla de talles. Usá Reanalizar producto y volvé a intentar.');
+
+  const gender = getAttrValueFromPayload(payload, 'GENDER') || String(draft.gender || draft.GENDER || 'Mujer').trim() || 'Mujer';
+  const genderValue = meliGenderValue(gender);
+  const brand = getAttrValueFromPayload(payload, 'BRAND') || String(draft.brand || 'Generica').trim() || 'Generica';
+  const sizeRaw = getAttrValueFromPayload(payload, 'SIZE') || String(draft.size || draft.SIZE || '').trim() || String(payload.family_name || '38');
+  const fallbackText = `${sizeRaw} ${payload.family_name || ''} ${payload.description && payload.description.plain_text || ''} ${draft.scrapedDescription || ''}`;
+  const guideRows = normalizeManualSizeGuideRows(draft, fallbackText);
+  const selectedRow = guideRows.find(r => r.publish) || guideRows[0] || { size: extractFirstNumericSize(sizeRaw, fallbackText) || '38', foot_from: '24', foot_to: '24.5', manufacturer_size: '38', publish: true };
+  const providedChart = await useProvidedFashionSizeChart(token, payload, draft, selectedRow.size || sizeRaw);
+  if (providedChart) return providedChart;
+  const chartName = `TLC ${String(payload.family_name || 'Guia de talles').substring(0, 42)}`;
+  const spec = await getFashionGridTechnicalSpec(token, rawDomainId, genderValue);
+  const mainAttrs = (spec.mainCandidates && spec.mainCandidates.length ? spec.mainCandidates : chartMainAttributeCandidates(payload, draft));
+  const domainCandidates = spec.domain ? [{ domain_id: spec.domain, label: 'technical_specs', includeSite: true }] : chartDomainCandidates(rawDomainId);
+  const attempts = [];
+  let lastError = '';
+  const allErrors = [];
+
+  const preSize = formatSizeForChart(selectedRow.size || sizeRaw, mainAttrs[0] || 'UY_SIZE');
+  const existing = await searchExistingFashionSizeChart(token, rawDomainId, genderValue, preSize);
+  if (existing && existing.chart && existing.row) {
+    const rootPayload = JSON.parse(JSON.stringify(payload));
+    rootPayload.attributes = Array.isArray(rootPayload.attributes) ? rootPayload.attributes.filter(a => !['SIZE_GRID_ID','SIZE_GRID_ROW_ID'].includes(String(a.id || '').toUpperCase())) : [];
+    rootPayload.attributes.push({ id: 'SIZE_GRID_ID', value_name: String(existing.chart.id) });
+    rootPayload.attributes.push({ id: 'SIZE_GRID_ROW_ID', value_name: String(existing.row.id) });
+    delete rootPayload.title;
+    delete rootPayload.variations;
+    return { payload: rootPayload, variationPayload: buildFashionVariationPayload(payload, existing.chart.id, existing.row.id, selectedRow), chart: existing.chart, chartPayload: existing.searchPayload, chartAttempt: 'existing_chart' };
+  }
+
+  for (const cand of domainCandidates) {
+    for (const mainAttr of mainAttrs) {
+      const rows = guideRows.map(row => ({ attributes: makeChartRowAttributes(spec, mainAttr, row, genderValue, brand) }));
+      const chartPayload = {
+        names: { MLU: chartName },
+        domain_id: cand.domain_id,
+        site_id: 'MLU',
+        type: 'SPECIFIC',
+        attributes: [
+          { id: 'GENDER', values: [ { id: genderValue.id, name: genderValue.name } ] }
+        ],
+        main_attribute: {
+          attributes: [ { site_id: 'MLU', id: mainAttr } ]
+        },
+        rows
+      };
+      // Si la ficha técnica exige marca en la grilla, la mandamos. Si no, la omitimos para no atar la grilla a una marca incorrecta.
+      if ((spec.globalRequired || []).some(a => String(a.id || '').toUpperCase() === 'BRAND')) {
+        chartPayload.attributes.push({ id: 'BRAND', values: [{ name: brand || 'Generica' }] });
+      }
+      attempts.push({ cand, mainAttr, chartPayload });
+    }
+  }
+
+  for (const attempt of attempts) {
+    const r = await fetch('https://api.mercadolibre.com/catalog/charts', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify(attempt.chartPayload),
+    });
+    const raw = await r.text();
+    let chart = null;
+    try { chart = raw ? JSON.parse(raw) : {}; } catch { chart = { raw }; }
+    if (r.ok && chart && chart.id) {
+      const publishIdx = Math.max(0, guideRows.findIndex(r => r.publish));
+      const rowId = chart.rows && chart.rows[publishIdx] && chart.rows[publishIdx].id || chart.rows && chart.rows[0] && chart.rows[0].id;
+      if (!rowId) throw new Error('Mercado Libre creó la grilla pero no devolvió SIZE_GRID_ROW_ID. Respuesta: ' + JSON.stringify(chart).slice(0,500));
+
+      const rootPayload = JSON.parse(JSON.stringify(payload));
+      rootPayload.attributes = Array.isArray(rootPayload.attributes) ? rootPayload.attributes.filter(a => !['SIZE_GRID_ID','SIZE_GRID_ROW_ID'].includes(String(a.id || '').toUpperCase())) : [];
+      rootPayload.attributes.push({ id: 'SIZE_GRID_ID', value_name: String(chart.id) });
+      rootPayload.attributes.push({ id: 'SIZE_GRID_ROW_ID', value_name: String(rowId) });
+      delete rootPayload.title;
+      delete rootPayload.variations;
+
+      return { payload: rootPayload, variationPayload: buildFashionVariationPayload(payload, chart.id, rowId, guideRows[publishIdx] || selectedRow), chart, chartPayload: attempt.chartPayload, chartAttempt: attempt.cand.label + '/' + attempt.mainAttr };
+    }
+    const msg = (chart && (chart.message || chart.error)) || `No se pudo crear la grilla de talles (${r.status})`;
+    const causes = Array.isArray(chart && chart.cause) ? chart.cause.map(c => [c.code, c.message].filter(Boolean).join(': ')).join(' | ') : '';
+    lastError = `${msg}${causes ? ' - ' + causes : ''} (intento ${attempt.cand.label}, domain ${attempt.cand.domain_id}, main ${attempt.mainAttr})`;
+    allErrors.push(lastError);
+  }
+
+  throw new Error((lastError || 'No se pudo crear la grilla de talles.') + (allErrors.length ? ' | Intentos: ' + allErrors.slice(0,8).join(' || ') : '') + (spec.error ? ' | technical_specs: ' + spec.error : ''));
+}
+
+
+function buildPublicadorFallbackCategoryPayload(payload) {
+  const clean = JSON.parse(JSON.stringify(payload || {}));
+  // Fallback operativo para categorias de moda/calzado que exigen grilla de talles.
+  // Permite probar la publicacion en una categoria generica cuando MeLi bloquea por SIZE_GRID_ID.
+  // Idealmente luego se implementa una grilla real de talles por cuenta/categoria.
+  const fallbackCategory = process.env.PUBLICADOR_FASHION_FALLBACK_CATEGORY || 'MLU1574';
+  clean.category_id = fallbackCategory;
+  delete clean.title;
+  clean.family_name = String(clean.family_name || 'Producto').replace(/\s+/g, ' ').trim().substring(0, 60) || 'Producto';
+  clean.attributes = Array.isArray(clean.attributes) ? clean.attributes : [];
+  // En categoria fallback evitamos atributos de moda que suelen disparar la grilla obligatoria.
+  const skip = new Set(['SIZE_GRID_ID', 'SIZE_GRID_ROW_ID', 'SIZE', 'GENDER']);
+  clean.attributes = clean.attributes.filter(a => !skip.has(String(a.id || '').toUpperCase()));
+  const idx = clean.attributes.findIndex(a => String(a.id || '').toUpperCase() === 'BRAND');
+  if (idx >= 0) clean.attributes[idx] = { id: 'BRAND', value_name: 'Generica' };
+  else clean.attributes.unshift({ id: 'BRAND', value_name: 'Generica' });
+  clean._tlcFashionGridFallback = 'category_' + fallbackCategory;
+  return clean;
+}
+
+
+function parseDataImageSource(src) {
+  const m = String(src || '').match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (!m) return null;
+  return { mime: m[1], buffer: Buffer.from(m[2], 'base64') };
+}
+function extFromMime(mime) {
+  const m = String(mime || '').toLowerCase();
+  if (m.includes('png')) return 'png';
+  if (m.includes('webp')) return 'webp';
+  if (m.includes('gif')) return 'gif';
+  return 'jpg';
+}
+async function uploadDataImageToMeliPicture(token, dataUrl) {
+  const parsed = parseDataImageSource(dataUrl);
+  if (!parsed || !parsed.buffer || !parsed.buffer.length) throw new Error('Imagen manual invalida.');
+  const form = new FormData();
+  const blob = new Blob([parsed.buffer], { type: parsed.mime || 'image/jpeg' });
+  form.append('file', blob, 'foto_manual.' + extFromMime(parsed.mime));
+  const r = await fetch('https://api.mercadolibre.com/pictures/items/upload', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}` },
+    body: form,
+  });
+  const raw = await r.text();
+  let data = {};
+  try { data = raw ? JSON.parse(raw) : {}; } catch { data = { raw }; }
+  if (!r.ok || !data.id) throw new Error(data.message || data.error || 'Mercado Libre no acepto una foto manual.');
+  return data.id;
+}
+
+async function postMeliItemDescription(token, itemId, plainText) {
+  const text = String(plainText || '').replace(/<[^>]+>/g, '').trim();
+  if (!token || !itemId || !text) return { ok: false, skipped: true, reason: 'Sin descripcion para publicar.' };
+  const body = JSON.stringify({ plain_text: text.substring(0, 50000) });
+  async function send(method) {
+    const r = await fetch(`https://api.mercadolibre.com/items/${encodeURIComponent(itemId)}/description`, {
+      method,
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body,
+    });
+    const raw = await r.text();
+    let data = {};
+    try { data = raw ? JSON.parse(raw) : {}; } catch { data = { raw }; }
+    return { ok: r.ok, status: r.status, data };
+  }
+  let result = await send('POST');
+  // Si Mercado Libre responde que ya existe una descripcion o no acepta POST, probamos actualizarla.
+  if (!result.ok && [400, 409, 404, 405].includes(Number(result.status))) {
+    const putResult = await send('PUT');
+    if (putResult.ok) return { ...putResult, method: 'PUT' };
+  }
+  return { ...result, method: result.ok ? 'POST' : 'POST_FAILED' };
+}
+
+async function preparePublicadorPicturesForAccount(payload, token) {
+  const out = JSON.parse(JSON.stringify(payload || {}));
+  const pics = Array.isArray(out.pictures) ? out.pictures : [];
+  const prepared = [];
+  for (const pic of pics.slice(0, 8)) {
+    const source = String(pic && (pic.source || pic.url || '') || '').trim();
+    const id = String(pic && pic.id || '').trim();
+    if (id) { prepared.push({ id }); continue; }
+    if (/^data:image\//i.test(source)) {
+      const uploadedId = await uploadDataImageToMeliPicture(token, source);
+      prepared.push({ id: uploadedId });
+    } else if (source) {
+      prepared.push({ source });
+    }
+  }
+  out.pictures = prepared;
+  return out;
+}
+
+function cleanMeliCreatePayload(payload) {
+  const clean = JSON.parse(JSON.stringify(payload || {}));
+  // Nunca enviar campos internos del panel a Mercado Libre.
+  // MeLi rechaza cualquier propiedad extra como _tlcFashionGridFallback.
+  for (const key of Object.keys(clean)) {
+    if (key.startsWith('_tlc') || key.startsWith('_')) delete clean[key];
+  }
+  if (Array.isArray(clean.attributes)) {
+    clean.attributes = clean.attributes
+      .filter(a => a && a.id)
+      .map(a => {
+        const out = { id: a.id };
+        if (a.value_id !== undefined && a.value_id !== null && String(a.value_id).trim() !== '') out.value_id = String(a.value_id).trim();
+        if (a.value_name !== undefined && a.value_name !== null && String(a.value_name).trim() !== '') out.value_name = String(a.value_name).trim();
+        return out;
+      })
+      .filter(a => a.id && (a.value_id || a.value_name));
+  }
+  return clean;
+}
+
+function errorNeedsEmptyGtinReasonRetry(response) {
+  const causes = Array.isArray(response && response.cause) ? response.cause : [];
+  const txt = JSON.stringify(response || {});
+  return /GTIN/i.test(txt) || causes.some(c => /GTIN|EMPTY_GTIN_REASON/i.test(String(c.message || '') + ' ' + String(c.code || '')));
 }
 
 function pickSkuFromMeliItem(raw) {
@@ -598,388 +2137,6 @@ async function meliApi(cuenta, apiPath, options = {}) {
     throw new Error(msg);
   }
   return data;
-}
-
-
-async function meliApiTry(cuenta, apiPath, options = {}) {
-  try {
-    const data = await meliApi(cuenta, apiPath, options);
-    return { ok: true, data, apiPath };
-  } catch (e) {
-    return { ok: false, error: e.message, apiPath };
-  }
-}
-
-function getInboxLimit(value, fallback = 50) {
-  const n = Number(value || fallback);
-  return Math.max(1, Math.min(Number.isFinite(n) ? n : fallback, 100));
-}
-
-function unwrapMeliList(payload, keys = []) {
-  if (Array.isArray(payload)) return payload;
-  for (const key of keys) {
-    if (Array.isArray(payload?.[key])) return payload[key];
-  }
-  return payload?.results || payload?.data || payload?.messages || payload?.questions || payload?.claims || [];
-}
-
-function normalizeInboxQuestionForFrontend(q) {
-  return {
-    ...q,
-    id: q.id || q.question_id,
-    question_id: q.question_id || q.id,
-    item_id: q.item_id || q.item?.id || q.itemId || '',
-    text: q.text || q.question || q.body || '',
-    status: q.status || q.question_status || '',
-    date_created: q.date_created || q.created_at || q.date || '',
-    from: q.from || (q.from_id ? { id: q.from_id } : undefined),
-  };
-}
-
-function extractPackIdFromMessageResource(value) {
-  const raw = String(value || '');
-  const m = raw.match(/packs\/(\d+)/i) || raw.match(/pack_id[=:](\d+)/i) || raw.match(/(\d{10,})/);
-  return m ? m[1] : '';
-}
-
-function pickInboxPackId(m) {
-  // En mensajes reales de /messages/packs, el campo id es el ID del mensaje,
-  // NO el pack. Antes se tomaba m.id y la bandeja quedaba con packs falsos
-  // como 019ec0..., por eso luego no podia abrir/responder correctamente.
-  const direct = m.pack_id || m.packId || m.pack?.id || m.order?.pack_id || m.order?.pack?.id || '';
-  if (direct) return String(direct).replace(/[^0-9]/g, '') || String(direct);
-
-  const resources = Array.isArray(m.message_resources) ? m.message_resources : [];
-  const packRes = resources.find(r => String(r.name || r.type || '').toLowerCase().includes('pack'));
-  if (packRes && packRes.id) return String(packRes.id || '').replace(/[^0-9]/g, '') || String(packRes.id || '');
-
-  const resource = m.resource || m.path || m.href || m.url || m.conversation_status?.path || '';
-  const fromResource = extractPackIdFromMessageResource(resource);
-  if (fromResource) return fromResource;
-
-  // Algunos endpoints de pendientes devuelven el pack como resource_id.
-  // Lo usamos solo si parece un numero largo, para no confundirlo con IDs internos.
-  const resourceId = m.resource_id || m.resourceId || '';
-  if (/^\d{8,}$/.test(String(resourceId))) return String(resourceId);
-
-  // Ultimo recurso para respuestas de unread: id numerico largo.
-  if (/^\d{8,}$/.test(String(m.id || ''))) return String(m.id);
-  return '';
-}
-
-function normalizeInboxMessageForFrontend(m) {
-  const packId = pickInboxPackId(m);
-  const rawText = (m.text && (m.text.plain || m.text)) || m.message || m.subject || m.snippet || m.title || '';
-  const date = m.message_date?.received || m.message_date?.created || m.date_received || m.date_created || m.created_at || m.updated_at || m.last_updated || '';
-  return {
-    ...m,
-    pack_id: packId,
-    resource_id: packId,
-    resource: m.resource || (packId ? `/packs/${packId}` : ''),
-    text: typeof m.text === 'object' ? m.text : { plain: rawText || (packId ? `Pack ${packId} con mensajes pendientes` : 'Mensaje pendiente') },
-    message_date: m.message_date || { received: date, created: date },
-    from: m.from || (m.from_user_id ? { user_id: m.from_user_id } : undefined),
-    to: m.to || (m.to_user_id ? { user_id: m.to_user_id } : undefined),
-  };
-}
-
-function normalizeInboxClaimForFrontend(cl) {
-  return {
-    ...cl,
-    id: cl.id || cl.claim_id,
-    claim_id: cl.claim_id || cl.id,
-    order_id: cl.order_id || cl.orderId || cl.order?.id || (cl.resource === 'order' ? cl.resource_id : ''),
-    status: cl.status || cl.stage || 'opened',
-    reason_id: cl.reason_id || cl.reason || cl.type || '',
-    date_created: cl.date_created || cl.created_at || cl.last_updated || '',
-  };
-}
-
-async function fetchInboxQuestionsDirect(cuenta, params = {}) {
-  const sellerId = await fetchMeliSellerId(cuenta);
-  const limit = getInboxLimit(params.limit, 50);
-  const status = String(params.status || 'UNANSWERED').trim();
-  const qs = new URLSearchParams({ seller_id: String(sellerId), limit: String(limit), api_version: '4' });
-  if (status) qs.set('status', status);
-  if (params.offset) qs.set('offset', String(params.offset));
-
-  let result = await meliApiTry(cuenta, `/questions/search?${qs.toString()}`);
-  if (!result.ok) {
-    const fallback = new URLSearchParams({ seller_id: String(sellerId), limit: String(limit) });
-    if (status) fallback.set('status', status);
-    if (params.offset) fallback.set('offset', String(params.offset));
-    result = await meliApiTry(cuenta, `/questions/search?${fallback.toString()}`);
-  }
-  if (!result.ok) throw new Error(result.error || 'No se pudieron cargar preguntas');
-  const questions = unwrapMeliList(result.data, ['questions', 'results']).map(normalizeInboxQuestionForFrontend);
-  return { ok: true, direct: true, cuenta: normalizeCuentaKey(cuenta), questions, results: questions, paging: result.data?.paging || null };
-}
-
-async function answerInboxQuestionDirect(cuenta, body = {}) {
-  const questionId = String(body.question_id || body.questionId || body.id || '').trim();
-  const text = String(body.text || body.answer || '').trim();
-  if (!questionId) throw new Error('Falta question_id');
-  if (!text) throw new Error('Falta el texto de la respuesta');
-  const data = await meliApi(cuenta, '/answers', { method: 'POST', body: { question_id: Number(questionId) || questionId, text } });
-  return { ok: true, direct: true, answer: data };
-}
-
-async function fetchInboxClaimsDirect(cuenta, params = {}) {
-  const limit = getInboxLimit(params.limit, 50);
-  const qs = new URLSearchParams({ limit: String(limit) });
-  if (params.offset) qs.set('offset', String(params.offset));
-  if (params.status) qs.set('status', String(params.status));
-  if (params.stage) qs.set('stage', String(params.stage));
-  if (params.type) qs.set('type', String(params.type));
-
-  let result = await meliApiTry(cuenta, `/post-purchase/v1/claims/search?${qs.toString()}`);
-  if (!result.ok && params.status === 'opened') {
-    const qs2 = new URLSearchParams({ limit: String(limit) });
-    if (params.offset) qs2.set('offset', String(params.offset));
-    result = await meliApiTry(cuenta, `/post-purchase/v1/claims/search?${qs2.toString()}`);
-  }
-  if (!result.ok) throw new Error(result.error || 'No se pudieron cargar reclamos');
-  let claims = unwrapMeliList(result.data, ['data', 'results', 'claims']).map(normalizeInboxClaimForFrontend);
-  if (params.status) {
-    const st = String(params.status).toLowerCase();
-    claims = claims.filter(c => String(c.status || '').toLowerCase().includes(st) || (st === 'opened' && !String(c.status || '').toLowerCase().includes('closed')));
-  }
-  return { ok: true, direct: true, cuenta: normalizeCuentaKey(cuenta), data: claims, claims, results: claims, paging: result.data?.paging || null };
-}
-
-async function fetchInboxMessagePackDirect(cuenta, params = {}) {
-  const sellerId = await fetchMeliSellerId(cuenta);
-  const packId = String(params.pack_id || params.packId || params.order_id || '').trim();
-  if (!packId) throw new Error('Falta pack_id');
-  const markAsRead = String(params.mark_as_read ?? 'false');
-  const limit = getInboxLimit(params.limit, 50);
-  const offset = Number(params.offset || 0) || 0;
-  const common = `limit=${limit}&offset=${offset}&tag=post_sale&mark_as_read=${encodeURIComponent(markAsRead)}`;
-  const endpoints = [
-    `/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}?${common}`,
-    `/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}?limit=${limit}&offset=${offset}&mark_as_read=${encodeURIComponent(markAsRead)}`,
-    `/marketplace/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}?${common}`,
-    `/marketplace/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}?limit=${limit}&offset=${offset}&mark_as_read=${encodeURIComponent(markAsRead)}`,
-  ];
-  const errors = [];
-  for (const endpoint of endpoints) {
-    const result = await meliApiTry(cuenta, endpoint);
-    if (result.ok) {
-      const messages = unwrapMeliList(result.data, ['messages', 'results'])
-        .map(msg => normalizeInboxMessageForFrontend({ ...msg, pack_id: packId, resource_id: packId, resource: `/packs/${packId}` }))
-        // En el drawer de la conversacion mostramos como una mensajeria normal:
-        // mensajes antiguos arriba y el ultimo mensaje abajo.
-        .sort((a, b) => new Date(a.message_date?.received || a.message_date?.created || 0) - new Date(b.message_date?.received || b.message_date?.created || 0));
-      return { ok: true, direct: true, cuenta: normalizeCuentaKey(cuenta), pack_id: packId, messages, results: messages, raw: result.data };
-    }
-    errors.push(`${endpoint}: ${result.error}`);
-  }
-  throw new Error(`No se pudo cargar el hilo del pack ${packId}. ${errors[0] || ''}`);
-}
-
-async function fetchInboxRecentMessageConversationsDirect(cuenta, sellerId, limit = 50) {
-  // Estrategia definitiva sin /marketplace/messages/unread:
-  // 1) Mercado Libre SI permite leer un hilo cuando conocemos el pack.
-  // 2) Entonces buscamos ventas recientes.
-  // 3) Por cada venta/pack consultamos /messages/packs/{pack_id}/sellers/{seller_id}
-  //    con mark_as_read=false para no marcar nada como leido desde la app.
-  const orderLimit = Math.min(Math.max(Number(limit || 50), 20), 51);
-  const orderEndpoints = [
-    `/orders/search?seller=${encodeURIComponent(sellerId)}&sort=date_desc&limit=${orderLimit}`,
-    `/orders/search?seller=${encodeURIComponent(sellerId)}&order.status=paid&sort=date_desc&limit=${orderLimit}`,
-    `/orders/search?seller=${encodeURIComponent(sellerId)}&order.status=confirmed&sort=date_desc&limit=${orderLimit}`,
-  ];
-
-  const orders = [];
-  const orderErrors = [];
-  for (const endpoint of orderEndpoints) {
-    const result = await meliApiTry(cuenta, endpoint);
-    if (!result.ok) {
-      orderErrors.push(`${endpoint}: ${result.error}`);
-      continue;
-    }
-    const rows = unwrapMeliList(result.data, ['results', 'orders']);
-    if (Array.isArray(rows) && rows.length) {
-      orders.push(...rows);
-      break;
-    }
-  }
-
-  const conversations = [];
-  const seen = new Set();
-  const threadErrors = [];
-
-  for (const order of orders) {
-    if (conversations.length >= limit) break;
-    const orderId = String(order.id || order.order_id || '').trim();
-    const packId = String(order.pack_id || order.pack?.id || order.packId || orderId || '').trim();
-    if (!packId || seen.has(packId)) continue;
-    seen.add(packId);
-
-    const threadEndpoints = [
-      `/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}?limit=50&offset=0&tag=post_sale&mark_as_read=false`,
-      `/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}?limit=50&offset=0&mark_as_read=false`,
-    ];
-
-    for (const threadEndpoint of threadEndpoints) {
-      const thread = await meliApiTry(cuenta, threadEndpoint);
-      if (!thread.ok) {
-        threadErrors.push(`${threadEndpoint}: ${thread.error}`);
-        continue;
-      }
-
-      const rawMessages = unwrapMeliList(thread.data, ['messages', 'results']);
-      const threadMessages = rawMessages.map(msg => normalizeInboxMessageForFrontend({
-        ...msg,
-        pack_id: packId,
-        resource_id: packId,
-        resource: `/packs/${packId}`,
-      }));
-      if (!threadMessages.length) continue;
-
-      const sorted = threadMessages.sort((a,b) => new Date(b.message_date?.received || b.message_date?.created || 0) - new Date(a.message_date?.received || a.message_date?.created || 0));
-      const latestBuyer = sorted.find(x => String(x.from?.user_id || '') !== String(sellerId));
-      const latestAny = sorted[0];
-      const latest = latestBuyer || latestAny;
-      if (!latest) continue;
-
-      // Para la lista mostramos una sola fila por pack. Si el ultimo mensaje es del vendedor,
-      // igual dejamos la conversacion visible como fallback reciente, pero priorizamos comprador.
-      conversations.push({
-        ...latest,
-        pack_id: packId,
-        resource_id: packId,
-        resource: `/packs/${packId}`,
-        order_id: orderId,
-        unread_count: latestBuyer ? 1 : 0,
-        _source: 'orders_search_messages_pack',
-      });
-      break;
-    }
-  }
-
-  conversations.sort((a,b) => new Date(b.message_date?.received || b.message_date?.created || 0) - new Date(a.message_date?.received || a.message_date?.created || 0));
-  return { messages: conversations.slice(0, limit), orderErrors, threadErrors: threadErrors.slice(0, 12), ordersChecked: orders.length };
-}
-
-async function fetchInboxUnreadMessagesDirect(cuenta, params = {}) {
-  const sellerId = await fetchMeliSellerId(cuenta);
-  const limit = getInboxLimit(params.limit, 50);
-
-  // IMPORTANTE:
-  // El endpoint /marketplace/messages/unread devuelve "Invalid caller.id" en estas cuentas,
-  // pero el endpoint por pack funciona perfecto. Por eso la bandeja se arma desde ventas
-  // recientes + hilos por pack.
-  const fallback = await fetchInboxRecentMessageConversationsDirect(cuenta, sellerId, limit);
-  return {
-    ok: true,
-    direct: true,
-    cuenta: normalizeCuentaKey(cuenta),
-    messages: fallback.messages,
-    results: fallback.messages,
-    paging: null,
-    sourceEndpoint: 'orders_search_messages_pack',
-    debug: params.debug ? {
-      sellerId,
-      ordersChecked: fallback.ordersChecked,
-      orderErrors: fallback.orderErrors,
-      threadErrors: fallback.threadErrors,
-      note: 'Se omite /marketplace/messages/unread porque devuelve Invalid caller.id; se leen hilos desde orders/search + messages/packs.'
-    } : undefined,
-  };
-}
-
-async function sendInboxMessageDirect(cuenta, body = {}) {
-  const sellerId = await fetchMeliSellerId(cuenta);
-  const packId = String(body.pack_id || body.packId || body.order_id || '').trim();
-  const buyerId = String(body.buyer_id || body.buyerId || body.to || '').trim();
-  const text = String(body.text || body.message || '').trim();
-  if (!packId) throw new Error('Falta pack_id');
-  if (!text) throw new Error('Falta el texto del mensaje');
-
-  // Mercado Libre 2026: en MLU/Otros el destinatario puede ser el agente de mensajeria,
-  // no siempre el buyer real que viene en el hilo. Probamos primero el agente oficial MLU
-  // y luego el buyer real como compatibilidad.
-  const MLU_MESSAGING_AGENT_ID = '3037204685';
-  const recipientIds = [];
-  recipientIds.push(MLU_MESSAGING_AGENT_ID);
-  if (buyerId && buyerId !== MLU_MESSAGING_AGENT_ID) recipientIds.push(buyerId);
-
-  const payloads = [];
-  for (const toId of recipientIds) {
-    const numericTo = Number(toId);
-    const numericSeller = Number(sellerId);
-    // Formato actual recomendado: text string.
-    payloads.push({ from: { user_id: numericSeller }, to: { user_id: numericTo }, text });
-    // Compatibilidad con respuestas/lecturas que devuelven text.plain.
-    payloads.push({ from: { user_id: numericSeller }, to: { user_id: numericTo }, text: { plain: text } });
-  }
-  // Ultimos fallbacks para cuentas donde el API infiere remitente/destinatario por pack.
-  payloads.push({ text });
-  payloads.push({ text: { plain: text } });
-
-  const endpoints = [
-    `/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}?tag=post_sale`,
-    `/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}`,
-    `/marketplace/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}?tag=post_sale`,
-    `/marketplace/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}`,
-  ];
-
-  const errors = [];
-  for (const endpoint of endpoints) {
-    for (const payload of payloads) {
-      const result = await meliApiTry(cuenta, endpoint, { method: 'POST', body: payload });
-      if (result.ok) {
-        return {
-          ok: true,
-          direct: true,
-          cuenta: normalizeCuentaKey(cuenta),
-          pack_id: packId,
-          sentTo: payload.to?.user_id || null,
-          usedEndpoint: endpoint,
-          message: result.data,
-        };
-      }
-      errors.push(`${endpoint} | payload=${JSON.stringify(payload)} | error=${result.error}`);
-    }
-  }
-
-  throw new Error(`No se pudo enviar el mensaje. ${errors.slice(0, 3).join(' || ')}`);
-}
-
-async function handleInboxDirectApi(req, res, u, session) {
-  try {
-    const cuenta = normalizeCuentaKey(u.searchParams.get('cuenta') || 'tlc');
-    const action = String(u.searchParams.get('action') || '').trim();
-    const queryParams = Object.fromEntries(u.searchParams.entries());
-    let body = {};
-    if (req.method === 'POST') body = await readBody(req);
-    const params = { ...queryParams, ...body };
-
-    let result;
-    if (req.method === 'GET' && (action === 'questions' || action === 'questions_unanswered')) {
-      result = await fetchInboxQuestionsDirect(cuenta, params);
-    } else if (req.method === 'POST' && action === 'answer') {
-      result = await answerInboxQuestionDirect(cuenta, params);
-    } else if (req.method === 'GET' && (action === 'messages_unread' || action === 'messages')) {
-      result = await fetchInboxUnreadMessagesDirect(cuenta, params);
-    } else if (req.method === 'GET' && action === 'messages_pack') {
-      result = await fetchInboxMessagePackDirect(cuenta, params);
-    } else if (req.method === 'POST' && action === 'send_message') {
-      result = await sendInboxMessageDirect(cuenta, params);
-    } else if (req.method === 'GET' && action === 'claims') {
-      result = await fetchInboxClaimsDirect(cuenta, params);
-    } else {
-      jsonResp(res, 400, { error: { message: `Accion de inbox no soportada: ${action || 'sin action'}` } });
-      return;
-    }
-
-    audit(session, 'meli_inbox_direct_api', { cuenta, method: req.method, action, direct: true });
-    jsonResp(res, 200, result);
-  } catch (e) {
-    console.error('Error MeLi INBOX directo:', e.message);
-    jsonResp(res, 500, { error: { message: e.message } });
-  }
 }
 
 async function fetchMeliSellerId(cuenta) {
@@ -1684,6 +2841,38 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Proxy local de imagenes para previsualizar fotos que bloquean hotlinking (MeLi/MakerWorld/proveedores).
+  // El payload sigue usando la URL original; esto solo sirve para mostrar la miniatura en el panel.
+  if (req.method === 'GET' && pathName === '/api/publicador-image') {
+    (async () => {
+      try {
+        const src = u.searchParams.get('url') || '';
+        if (!/^https?:\/\//i.test(src)) { res.writeHead(400); res.end('bad url'); return; }
+        const rr = await fetch(src, {
+          redirect: 'follow',
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125 Safari/537.36',
+            'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+            'Referer': src.includes('mlstatic.com') ? 'https://www.mercadolibre.com.uy/' : 'https://www.google.com/'
+          }
+        });
+        if (!rr.ok) { res.writeHead(rr.status); res.end('image fetch failed'); return; }
+        const ct = rr.headers.get('content-type') || 'image/jpeg';
+        const ab = Buffer.from(await rr.arrayBuffer());
+        res.writeHead(200, {
+          'Content-Type': ct,
+          'Cache-Control': 'public, max-age=86400',
+          'Access-Control-Allow-Origin': '*'
+        });
+        res.end(ab);
+      } catch (e) {
+        res.writeHead(500);
+        res.end(e.message || 'image proxy error');
+      }
+    })();
+    return;
+  }
+
   // LOGIN DESACTIVADO TEMPORALMENTE
   // Se mantiene compatibilidad de endpoints para que el frontend no rompa,
   // pero no se exige usuario ni contraseña hasta nuevo aviso.
@@ -1701,21 +2890,6 @@ const server = http.createServer((req, res) => {
 
   if (pathName === '/api/me') {
     jsonResp(res, 200, { user: session, loginDisabled: true });
-    return;
-  }
-
-  // Diagnostico Mercado Libre por cuenta: muestra el usuario real del token OAuth.
-  // Uso: /api/meli/me?cuenta=tlc o /api/meli/me?cuenta=topshop
-  if (req.method === 'GET' && pathName === '/api/meli/me') {
-    (async () => {
-      try {
-        const cuenta = normalizeCuentaKey(u.searchParams.get('cuenta') || 'tlc');
-        const me = await meliApi(cuenta, '/users/me');
-        jsonResp(res, 200, { ok: true, cuenta, me, id: me && me.id, nickname: me && me.nickname });
-      } catch (e) {
-        jsonResp(res, 500, { ok: false, error: { message: e.message } });
-      }
-    })();
     return;
   }
 
@@ -2065,11 +3239,50 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // ── INBOX Mercado Libre directo ────────────────────────
-  // /api/inbox?cuenta=tlc&action=questions|messages_unread|claims|messages_pack
-  // POST answer|send_message
+  // ── PROXY INBOX a n8n ────────────────────────
+  // /api/inbox?cuenta=tlc&action=questions|messages_unread|claims|answer|messages_pack|send_message
   if (pathName === '/api/inbox') {
-    handleInboxDirectApi(req, res, u, session);
+    (async () => {
+      try {
+        const cuenta = u.searchParams.get('cuenta') || 'tlc';
+        const webhook = INBOX_WEBHOOKS[cuenta] || INBOX_WEBHOOKS.tlc;
+        u.searchParams.delete('cuenta');
+        const target = `${webhook}?${u.searchParams.toString()}`;
+        console.log(`[MELI INBOX ${cuenta.toUpperCase()}] (${session.username}) ${req.method} → ${target.substring(0, 160)}...`);
+
+        // IMPORTANTE:
+        // Los workflows de INBOX en n8n estan registrados como GET.
+        // El frontend puede llamar POST para acciones como responder preguntas o enviar mensajes,
+        // pero aca convertimos esos datos a querystring y llamamos al webhook por GET.
+        // Esto evita el error: "webhook is not registered for POST requests".
+        let targetFinal = target;
+        const opts = {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' },
+        };
+
+        if (req.method === 'POST') {
+          const body = await readBody(req);
+          const params = new URLSearchParams(u.searchParams);
+          for (const [k, v] of Object.entries(body || {})) {
+            if (v !== undefined && v !== null) params.set(k, String(v));
+          }
+          targetFinal = `${webhook}?${params.toString()}`;
+          console.log(`[MELI INBOX ${cuenta.toUpperCase()}] POST convertido a GET -> ${targetFinal.substring(0, 180)}...`);
+        }
+
+        const r = await fetch(targetFinal, opts);
+        const text = await r.text();
+        let data;
+        try { data = JSON.parse(text); }
+        catch { data = { error: { message: 'n8n devolvió respuesta vacía o no-JSON', raw: text.slice(0, 400) } }; }
+        audit(session, 'meli_inbox_api', { cuenta, method: req.method, status: r.status, action: u.searchParams.get('action') || '', params: Object.fromEntries(u.searchParams.entries()) });
+        jsonResp(res, r.status, data);
+      } catch (e) {
+        console.error('Error proxy MeLi INBOX:', e.message);
+        jsonResp(res, 500, { error: { message: e.message } });
+      }
+    })();
     return;
   }
 
@@ -2423,9 +3636,429 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // ── LISTA DE PRECIOS local ─────────────────────
-  if (pathName === '/api/precios' || pathName.startsWith('/api/precios/')) {
-    handlePreciosApi(req, res, pathName, session);
+
+  // ── CREADOR DE PUBLICACIONES IA v1 ───────────────
+  // Primera etapa segura: analiza link, arma vista previa y guarda borradores.
+  // No publica todavia en Mercado Libre.
+  if (pathName === '/api/publicador') {
+    (async () => {
+      try {
+        if (req.method === 'GET') {
+          const action = u.searchParams.get('action') || 'drafts';
+          if (action === 'drafts') {
+            jsonResp(res, 200, loadPublicadorDrafts());
+            return;
+          }
+          if (action === 'status') {
+            const openaiConfigured = !!(process.env.OPENAI_API_KEY || process.env.OPENAI_APIKEY);
+            jsonResp(res, 200, { ok: true, openaiConfigured, model: process.env.PUBLICADOR_OPENAI_MODEL || 'gpt-4o-mini' });
+            return;
+          }
+          jsonResp(res, 400, { error: 'Accion no soportada' });
+          return;
+        }
+
+        if (req.method !== 'POST') {
+          jsonResp(res, 405, { error: 'Metodo no permitido' });
+          return;
+        }
+
+        const body = await readBody(req);
+        const action = body.action || u.searchParams.get('action') || 'analizar';
+
+        if (action === 'analizar') {
+          const url = String(body.url || '').trim();
+          const price = Number(String(body.price || '').replace(',', '.'));
+          const currency = ['UYU', 'USD', 'ARS'].includes(String(body.currency || '').toUpperCase()) ? String(body.currency).toUpperCase() : 'UYU';
+          const stock = Math.max(1, Number(body.stock || 50) || 50);
+          const accounts = Array.isArray(body.accounts) && body.accounts.length ? body.accounts : ['tlc', 'topshop'];
+          if (!url || !/^https?:\/\//i.test(url)) {
+            jsonResp(res, 400, { error: 'Falta un link valido del producto.' });
+            return;
+          }
+          if (!price || price <= 0) {
+            jsonResp(res, 400, { error: 'Falta precio valido.' });
+            return;
+          }
+
+          const pageResp = await fetch(url, { redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0 TLC-Publicador/2.0' } });
+          const buf = Buffer.from(await pageResp.arrayBuffer());
+          const contentType = pageResp.headers.get('content-type') || '';
+          const charset = (contentType.match(/charset=([^;]+)/i)?.[1] || '').toLowerCase();
+          let html = buf.toString('utf8');
+          if (charset && !charset.includes('utf') && (charset.includes('iso') || charset.includes('latin') || charset.includes('windows'))) {
+            html = new TextDecoder('latin1').decode(buf);
+          }
+          let scraped = parsePublicadorHtml(html, url);
+          // Si el link es de una publicacion de Mercado Libre, complementa fotos desde la API publica del item.
+          // Esto no rompe proveedores comunes: solo suma fotos cuando encuentra MLU en el link/pagina.
+          const meliIds = extractMeliIdsFromUrlOrHtml(url, html);
+          if (meliIds.itemId || meliIds.catalogId || meliIds.userProductId) {
+            const meliImages = await fetchMeliItemImagesFromPublicApi(meliIds.itemId, meliIds.catalogId, accounts[0] || 'tlc', meliIds.userProductId);
+            if (meliImages.length) {
+              scraped = {
+                ...scraped,
+                meliSourceItemId: meliIds.itemId || '',
+                meliSourceCatalogId: meliIds.catalogId || '',
+                meliSourceUserProductId: meliIds.userProductId || '',
+                images: mergePublicadorImages(scraped.images || [], meliImages, url),
+              };
+            }
+          }
+          if (/makerworld\.com|bambulab\.com|bblmw\.com/i.test(url)) {
+            const makerImages = await fetchMakerWorldImagesFromPublicApi(url);
+            if (makerImages.length) {
+              scraped = {
+                ...scraped,
+                makerWorldSource: true,
+                images: mergePublicadorImages(scraped.images || [], makerImages, url),
+              };
+            }
+          }
+          const ai = await generatePublicadorContent({ ...scraped, url });
+          const category = await detectPublicadorCategory(ai.titulo_meli || scraped.scrapedTitle);
+          const allAttributes = addSyntheticSpecialRequirements(await getPublicadorCategoryAttributes(category.categoryId), category);
+          const requiredAttributes = allAttributes.filter(isPublicadorRequiredAttr);
+          const result = {
+            id: crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex'),
+            status: 'preview',
+            source: 'panel',
+            url,
+            price,
+            currency,
+            stock,
+            accounts,
+            createdAt: new Date().toISOString(),
+            ...scraped,
+            ...ai,
+            ...category,
+            requiredAttributes,
+            allAttributes,
+            specialRequirements: requiredAttributes.filter(a => a.tags && a.tags.synthetic),
+          };
+          result.meliPayload = buildPublicadorPayload(result);
+          jsonResp(res, 200, { ok: true, draft: result });
+          return;
+        }
+
+        if (action === 'recalcular_atributos') {
+          const draft = body.draft && typeof body.draft === 'object' ? body.draft : {};
+          const title = String(body.title || draft.titulo_meli || draft.scrapedTitle || '').trim();
+          if (!title) {
+            jsonResp(res, 400, { error: 'Falta titulo para consultar categoria y atributos.' });
+            return;
+          }
+          const category = await detectPublicadorCategory(title);
+          const allAttributes = addSyntheticSpecialRequirements(await getPublicadorCategoryAttributes(category.categoryId), category);
+          const requiredAttributes = allAttributes.filter(isPublicadorRequiredAttr);
+          const merged = {
+            ...draft,
+            titulo_meli: title,
+            ...category,
+            requiredAttributes,
+            allAttributes,
+            specialRequirements: requiredAttributes.filter(a => a.tags && a.tags.synthetic),
+          };
+          merged.meliPayload = buildPublicadorPayload(merged);
+          jsonResp(res, 200, {
+            ok: true,
+            draft: merged,
+            message: `Categoria y atributos recalculados desde Mercado Libre para: ${title}`,
+          });
+          return;
+        }
+
+        if (action === 'save_draft') {
+          const draft = body.draft && typeof body.draft === 'object' ? body.draft : null;
+          if (!draft) {
+            jsonResp(res, 400, { error: 'Falta draft' });
+            return;
+          }
+          const data = loadPublicadorDrafts();
+          const id = String(draft.id || (crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex')));
+          const clean = { ...draft, id, status: draft.status || 'draft', updatedAt: new Date().toISOString() };
+          clean.meliPayload = buildPublicadorPayload(clean);
+          const idx = data.drafts.findIndex(d => String(d.id) === id);
+          if (idx >= 0) data.drafts[idx] = clean;
+          else data.drafts.unshift(clean);
+          const saved = savePublicadorDrafts(data);
+          audit(session, 'publicador_save_draft', { id, title: clean.titulo_meli || clean.scrapedTitle || '' });
+          jsonResp(res, 200, { ok: true, draft: clean, total: saved.drafts.length });
+          return;
+        }
+
+        if (action === 'delete_draft') {
+          const id = String(body.id || '');
+          const data = loadPublicadorDrafts();
+          data.drafts = data.drafts.filter(d => String(d.id) !== id);
+          savePublicadorDrafts(data);
+          audit(session, 'publicador_delete_draft', { id });
+          jsonResp(res, 200, { ok: true });
+          return;
+        }
+
+        if (action === 'publicar') {
+          const draft = body.draft && typeof body.draft === 'object' ? body.draft : null;
+          if (!draft) {
+            jsonResp(res, 400, { error: 'Falta la publicación preparada para enviar a Mercado Libre.' });
+            return;
+          }
+
+          const accounts = (Array.isArray(draft.accounts) && draft.accounts.length ? draft.accounts : ['tlc'])
+            .map(normalizeCuentaKey)
+            .filter((v, i, arr) => ['tlc', 'topshop'].includes(v) && arr.indexOf(v) === i);
+
+          if (!accounts.length) {
+            jsonResp(res, 400, { error: 'Seleccioná al menos una cuenta para publicar: TLC o TOP SHOP.' });
+            return;
+          }
+
+          if (!String(draft.gtin || draft.GTIN || '').trim()) {
+            draft.noGtinGenericFallback = true;
+            draft.forceGenericNoGtin = true;
+          }
+          const payload = buildPublicadorPayload(draft);
+          const required = Array.isArray(draft.requiredAttributes) ? draft.requiredAttributes : [];
+          const payloadAttrs = Array.isArray(payload.attributes) ? payload.attributes : [];
+          const hasEmptyGtinReason = payloadAttrs.some(a => String(a.id).toUpperCase() === 'EMPTY_GTIN_REASON' && String(a.value_name || a.value_id || '').trim());
+          const noGtinGeneric = !String(draft.gtin || draft.GTIN || '').trim() && (draft.noGtinGenericFallback || draft.forceGenericNoGtin || true);
+          const missingAttrs = required
+            .filter(attr => {
+              const attrId = String(attr.id || '').toUpperCase();
+              if (noGtinGeneric && (attrId === 'GTIN' || attrId === 'EMPTY_GTIN_REASON')) return false;
+              if (attrId === 'GTIN' && hasEmptyGtinReason) return false;
+              return !payloadAttrs.some(a => String(a.id) === String(attr.id) && String(a.value_name || a.value_id || '').trim());
+            })
+            .map(attr => ({ id: attr.id, name: attr.name || attr.id }));
+
+          if (!payload.family_name || String(payload.family_name).trim().length < 8) {
+            jsonResp(res, 400, { error: 'El título/nombre de familia está incompleto. Revisalo antes de publicar.' });
+            return;
+          }
+          if (!payload.category_id || payload.category_id === 'MLU1574') {
+            jsonResp(res, 400, { error: 'La categoría no parece correcta. Usá Reanalizar producto o recalculá atributos antes de publicar.' });
+            return;
+          }
+          if (!payload.price || Number(payload.price) <= 0) {
+            jsonResp(res, 400, { error: 'El precio está incompleto o inválido.' });
+            return;
+          }
+          if (!Array.isArray(payload.pictures) || payload.pictures.length === 0) {
+            jsonResp(res, 400, { error: 'Seleccioná al menos una foto para publicar.' });
+            return;
+          }
+          if (missingAttrs.length) {
+            jsonResp(res, 400, {
+              error: `Faltan ${missingAttrs.length} atributo(s) obligatorio(s) de Mercado Libre. Completalos antes de publicar.`,
+              missingAttributes: missingAttrs,
+            });
+            return;
+          }
+
+          const results = [];
+          for (const cuenta of accounts) {
+            try {
+              const token = await getMeliAccessToken(cuenta);
+              const payloadForAccount = await preparePublicadorPicturesForAccount(payload, token);
+              const r = await fetch('https://api.mercadolibre.com/items', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json',
+                },
+                body: JSON.stringify(cleanMeliCreatePayload(payloadForAccount)),
+              });
+              const raw = await r.text();
+              let response = null;
+              try { response = raw ? JSON.parse(raw) : {}; } catch { response = { raw }; }
+              if (!r.ok || !response?.id) {
+                let finalStatus = r.status;
+                let causesRaw = Array.isArray(response?.cause) ? response.cause : [];
+                let causes = causesRaw.map(c => [c.code, c.message].filter(Boolean).join(': ')).filter(Boolean);
+
+                // Mercado Libre puede pedir GTIN o motivo de ausencia. El valor permitido puede variar por sitio/categoria,
+                // por eso probamos primero los valores que devolvio /categories/:id/attributes y luego opciones comunes.
+                let gtinRetrySuccess = false;
+                if (errorNeedsEmptyGtinReasonRetry(response)) {
+                  const genericPayload = forceGenericBrandNoGtinPayload(payloadForAccount);
+                  const genericRetry = await fetch('https://api.mercadolibre.com/items', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    body: JSON.stringify(genericPayload),
+                  });
+                  finalStatus = genericRetry.status;
+                  const genericRaw = await genericRetry.text();
+                  try { response = genericRaw ? JSON.parse(genericRaw) : {}; } catch { response = { raw: genericRaw }; }
+                  if (genericRetry.ok && response?.id) {
+                    const descriptionResult = await postMeliItemDescription(token, response.id, genericPayload?.description?.plain_text || payloadForAccount?.description?.plain_text || payload?.description?.plain_text);
+                    response._tlc_description_result = descriptionResult;
+                    results.push({ cuenta, ok: true, status: genericRetry.status, itemId: response?.id || null, permalink: response?.permalink || null, response, descriptionResult, retriedWithoutGtinAsGeneric: true, payload: genericPayload });
+                    gtinRetrySuccess = true;
+                  }
+
+                  const reasons = gtinRetrySuccess ? [] : getEmptyGtinReasonValuesFromDraft(draft);
+                  for (const reason of reasons) {
+                    const retryPayload = JSON.parse(JSON.stringify(payloadForAccount));
+                    setEmptyGtinReasonOnPayload(retryPayload, reason);
+                    const retry = await fetch('https://api.mercadolibre.com/items', {
+                      method: 'POST',
+                      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                      body: JSON.stringify(cleanMeliCreatePayload(retryPayload)),
+                    });
+                    finalStatus = retry.status;
+                    const retryRaw = await retry.text();
+                    try { response = retryRaw ? JSON.parse(retryRaw) : {}; } catch { response = { raw: retryRaw }; }
+                    if (retry.ok && response?.id) {
+                      const descriptionResult = await postMeliItemDescription(token, response.id, retryPayload?.description?.plain_text || payloadForAccount?.description?.plain_text || payload?.description?.plain_text);
+                      response._tlc_description_result = descriptionResult;
+                      results.push({ cuenta, ok: true, status: retry.status, itemId: response?.id || null, permalink: response?.permalink || null, response, descriptionResult, retriedWithEmptyGtinReason: reason, payload: cleanMeliCreatePayload(retryPayload) });
+                      gtinRetrySuccess = true;
+                      break;
+                    }
+                    causesRaw = Array.isArray(response?.cause) ? response.cause : [];
+                    causes = causesRaw.map(c => [c.code, c.message].filter(Boolean).join(': ')).filter(Boolean);
+                    if (!/EMPTY_GTIN_REASON|GTIN/i.test(JSON.stringify(response || {}))) break;
+                  }
+                }
+                if (gtinRetrySuccess) continue;
+
+                // v88: si MeLi exige grilla de talles, primero intentamos crear/reusar una grilla real
+                // y reintentar la publicacion en la categoria correcta. Si falla, probamos categoria alternativa.
+                if (errorNeedsFashionGridRetry(response)) {
+                  try {
+                    const grid = await createFashionSizeChartForPayload(cuenta, token, payloadForAccount, draft);
+                    if (grid && grid.payload) {
+                      const gridRetry = await fetch('https://api.mercadolibre.com/items', {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                        body: JSON.stringify(cleanMeliCreatePayload(grid.payload)),
+                      });
+                      finalStatus = gridRetry.status;
+                      const gridRaw = await gridRetry.text();
+                      try { response = gridRaw ? JSON.parse(gridRaw) : {}; } catch { response = { raw: gridRaw }; }
+                      if (gridRetry.ok && response?.id) {
+                        const descriptionResult = await postMeliItemDescription(token, response.id, grid.payload?.description?.plain_text || payloadForAccount?.description?.plain_text || payload?.description?.plain_text);
+                        response._tlc_description_result = descriptionResult;
+                        results.push({ cuenta, ok: true, status: gridRetry.status, itemId: response?.id || null, permalink: response?.permalink || null, response, descriptionResult, createdSizeGrid: true, chartId: grid.chart?.id || null, chartAttempt: grid.chartAttempt || '', payload: cleanMeliCreatePayload(grid.payload) });
+                        continue;
+                      }
+                      const gridCauses = Array.isArray(response?.cause) ? response.cause.map(c => [c.code, c.message].filter(Boolean).join(': ')).filter(Boolean) : [];
+                      // v93: no reintentamos con variations. En el modelo actual de User Products,
+                      // Mercado Libre rechaza variations cuando el item usa family_name.
+                      // La guía se asocia como atributos raíz SIZE_GRID_ID/SIZE_GRID_ROW_ID.
+                      causes.push('Intenté crear/reusar grilla de talles pero MeLi rechazó el reintento' + (gridCauses.length ? ': ' + gridCauses.join(' | ') : '.'));
+                    }
+                  } catch (gridErr) {
+                    causes.push('No se pudo crear/reusar grilla de talles automaticamente: ' + (gridErr.message || String(gridErr)));
+                  }
+                  const quick = await tryQuickPublishWithoutFashionGrid(cuenta, token, payloadForAccount, draft);
+                  if (quick && quick.ok) {
+                    results.push({
+                      cuenta,
+                      ok: true,
+                      status: quick.status,
+                      itemId: quick.response?.id || null,
+                      permalink: quick.response?.permalink || null,
+                      response: quick.response,
+                      quickFashionGridFallback: true,
+                      fallbackCategoryId: quick.alt?.categoryId || '',
+                      fallbackCategoryName: quick.alt?.categoryName || '',
+                      note: 'MeLi exigia grilla de talles. Se publico en categoria alternativa sin grilla para crear rapido y editar luego.',
+                      payload: quick.payload,
+                    });
+                    continue;
+                  }
+                  causes.push('MeLi exige grilla de talles. Tambien intente categoria alternativa sin grilla, pero no se pudo publicar automaticamente.' + (quick?.message ? ' ' + quick.message : ''));
+                  if (quick?.response) {
+                    const quickCauses = Array.isArray(quick.response?.cause) ? quick.response.cause.map(c => [c.code, c.message].filter(Boolean).join(': ')).filter(Boolean) : [];
+                    if (quickCauses.length) causes.push('Intento alternativo: ' + quickCauses.join(' | '));
+                  }
+                  if (quick?.alt?.categoryId) causes.push(`Categoria alternativa probada: ${quick.alt.categoryId} ${quick.alt.categoryName || ''}`.trim());
+                }
+
+                results.push({
+                  cuenta,
+                  ok: false,
+                  status: finalStatus,
+                  error: response?.message || response?.error || `Mercado Libre status ${finalStatus}`,
+                  detail: causes.join(' | '),
+                  response,
+                });
+              } else {
+                const descriptionResult = await postMeliItemDescription(token, response.id, payloadForAccount?.description?.plain_text || payload?.description?.plain_text);
+                response._tlc_description_result = descriptionResult;
+                results.push({
+                  cuenta,
+                  ok: true,
+                  status: r.status,
+                  itemId: response?.id || null,
+                  permalink: response?.permalink || null,
+                  response,
+                  descriptionResult,
+                });
+              }
+            } catch (err) {
+              results.push({
+                cuenta,
+                ok: false,
+                error: err.message || String(err),
+                detail: '',
+              });
+            }
+          }
+
+          const okCount = results.filter(r => r.ok).length;
+          const data = loadPublicadorDrafts();
+          const id = String(draft.id || (crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex')));
+          const clean = {
+            ...draft,
+            id,
+            status: okCount === accounts.length ? 'published' : (okCount ? 'partial_error' : 'publish_error'),
+            updatedAt: new Date().toISOString(),
+            publishedAt: okCount ? new Date().toISOString() : draft.publishedAt || null,
+            publishResults: results,
+            lastPublishPayload: payload,
+          };
+          clean.meliPayload = payload;
+          const idx = data.drafts.findIndex(d => String(d.id) === id);
+          if (idx >= 0) data.drafts[idx] = clean;
+          else data.drafts.unshift(clean);
+          savePublicadorDrafts(data);
+
+          try {
+            const pubCache = loadPublicationsCache();
+            pubCache.movements.push({
+              id: crypto.randomBytes(8).toString('hex'),
+              at: new Date().toISOString(),
+              type: 'publicador_publish',
+              sku: clean.model || '',
+              message: `Publicador IA: ${okCount}/${accounts.length} publicación(es) creadas.`,
+              user: session.username,
+            });
+            savePublicationsCache(pubCache);
+          } catch {}
+
+          audit(session, 'publicador_publish', { id, accounts, okCount, results: results.map(r => ({ cuenta: r.cuenta, ok: r.ok, itemId: r.itemId || null, error: r.error || null })) });
+
+          jsonResp(res, 200, {
+            ok: okCount > 0,
+            complete: okCount === accounts.length,
+            okCount,
+            total: accounts.length,
+            draft: clean,
+            results,
+            payload,
+          });
+          return;
+        }
+
+        jsonResp(res, 400, { error: 'Accion no soportada' });
+      } catch (e) {
+        console.error('Error publicador:', e.message);
+        jsonResp(res, 500, { error: e.message });
+      }
+    })();
     return;
   }
 
@@ -2495,20 +4128,22 @@ server.listen(PORT, '0.0.0.0', () => {
   loadInboxState(); // crea data/inbox-state.json si es primera vez
   loadAuditLog(); // crea data/audit-log.json si es primera vez
   loadPublicationsCache(); // crea data/publications-cache.json si es primera vez
-  loadPreciosDb(); // crea data/precios.json si es primera vez
+  loadPublicadorDrafts(); // crea data/publicador-borradores.json si es primera vez
   const autoMs = Number(process.env.PUBLICATIONS_LINKED_AUTO_SYNC_MS || 0);
   if (autoMs > 0) setInterval(runAutoLinkedSync, autoMs);
   console.log('');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('  TELOCONSIGO + TOP SHOP — Panel v38 (Publicaciones sin n8n)');
+  console.log('  TELOCONSIGO + TOP SHOP — Panel v68 PUBLICADOR SIN GTIN');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
   console.log(`  ✓ Servidor activo: http://localhost:${PORT}`);
   console.log(`  ✓ TELOCONSIGO:     ${WEBHOOKS.tlc}`);
   console.log(`  ✓ ADS TOP SHOP:    ${WEBHOOKS.topshop}`);
-  console.log('  ✓ INBOX:          Mercado Libre directo sin n8n');
+  console.log(`  ✓ INBOX TLC:       ${INBOX_WEBHOOKS.tlc}`);
+  console.log(`  ✓ INBOX TOP SHOP:  ${INBOX_WEBHOOKS.topshop}`);
   console.log(`  ✓ PUB TLC OAuth: ${process.env.MELI_REFRESH_TOKEN_TLC || process.env.MELI_ACCESS_TOKEN_TLC ? 'configurado' : 'FALTA MELI_REFRESH_TOKEN_TLC'}`);
   console.log(`  ✓ PUB TOP OAuth: ${process.env.MELI_REFRESH_TOKEN_TOPSHOP || process.env.MELI_ACCESS_TOKEN_TOPSHOP ? 'configurado' : 'FALTA MELI_REFRESH_TOKEN_TOPSHOP'}`);
+  console.log(`  ✓ OPENAI IA:      ${process.env.OPENAI_API_KEY || process.env.OPENAI_APIKEY ? 'configurada' : 'FALTA OPENAI_API_KEY'}`);
   console.log('');
   console.log('  Abrí http://localhost:8080 en Chrome');
   console.log('');
