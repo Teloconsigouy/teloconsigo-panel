@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════
 //  TELOCONSIGO + TOP SHOP — Panel de Control
-//  v53 LOCAL DEV REPARADO — base v50 persistencia + Publicador IA
+//  v104 REPARADO — base v50 Bandeja MeLi + Publicador v103
 // ═══════════════════════════════════════════════
 
 const http   = require('http');
@@ -2841,38 +2841,6 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Proxy local de imagenes para previsualizar fotos que bloquean hotlinking (MeLi/MakerWorld/proveedores).
-  // El payload sigue usando la URL original; esto solo sirve para mostrar la miniatura en el panel.
-  if (req.method === 'GET' && pathName === '/api/publicador-image') {
-    (async () => {
-      try {
-        const src = u.searchParams.get('url') || '';
-        if (!/^https?:\/\//i.test(src)) { res.writeHead(400); res.end('bad url'); return; }
-        const rr = await fetch(src, {
-          redirect: 'follow',
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125 Safari/537.36',
-            'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-            'Referer': src.includes('mlstatic.com') ? 'https://www.mercadolibre.com.uy/' : 'https://www.google.com/'
-          }
-        });
-        if (!rr.ok) { res.writeHead(rr.status); res.end('image fetch failed'); return; }
-        const ct = rr.headers.get('content-type') || 'image/jpeg';
-        const ab = Buffer.from(await rr.arrayBuffer());
-        res.writeHead(200, {
-          'Content-Type': ct,
-          'Cache-Control': 'public, max-age=86400',
-          'Access-Control-Allow-Origin': '*'
-        });
-        res.end(ab);
-      } catch (e) {
-        res.writeHead(500);
-        res.end(e.message || 'image proxy error');
-      }
-    })();
-    return;
-  }
-
   // LOGIN DESACTIVADO TEMPORALMENTE
   // Se mantiene compatibilidad de endpoints para que el frontend no rompa,
   // pero no se exige usuario ni contraseña hasta nuevo aviso.
@@ -3239,47 +3207,78 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // ── PROXY INBOX a n8n ────────────────────────
+  // ── BANDEJA MELI DIRECTA ────────────────────────
   // /api/inbox?cuenta=tlc&action=questions|messages_unread|claims|answer|messages_pack|send_message
   if (pathName === '/api/inbox') {
     (async () => {
       try {
         const cuenta = u.searchParams.get('cuenta') || 'tlc';
-        const webhook = INBOX_WEBHOOKS[cuenta] || INBOX_WEBHOOKS.tlc;
-        u.searchParams.delete('cuenta');
-        const target = `${webhook}?${u.searchParams.toString()}`;
-        console.log(`[MELI INBOX ${cuenta.toUpperCase()}] (${session.username}) ${req.method} → ${target.substring(0, 160)}...`);
+        const action = u.searchParams.get('action') || 'questions';
+        const sellerIds = { tlc: '221081730', topshop: '817844649' };
+        const sellerId = sellerIds[cuenta] || sellerIds.tlc;
+        const limit = u.searchParams.get('limit') || '50';
+        const offset = u.searchParams.get('offset') || '0';
+        const body = req.method === 'POST' ? await readBody(req) : {};
+        const token = await getMeliAccessToken(cuenta);
 
-        // IMPORTANTE:
-        // Los workflows de INBOX en n8n estan registrados como GET.
-        // El frontend puede llamar POST para acciones como responder preguntas o enviar mensajes,
-        // pero aca convertimos esos datos a querystring y llamamos al webhook por GET.
-        // Esto evita el error: "webhook is not registered for POST requests".
-        let targetFinal = target;
-        const opts = {
-          method: 'GET',
-          headers: { 'Accept': 'application/json' },
-        };
+        let method = 'GET';
+        let url = '';
+        let apiBody = null;
 
-        if (req.method === 'POST') {
-          const body = await readBody(req);
-          const params = new URLSearchParams(u.searchParams);
-          for (const [k, v] of Object.entries(body || {})) {
-            if (v !== undefined && v !== null) params.set(k, String(v));
-          }
-          targetFinal = `${webhook}?${params.toString()}`;
-          console.log(`[MELI INBOX ${cuenta.toUpperCase()}] POST convertido a GET -> ${targetFinal.substring(0, 180)}...`);
+        if (action === 'questions') {
+          const status = u.searchParams.get('status') || 'UNANSWERED';
+          url = `https://api.mercadolibre.com/questions/search?seller_id=${sellerId}&status=${encodeURIComponent(status)}&limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}&sort.field=date_created&sort.order=DESC`;
+        } else if (action === 'question_detail') {
+          const questionId = u.searchParams.get('question_id') || body.question_id;
+          url = `https://api.mercadolibre.com/questions/${encodeURIComponent(questionId)}`;
+        } else if (action === 'answer') {
+          method = 'POST';
+          url = 'https://api.mercadolibre.com/answers';
+          apiBody = { question_id: Number(body.question_id || u.searchParams.get('question_id')), text: body.text || u.searchParams.get('text') || '' };
+        } else if (action === 'messages_unread') {
+          url = `https://api.mercadolibre.com/messages/unread?role=seller&tag=post_sale&limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}`;
+        } else if (action === 'messages_pack') {
+          const packId = u.searchParams.get('pack_id') || body.pack_id;
+          const mark = String(u.searchParams.get('mark_as_read') || body.mark_as_read || 'false');
+          url = `https://api.mercadolibre.com/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}?tag=post_sale&mark_as_read=${encodeURIComponent(mark)}`;
+        } else if (action === 'send_message') {
+          method = 'POST';
+          const packId = body.pack_id || u.searchParams.get('pack_id');
+          const buyerId = String(body.buyer_id || u.searchParams.get('buyer_id') || '');
+          url = `https://api.mercadolibre.com/messages/packs/${encodeURIComponent(packId)}/sellers/${sellerId}?tag=post_sale`;
+          apiBody = { from: { user_id: String(sellerId) }, to: { user_id: buyerId }, text: body.text || u.searchParams.get('text') || '' };
+        } else if (action === 'claims') {
+          const status = u.searchParams.get('status') || 'opened';
+          url = `https://api.mercadolibre.com/post-purchase/v1/claims/search?stage=claim&status=${encodeURIComponent(status)}&limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}&sort=date_created,desc`;
+        } else if (action === 'claim_detail') {
+          const claimId = u.searchParams.get('claim_id') || body.claim_id;
+          url = `https://api.mercadolibre.com/post-purchase/v1/claims/${encodeURIComponent(claimId)}`;
+        } else if (action === 'claim_messages') {
+          const claimId = u.searchParams.get('claim_id') || body.claim_id;
+          url = `https://api.mercadolibre.com/post-purchase/v1/claims/${encodeURIComponent(claimId)}/messages`;
+        } else if (action === 'order_detail') {
+          const orderId = u.searchParams.get('order_id') || body.order_id;
+          url = `https://api.mercadolibre.com/orders/${encodeURIComponent(orderId)}`;
+        } else {
+          jsonResp(res, 400, { error: { message: `Accion desconocida: ${action}` } });
+          return;
         }
 
-        const r = await fetch(targetFinal, opts);
+        console.log(`[MELI INBOX DIRECT ${cuenta.toUpperCase()}] (${session.username}) ${method} ${action} -> ${url.substring(0, 180)}...`);
+        const opts = { method, headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } };
+        if (apiBody) {
+          opts.headers['Content-Type'] = 'application/json';
+          opts.body = JSON.stringify(apiBody);
+        }
+        const r = await fetch(url, opts);
         const text = await r.text();
         let data;
         try { data = JSON.parse(text); }
-        catch { data = { error: { message: 'n8n devolvió respuesta vacía o no-JSON', raw: text.slice(0, 400) } }; }
-        audit(session, 'meli_inbox_api', { cuenta, method: req.method, status: r.status, action: u.searchParams.get('action') || '', params: Object.fromEntries(u.searchParams.entries()) });
+        catch { data = { error: { message: 'Mercado Libre devolvio respuesta no JSON', raw: text.slice(0, 400) } }; }
+        audit(session, 'meli_inbox_direct_api', { cuenta, method, status: r.status, action, params: Object.fromEntries(u.searchParams.entries()) });
         jsonResp(res, r.status, data);
       } catch (e) {
-        console.error('Error proxy MeLi INBOX:', e.message);
+        console.error('Error MeLi INBOX directo:', e.message);
         jsonResp(res, 500, { error: { message: e.message } });
       }
     })();
@@ -3631,6 +3630,41 @@ const server = http.createServer((req, res) => {
       } catch (e) {
         console.error('Error publicaciones:', e.message);
         jsonResp(res, 500, { error: { message: e.message } });
+      }
+    })();
+    return;
+  }
+
+
+
+
+  // Proxy local de imagenes para previsualizar fotos que bloquean hotlinking (MeLi/MakerWorld/proveedores).
+  // El payload sigue usando la URL original; esto solo sirve para mostrar la miniatura en el panel.
+  if (req.method === 'GET' && pathName === '/api/publicador-image') {
+    (async () => {
+      try {
+        const src = u.searchParams.get('url') || '';
+        if (!/^https?:\/\//i.test(src)) { res.writeHead(400); res.end('bad url'); return; }
+        const rr = await fetch(src, {
+          redirect: 'follow',
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125 Safari/537.36',
+            'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+            'Referer': src.includes('mlstatic.com') ? 'https://www.mercadolibre.com.uy/' : 'https://www.google.com/'
+          }
+        });
+        if (!rr.ok) { res.writeHead(rr.status); res.end('image fetch failed'); return; }
+        const ct = rr.headers.get('content-type') || 'image/jpeg';
+        const ab = Buffer.from(await rr.arrayBuffer());
+        res.writeHead(200, {
+          'Content-Type': ct,
+          'Cache-Control': 'public, max-age=86400',
+          'Access-Control-Allow-Origin': '*'
+        });
+        res.end(ab);
+      } catch (e) {
+        res.writeHead(500);
+        res.end(e.message || 'image proxy error');
       }
     })();
     return;
@@ -4133,7 +4167,7 @@ server.listen(PORT, '0.0.0.0', () => {
   if (autoMs > 0) setInterval(runAutoLinkedSync, autoMs);
   console.log('');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('  TELOCONSIGO + TOP SHOP — Panel v68 PUBLICADOR SIN GTIN');
+  console.log('  TELOCONSIGO + TOP SHOP — Panel v104 REPARADO BANDEJA + PUBLICADOR');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
   console.log(`  ✓ Servidor activo: http://localhost:${PORT}`);
@@ -4143,7 +4177,6 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`  ✓ INBOX TOP SHOP:  ${INBOX_WEBHOOKS.topshop}`);
   console.log(`  ✓ PUB TLC OAuth: ${process.env.MELI_REFRESH_TOKEN_TLC || process.env.MELI_ACCESS_TOKEN_TLC ? 'configurado' : 'FALTA MELI_REFRESH_TOKEN_TLC'}`);
   console.log(`  ✓ PUB TOP OAuth: ${process.env.MELI_REFRESH_TOKEN_TOPSHOP || process.env.MELI_ACCESS_TOKEN_TOPSHOP ? 'configurado' : 'FALTA MELI_REFRESH_TOKEN_TOPSHOP'}`);
-  console.log(`  ✓ OPENAI IA:      ${process.env.OPENAI_API_KEY || process.env.OPENAI_APIKEY ? 'configurada' : 'FALTA OPENAI_API_KEY'}`);
   console.log('');
   console.log('  Abrí http://localhost:8080 en Chrome');
   console.log('');
