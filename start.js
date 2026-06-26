@@ -23,11 +23,15 @@ const STATE_FILE = path.join(DATA_DIR, 'inbox-state.json');
 const AUDIT_FILE = path.join(DATA_DIR, 'audit-log.json');
 const PUBLICATIONS_CACHE_FILE = path.join(DATA_DIR, 'publications-cache.json');
 const PUBLICADOR_DRAFTS_FILE = path.join(DATA_DIR, 'publicador-borradores.json');
+const DEFAULT_DATA_DIR = path.join(__dirname, 'data');
+const PRECIOS_FILE = path.join(DATA_DIR, 'precios.json');
+const BUNDLED_PRECIOS_FILE = path.join(DEFAULT_DATA_DIR, 'precios.json');
+const ROOT_PRECIOS_FILE = path.join(__dirname, 'precios.json');
 
 const MODULES = {
   meliads: { label: 'MeLi ADS', pages: ['/meliads.html'], api: ['/api/meli'] },
   inbox: { label: 'Bandeja MeLi', pages: ['/inbox.html'], api: ['/api/inbox', '/api/state'] },
-  prices: { label: 'Lista de Precios', pages: ['/precios.html'], api: [] },
+  prices: { label: 'Lista de Precios', pages: ['/precios.html'], api: ['/api/precios'] },
   publications: { label: 'Publicaciones', pages: ['/publicaciones.html'], api: ['/api/publications'] },
   publicador: { label: 'Creador de Publicaciones', pages: ['/publicador.html'], api: ['/api/publicador'] },
   analytics: { label: 'Analytics General', pages: ['/analytics.html'], api: [] },
@@ -104,6 +108,229 @@ function saveAuditLog(data) {
   const actions = (data.actions || []).slice(-1000);
   fs.writeFileSync(AUDIT_FILE, JSON.stringify({ actions }, null, 2));
 }
+
+
+// ═══════════════════════════════════════════════
+//  LISTA DE PRECIOS — Base local JSON sin Drive
+// ═══════════════════════════════════════════════
+const PRECIOS_VAT_RATE = 0.22;
+
+function defaultPreciosDb() {
+  return { version: 1, products: [], updatedAt: new Date().toISOString() };
+}
+function loadPreciosDb() {
+  ensureDataDir();
+  if (!fs.existsSync(PRECIOS_FILE)) {
+    // Railway/local: si DATA_DIR apunta a un Volume vacio, sembramos la base inicial.
+    // Primero intenta /data/precios.json del repo y luego precios.json en la raiz.
+    // No pisa cambios si PRECIOS_FILE ya existe.
+    if (BUNDLED_PRECIOS_FILE !== PRECIOS_FILE && fs.existsSync(BUNDLED_PRECIOS_FILE)) {
+      fs.copyFileSync(BUNDLED_PRECIOS_FILE, PRECIOS_FILE);
+    } else if (ROOT_PRECIOS_FILE !== PRECIOS_FILE && fs.existsSync(ROOT_PRECIOS_FILE)) {
+      fs.copyFileSync(ROOT_PRECIOS_FILE, PRECIOS_FILE);
+    } else {
+      const initial = defaultPreciosDb();
+      fs.writeFileSync(PRECIOS_FILE, JSON.stringify(initial, null, 2));
+      return initial;
+    }
+  }
+  try {
+    const data = JSON.parse(fs.readFileSync(PRECIOS_FILE, 'utf8'));
+    return { ...defaultPreciosDb(), ...data, products: Array.isArray(data.products) ? data.products : [] };
+  } catch (e) {
+    try { fs.copyFileSync(PRECIOS_FILE, PRECIOS_FILE + '.broken-' + Date.now()); } catch {}
+    const initial = defaultPreciosDb();
+    fs.writeFileSync(PRECIOS_FILE, JSON.stringify(initial, null, 2));
+    return initial;
+  }
+}
+function savePreciosDb(db) {
+  ensureDataDir();
+  const products = (db.products || []).map((p, i) => ({ ...p, rowNumber: i + 2 }));
+  const clean = { ...db, products, updatedAt: new Date().toISOString() };
+  fs.writeFileSync(PRECIOS_FILE, JSON.stringify(clean, null, 2));
+  return clean;
+}
+function preciosParseNumber(value) {
+  if (value === null || value === undefined || value === '') return 0;
+  if (typeof value === 'number') return value;
+  let str = String(value).trim();
+  if (str.includes(',') && str.includes('.')) str = str.replace(/\./g, '').replace(',', '.');
+  else if (str.includes(',')) str = str.replace(',', '.');
+  str = str.replace(/[^\d.-]/g, '');
+  const num = parseFloat(str);
+  return Number.isNaN(num) ? 0 : num;
+}
+function preciosRound2(num) { return Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100; }
+function preciosText(v) { return String(v || '').trim(); }
+function preciosModo(v) { const m = String(v || '').trim().toLowerCase(); return (m === 'pvp_descuento' || m === 'pvp proveedor + descuento') ? 'pvp_descuento' : 'costo_directo'; }
+function preciosMoneda(v) { const m = String(v || '').trim().toUpperCase(); return (m === 'USD' || m === 'UYU') ? m : m; }
+function preciosVatFromGross(gross) { const g = preciosParseNumber(gross); return preciosRound2(g - (g / (1 + PRECIOS_VAT_RATE))); }
+function preciosComision(pvp, pct) { return preciosRound2(preciosParseNumber(pvp) * (preciosParseNumber(pct) / 100)); }
+function preciosIvaDgi(costo, pvp, pct) { return preciosRound2(preciosVatFromGross(pvp) - preciosVatFromGross(costo) - preciosVatFromGross(preciosComision(pvp, pct))); }
+function preciosGain(costo, pvp, pct, fijo) { return preciosRound2((preciosParseNumber(pvp) - preciosParseNumber(costo)) - preciosIvaDgi(costo, pvp, pct) - preciosComision(pvp, pct) - preciosParseNumber(fijo)); }
+function preciosMargin(costo, pvp, pct, fijo) { const venta = preciosParseNumber(pvp); return venta <= 0 ? 0 : preciosRound2((preciosGain(costo, venta, pct, fijo) / venta) * 100); }
+function preciosMetrics(costo, pvp, pct, fijo, acos, promo) {
+  const c = preciosRound2(costo), venta = preciosRound2(pvp), cm = preciosParseNumber(pct), f = preciosParseNumber(fijo), a = preciosParseNumber(acos), pr = preciosParseNumber(promo);
+  const descuentoPromocionImporte = preciosRound2(venta * (pr / 100));
+  const ventaFinal = preciosRound2(venta - descuentoPromocionImporte);
+  const costoPublicidadAcos = preciosRound2(ventaFinal * (a / 100));
+  const comisionMlImporteFinal = preciosComision(ventaFinal, cm);
+  const ivaDgiFinal = preciosIvaDgi(c, ventaFinal, cm);
+  const gananciaAntesPublicidad = preciosRound2((ventaFinal - c) - ivaDgiFinal - comisionMlImporteFinal - f);
+  const gananciaFinal = preciosRound2(gananciaAntesPublicidad - costoPublicidadAcos);
+  const margenFinal = ventaFinal > 0 ? preciosRound2((gananciaFinal / ventaFinal) * 100) : 0;
+  const acosMaximoRentable = ventaFinal > 0 ? preciosRound2(Math.max(0, gananciaAntesPublicidad / ventaFinal * 100)) : 0;
+  const costoPublicidadMaximo = preciosRound2(Math.max(0, gananciaAntesPublicidad));
+  return {
+    precioProveedor: c, pvp: venta, comisionMlPct: cm, comisionMlImporte: preciosComision(venta, cm), ivaComisionMl: preciosVatFromGross(preciosComision(venta, cm)), envioCostoFijo: f,
+    ivaCompra: preciosVatFromGross(c), ivaVenta: preciosVatFromGross(venta), ivaDgi: preciosIvaDgi(c, venta, cm), gananciaReal: preciosGain(c, venta, cm, f), margenReal: preciosMargin(c, venta, cm, f),
+    acos: a, descuentoPromocion: pr, descuentoPromocionImporte, ventaFinal, costoPublicidadAcos, gananciaAntesPublicidad, acosMaximoRentable, costoPublicidadMaximo, comisionMlImporteFinal, ivaComisionMlFinal: preciosVatFromGross(comisionMlImporteFinal), ivaVentaFinal: preciosVatFromGross(ventaFinal), ivaDgiFinal, gananciaFinal, margenFinal
+  };
+}
+function preciosNormalizeInput(data) {
+  const modoCosto = preciosModo(data.modoCosto);
+  const pvpProveedor = preciosParseNumber(data.pvpProveedor);
+  const descuentoProveedorPct = preciosParseNumber(data.descuentoProveedorPct);
+  const precioProveedorIngresado = preciosParseNumber(data.precioProveedor);
+  const pvpIngresado = preciosParseNumber(data.pvp);
+  const precioProveedor = modoCosto === 'pvp_descuento' ? preciosRound2(pvpProveedor * (1 - descuentoProveedorPct / 100)) : preciosRound2(precioProveedorIngresado);
+  const pvp = modoCosto === 'pvp_descuento' ? preciosRound2(pvpProveedor) : preciosRound2(pvpIngresado);
+  return {
+    originalRowNumber: preciosParseNumber(data.originalRowNumber), articulo: preciosText(data.articulo), codigoTLC: preciosText(data.codigoTLC), proveedor: preciosText(data.proveedor), codigoProveedor: preciosText(data.codigoProveedor), codigoFabrica: preciosText(data.codigoFabrica), moneda: preciosMoneda(data.moneda), modoCosto,
+    precioProveedor, pvpProveedor, descuentoProveedorPct, pvp, comisionMlPct: preciosParseNumber(data.comisionMlPct), envioCostoFijo: preciosParseNumber(data.envioCostoFijo), acos: preciosParseNumber(data.acos), descuentoPromocion: preciosParseNumber(data.descuentoPromocion)
+  };
+}
+function preciosIncomplete(data) {
+  const fields = [];
+  if (!preciosText(data.articulo)) fields.push('Artículo');
+  if (!preciosText(data.codigoTLC)) fields.push('Código TLC');
+  if (!preciosText(data.codigoProveedor)) fields.push('Código Proveedor');
+  if (!preciosText(data.proveedor)) fields.push('Proveedor');
+  if (!preciosText(data.moneda)) fields.push('Moneda');
+  if (preciosParseNumber(data.precioProveedor) <= 0) fields.push('Precio Proveedor');
+  if (preciosParseNumber(data.pvp) <= 0) fields.push('PVP');
+  if (preciosModo(data.modoCosto) === 'pvp_descuento' && preciosParseNumber(data.pvpProveedor) <= 0) fields.push('PVP Proveedor');
+  return fields;
+}
+function preciosValidate(data, opts = {}) {
+  if (opts.isUpdate && !data.originalRowNumber) throw new Error('Falta la fila original del producto.');
+  if (!opts.allowIncompleteCore) {
+    if (!data.articulo) throw new Error('El Artículo es obligatorio.');
+    if (!data.codigoTLC) throw new Error('El Código TLC es obligatorio.');
+  }
+  if (!data.moneda) throw new Error('La Moneda es obligatoria.');
+  if (data.moneda !== 'USD' && data.moneda !== 'UYU') throw new Error('La Moneda debe ser USD o UYU.');
+  if (data.modoCosto === 'pvp_descuento') {
+    if (data.pvpProveedor <= 0) throw new Error('En modo PVP proveedor + descuento, el PVP Proveedor debe ser mayor a 0.');
+    if (data.descuentoProveedorPct < 0 || data.descuentoProveedorPct > 100) throw new Error('El Descuento Proveedor % debe estar entre 0 y 100.');
+  } else {
+    if (data.precioProveedor < 0) throw new Error('El Precio Proveedor no puede ser negativo.');
+    if (data.pvp <= 0) throw new Error('El PVP debe ser mayor a 0.');
+  }
+  if (data.comisionMlPct < 0) throw new Error('La Comisión ML % no puede ser negativa.');
+  if (data.envioCostoFijo < 0) throw new Error('El Envío / Costo fijo no puede ser negativo.');
+  if (data.acos < 0) throw new Error('El ACOS % no puede ser negativo.');
+  if (data.descuentoPromocion < 0 || data.descuentoPromocion > 100) throw new Error('El Descuento Promoción % debe estar entre 0 y 100.');
+}
+function preciosResponse(data, extra = {}) {
+  const base = { success: true, articulo: data.articulo, codigoTLC: data.codigoTLC, proveedor: data.proveedor, codigoProveedor: data.codigoProveedor, codigoFabrica: data.codigoFabrica, moneda: data.moneda, modoCosto: data.modoCosto, pvpProveedor: data.pvpProveedor, descuentoProveedorPct: data.descuentoProveedorPct, ...preciosMetrics(data.precioProveedor, data.pvp, data.comisionMlPct, data.envioCostoFijo, data.acos, data.descuentoPromocion) };
+  const incompleteFields = preciosIncomplete(base);
+  return { ...base, incompleto: incompleteFields.length > 0, incompleteFields, ...extra };
+}
+function preciosFindIndex(db, idOrRow) {
+  const n = preciosParseNumber(idOrRow);
+  if (n >= 2 && n - 2 < db.products.length) return n - 2;
+  return db.products.findIndex(p => String(p.id) === String(idOrRow) || String(p.codigoTLC) === String(idOrRow));
+}
+function preciosEnsureUnique(db, data, excludedIndex = -1) {
+  const proveedor = preciosText(data.proveedor).toLowerCase();
+  const codigo = preciosText(data.codigoTLC);
+  if (!codigo) return;
+  const found = db.products.findIndex((p, i) => i !== excludedIndex && preciosText(p.codigoTLC) === codigo && preciosText(p.proveedor).toLowerCase() === proveedor);
+  if (found >= 0) throw new Error('Ya existe un producto con ese Código TLC para ese mismo proveedor.');
+}
+async function handlePreciosApi(req, res, pathName, session) {
+  try {
+    const db = loadPreciosDb();
+    const parts = pathName.split('/').filter(Boolean);
+    const id = parts[2] || '';
+
+    if (req.method === 'GET' && pathName === '/api/precios') {
+      jsonResp(res, 200, { ok: true, products: db.products.map((p, i) => ({ ...p, rowNumber: i + 2 })) });
+      return;
+    }
+    if (req.method === 'POST' && pathName === '/api/precios/preview') {
+      const body = await readBody(req);
+      const normalized = preciosNormalizeInput(body);
+      preciosValidate(normalized, { allowIncompleteCore: true });
+      jsonResp(res, 200, preciosResponse(normalized));
+      return;
+    }
+    if (req.method === 'POST' && pathName === '/api/precios/target-price') {
+      const body = await readBody(req);
+      const normalized = preciosNormalizeInput(body);
+      preciosValidate(normalized, { allowIncompleteCore: true });
+      const targetMarginPct = preciosParseNumber(body.targetMarginPct);
+      if (targetMarginPct <= -99) throw new Error('El margen objetivo debe ser mayor a -99%.');
+      if (targetMarginPct >= 95) throw new Error('El margen objetivo debe ser menor a 95%.');
+      let low = Math.max(0.01, normalized.precioProveedor + normalized.envioCostoFijo);
+      let high = Math.max(low * 2, 1);
+      let guard = 0;
+      while (preciosMetrics(normalized.precioProveedor, high, normalized.comisionMlPct, normalized.envioCostoFijo, normalized.acos, normalized.descuentoPromocion).margenFinal < targetMarginPct && guard < 60) { high *= 2; guard++; }
+      if (guard >= 60) throw new Error('No se pudo calcular un precio para ese margen objetivo.');
+      for (let i = 0; i < 60; i++) {
+        const mid = (low + high) / 2;
+        const margin = preciosMetrics(normalized.precioProveedor, mid, normalized.comisionMlPct, normalized.envioCostoFijo, normalized.acos, normalized.descuentoPromocion).margenFinal;
+        if (margin < targetMarginPct) low = mid; else high = mid;
+      }
+      const suggestedPvp = preciosRound2(high);
+      const response = preciosResponse({ ...normalized, pvp: suggestedPvp });
+      jsonResp(res, 200, { ...response, targetMarginPct: preciosRound2(targetMarginPct), suggestedPvp, achievedMarginPct: preciosMetrics(normalized.precioProveedor, suggestedPvp, normalized.comisionMlPct, normalized.envioCostoFijo, normalized.acos, normalized.descuentoPromocion).margenFinal });
+      return;
+    }
+    if (req.method === 'POST' && pathName === '/api/precios') {
+      const body = await readBody(req);
+      const normalized = preciosNormalizeInput(body);
+      preciosValidate(normalized);
+      preciosEnsureUnique(db, normalized);
+      const item = preciosResponse(normalized, { id: crypto.randomBytes(8).toString('hex'), rowNumber: db.products.length + 2 });
+      db.products.push(item);
+      savePreciosDb(db);
+      audit(session, 'precios_create', { codigoTLC: item.codigoTLC, articulo: item.articulo });
+      jsonResp(res, 200, item);
+      return;
+    }
+    if (req.method === 'PUT' && parts[0] === 'api' && parts[1] === 'precios' && id) {
+      const body = await readBody(req);
+      const idx = preciosFindIndex(db, id);
+      if (idx < 0) throw new Error('No se encontró el producto.');
+      const normalized = preciosNormalizeInput({ ...body, originalRowNumber: idx + 2 });
+      preciosValidate(normalized, { isUpdate: true });
+      preciosEnsureUnique(db, normalized, idx);
+      const old = db.products[idx] || {};
+      const item = preciosResponse(normalized, { id: old.id || crypto.randomBytes(8).toString('hex'), rowNumber: idx + 2, originalRowNumber: idx + 2 });
+      db.products[idx] = item;
+      savePreciosDb(db);
+      audit(session, 'precios_update', { codigoTLC: item.codigoTLC, articulo: item.articulo });
+      jsonResp(res, 200, item);
+      return;
+    }
+    if (req.method === 'DELETE' && parts[0] === 'api' && parts[1] === 'precios' && id) {
+      const idx = preciosFindIndex(db, id);
+      if (idx < 0) throw new Error('No se encontró el producto.');
+      const removed = db.products.splice(idx, 1)[0];
+      savePreciosDb(db);
+      audit(session, 'precios_delete', { codigoTLC: removed.codigoTLC, articulo: removed.articulo });
+      jsonResp(res, 200, { success: true });
+      return;
+    }
+    jsonResp(res, 404, { error: 'Ruta de precios no encontrada' });
+  } catch (e) {
+    jsonResp(res, 500, { error: { message: e.message } });
+  }
+}
+
 
 
 function defaultPublicationsCache() {
@@ -2791,7 +3018,7 @@ function jsonResp(res, status, obj, extraHeaders = {}) {
   res.writeHead(status, {
     'Content-Type':                'application/json; charset=utf-8',
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods':'GET, POST, OPTIONS',
+    'Access-Control-Allow-Methods':'GET, POST, PUT, DELETE, OPTIONS',
     'Access-Control-Allow-Headers':'*',
     ...extraHeaders,
   });
@@ -2818,7 +3045,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'OPTIONS') {
     res.writeHead(204, {
       'Access-Control-Allow-Origin':  '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': '*',
     });
     res.end();
@@ -2937,6 +3164,13 @@ const server = http.createServer((req, res) => {
       return;
     }
     jsonResp(res, 403, { error: 'No tenés permiso para acceder a este módulo' });
+    return;
+  }
+
+
+  // ── LISTA DE PRECIOS ──────────────────────────────────
+  if (pathName === '/api/precios' || pathName.startsWith('/api/precios/')) {
+    handlePreciosApi(req, res, pathName, session);
     return;
   }
 
