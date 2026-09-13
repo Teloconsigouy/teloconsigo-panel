@@ -1,0 +1,4318 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lista de Precios — TELOCONSIGO</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f3f4f6;
+      margin: 0;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+
+    .container {
+      padding: 20px 20px 32px 20px;
+      position: relative;
+      height: 100vh;
+      box-sizing: border-box;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .topbar-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .btn-primary { background: #111827; color: white; }
+    .btn-secondary { background: #e5e7eb; color: #111827; }
+    .btn-success { background: #15803d; color: white; }
+    .btn-danger { background: #b91c1c; color: white; }
+    .btn-sim { background: #2563eb; color: white; }
+
+    button {
+      padding: 10px 14px;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    .filters-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .filters-panel {
+      background: white;
+      border-radius: 14px;
+      padding: 14px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+      display: none;
+    }
+
+    .filters-panel.open {
+      display: block;
+    }
+
+    .search-box {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 10px;
+      align-items: end;
+    }
+
+    .search-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    input, select {
+      padding: 10px;
+      border-radius: 10px;
+      border: 1px solid #ccc;
+      width: 100%;
+      box-sizing: border-box;
+      background: white;
+    }
+
+    .counter-bar {
+      font-size: 14px;
+      color: #374151;
+      font-weight: 600;
+    }
+
+    .counter-bar strong {
+      color: #111827;
+    }
+
+    .table-wrap {
+      width: 100%;
+      flex: 1;
+      min-height: 0;
+      overflow-x: auto;
+      overflow-y: auto;
+      position: relative;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+      padding-bottom: 18px;
+      box-sizing: border-box;
+    }
+
+    table {
+      width: 100%;
+      min-width: 1180px;
+      background: white;
+      border-collapse: separate;
+      border-spacing: 0;
+    }
+
+    thead th {
+      position: sticky;
+      top: 0;
+      z-index: 999;
+      background: #0f172a;
+      color: white;
+      padding: 10px;
+      text-align: left;
+      white-space: nowrap;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    }
+
+    td {
+      padding: 10px;
+      border-bottom: 1px solid #eee;
+      white-space: nowrap;
+      background: white;
+    }
+
+    tbody tr:hover td {
+      background: #f9fafb;
+    }
+
+    .row-incomplete td {
+      background: #fff7ed;
+    }
+
+    .row-incomplete:hover td {
+      background: #ffedd5;
+    }
+
+    .margin-green { color: #15803d; font-weight: bold; }
+    .margin-yellow { color: #ca8a04; font-weight: bold; }
+    .margin-orange { color: #ea580c; font-weight: bold; }
+    .margin-red { color: #b91c1c; font-weight: bold; }
+
+    .badge-incomplete {
+      display: inline-block;
+      margin-left: 8px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: bold;
+      background: #fed7aa;
+      color: #9a3412;
+      vertical-align: middle;
+    }
+
+    .modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.4);
+      display: none;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 20px;
+      overflow-y: auto;
+      z-index: 1000;
+    }
+
+    .modal-content {
+      background: white;
+      padding: 20px;
+      border-radius: 16px;
+      width: 100%;
+      max-width: 650px;
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+    }
+
+    .form-group {
+      margin-bottom: 12px;
+    }
+
+    .readonly-box {
+      background: #f3f4f6;
+      padding: 10px;
+      border-radius: 10px;
+    }
+
+    .collapsible-header {
+      padding: 10px;
+      background: #f3f4f6;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: bold;
+      user-select: none;
+    }
+
+    .collapsible-content {
+      display: none;
+      margin-top: 10px;
+    }
+
+    .collapsible-open .collapsible-content {
+      display: block;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .actions-right {
+      display: flex;
+      gap: 10px;
+      margin-left: auto;
+    }
+
+    .required-note {
+      margin-top: 10px;
+      font-size: 13px;
+      color: #555;
+    }
+
+    .message {
+      margin-top: 10px;
+      font-size: 14px;
+    }
+
+    .success { color: #15803d; }
+    .error { color: #b91c1c; }
+
+    .sim-result {
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 14px;
+      background: #fafafa;
+      margin-top: 14px;
+    }
+
+    .sim-title {
+      font-weight: bold;
+      margin-bottom: 10px;
+    }
+
+    .sim-subtitle {
+      font-weight: bold;
+      margin: 16px 0 10px 0;
+      color: #111827;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+
+/* Estilo TLC Panel Control */
+:root{
+  --bg:#F0F4F0; --surface:#FFFFFF; --border:#D4DDD4; --border2:#B8C8B8;
+  --green:#1A5C1A; --green-mid:#2E7D2E; --green-light:rgba(26,92,26,0.08);
+  --green-border:rgba(26,92,26,0.25); --text:#0E1A0E; --muted:#5C7060; --muted2:#9CB09C;
+  --red:#DC2626; --blue:#2563eb;
+}
+*,*::before,*::after{box-sizing:border-box;}
+html,body{background:var(--bg);color:var(--text);font-family:'Inter','Segoe UI',Arial,sans-serif;min-height:100vh;}
+body{overflow:hidden;}
+.app-header{background:var(--surface);border-bottom:1px solid var(--border);padding:0 48px;height:64px;display:flex;align-items:center;justify-content:space-between;}
+.logo-text{font-family:'Syne','Inter',sans-serif;font-weight:800;font-size:1.4rem;letter-spacing:-0.04em;color:var(--green);text-transform:uppercase;}
+.header-right{display:flex;align-items:center;gap:18px;font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;}
+.status-dot{display:flex;align-items:center;gap:6px;}
+.dot{width:7px;height:7px;border-radius:50%;background:#16A34A;box-shadow:0 0 0 4px rgba(22,163,74,0.10);}
+.back-home{padding:8px 12px;border:1px solid var(--green-border);background:var(--green-light);border-radius:5px;color:var(--green);cursor:pointer;font-family:'Inter',sans-serif;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;text-decoration:none;display:inline-flex;align-items:center;gap:6px;}
+.back-home:hover{background:var(--green);color:#fff;}
+.page-title-bar{padding:28px 48px 22px;display:flex;align-items:flex-end;justify-content:space-between;gap:16px;border-bottom:1px solid var(--border);background:var(--surface);}
+.page-title{font-family:'Syne','Inter',sans-serif;font-size:1.55rem;font-weight:800;letter-spacing:-0.03em;color:var(--text);}
+.page-title-sub{font-size:0.85rem;color:var(--muted);margin-top:4px;}
+.container{height:calc(100vh - 143px);padding:24px 48px 34px;background:var(--bg);gap:14px;}
+.topbar{background:transparent;border:0;padding:0;}
+.topbar h2{font-family:'Syne','Inter',sans-serif;font-size:1.05rem;letter-spacing:-0.02em;color:var(--text);}
+.topbar-actions{gap:8px;}
+button{border-radius:5px;font-family:'Inter','Segoe UI',Arial,sans-serif;font-size:0.75rem;letter-spacing:0.02em;transition:all .18s;}
+button:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(14,26,14,0.08);}
+.btn-primary{background:var(--green);color:white;}
+.btn-secondary{background:var(--surface);color:var(--muted);border:1px solid var(--border);}
+.btn-success{background:var(--green-mid);color:white;}
+.btn-danger{background:var(--red);color:white;}
+.btn-sim{background:#0f172a;color:white;}
+.filters-panel,.table-wrap,.modal-content{background:var(--surface);border:1px solid var(--border);border-radius:6px;box-shadow:0 8px 24px rgba(27,27,47,0.06);}
+.filters-panel{padding:16px;}
+input,select{border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:'Inter','Segoe UI',Arial,sans-serif;}
+input:focus,select:focus{outline:none;border-color:var(--green);box-shadow:0 0 0 3px rgba(26,92,26,0.10);}
+.counter-bar{font-size:0.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;}
+.counter-bar strong{color:var(--green);}
+table{min-width:1180px;}
+thead th{background:var(--green);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;padding:12px 10px;}
+td{font-size:0.86rem;color:var(--text);border-bottom:1px solid var(--border);}
+tbody tr:hover td{background:var(--green-light);}
+.readonly-box,.collapsible-header{background:#F6F8F6;border:1px solid var(--border);border-radius:5px;}
+.modal{z-index:2000;}
+.modal-content h3{font-family:'Syne','Inter',sans-serif;color:var(--text);}
+.form-group label{display:block;margin-bottom:6px;font-size:0.76rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:0.06em;}
+.sim-result{border:1px solid var(--border);background:#FAFCFA;border-radius:6px;}
+@media(max-width:760px){.app-header,.page-title-bar{padding-left:18px;padding-right:18px}.container{padding:18px;height:calc(100vh - 143px)}.header-right{display:none}.page-title-bar{align-items:flex-start;flex-direction:column}.back-home{width:100%;justify-content:center}}
+
+
+/* Corrección visual: unifica Lista de Precios con Bandeja MeLi / Publicaciones */
+body { background: var(--bg) !important; font-family: 'Inter','Segoe UI',Arial,sans-serif !important; }
+.app-header{height:64px;padding:0 48px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+.logo-text{font-family:'Syne','Inter',sans-serif !important;font-size:1.4rem !important;font-weight:800;letter-spacing:-0.04em;text-transform:uppercase;color:var(--green);}
+.header-right{display:flex;align-items:center;gap:20px;font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;}
+.header-right a{color:var(--muted);text-decoration:none;}
+.header-right a:hover{color:var(--green);}
+#clock{font-weight:600;color:var(--green);}
+.page-title-bar{padding:24px 48px;display:flex;align-items:center;justify-content:flex-start;gap:16px;border-bottom:1px solid var(--border);background:var(--surface);}
+.page-title{font-family:'Inter','Segoe UI',Arial,sans-serif !important;font-size:1.4rem;font-weight:700;letter-spacing:-0.03em;color:var(--text);}
+.page-title-sub{font-size:0.85rem;color:var(--muted);margin-top:0;}
+.back-link{color:var(--muted);text-decoration:none;font-size:0.85rem;margin-right:8px;}
+.back-link:hover{color:var(--green);}
+.container{height:calc(100vh - 194px);padding:18px 48px 24px;background:var(--bg);gap:12px;}
+.topbar-only-actions{justify-content:space-between;}
+.topbar h2{display:none;}
+button{border-radius:5px !important;font-family:'Inter','Segoe UI',Arial,sans-serif !important;font-weight:600;font-size:0.78rem;}
+button:hover{transform:none;box-shadow:none;}
+.btn-primary,.btn-success{background:var(--green) !important;color:#fff !important;}
+.btn-primary:hover,.btn-success:hover{background:var(--green-mid) !important;}
+.btn-sim{background:#0f172a !important;color:#fff !important;}
+.btn-secondary{background:var(--surface) !important;color:var(--text) !important;border:1px solid var(--border) !important;}
+.btn-secondary:hover{border-color:var(--border2) !important;background:var(--bg) !important;}
+.filters-panel,.table-wrap,.modal-content{border-radius:5px;box-shadow:none;border:1px solid var(--border);}
+.counter-bar{font-size:0.72rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);}
+thead th{background:var(--green) !important;box-shadow:none;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;}
+td{font-size:0.84rem;}
+footer{background:var(--surface);border-top:1px solid var(--border);padding:18px 48px;display:flex;justify-content:space-between;font-size:0.65rem;color:var(--muted2);text-transform:uppercase;letter-spacing:0.1em;}
+html, body, body *:not(.logo-text):not(.logo-text *) { font-family: 'Inter','Segoe UI',Arial,sans-serif !important; }
+.logo-text { font-family: 'Syne','Inter',sans-serif !important; }
+@media(max-width:760px){.app-header,.page-title-bar,footer{padding-left:18px;padding-right:18px}.container{padding:18px;height:calc(100vh - 194px)}.header-right{display:none}.page-title-bar{align-items:flex-start;flex-direction:column}}
+
+
+/* Simulador ancho y claro */
+#simulatorModal{
+  align-items:flex-start;
+  padding:28px;
+}
+#simulatorModal .simulator-wide-content{
+  width:95vw;
+  max-width:1400px;
+  max-height:92vh;
+  padding:24px 28px 28px;
+  overflow-y:auto;
+}
+.simulator-header{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:16px;
+  margin-bottom:20px;
+  padding-bottom:14px;
+  border-bottom:1px solid var(--border);
+}
+.simulator-subhead{
+  margin-top:4px;
+  color:var(--muted);
+  font-size:0.85rem;
+}
+.simulator-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(260px,1fr));
+  gap:14px 18px;
+  margin-bottom:18px;
+}
+.simulator-grid .form-group,
+.detail-grid .form-group{
+  margin-bottom:0;
+}
+.sim-panels{
+  display:grid;
+  gap:14px;
+}
+.sim-card-section{
+  margin-top:0;
+  padding:16px;
+}
+.metric-grid{
+  display:grid;
+  gap:12px;
+}
+.metric-grid.three{
+  grid-template-columns:repeat(3,minmax(160px,1fr));
+}
+.metric-grid.five{
+  grid-template-columns:repeat(5,minmax(130px,1fr));
+}
+.metric-grid.six{
+  grid-template-columns:repeat(6,minmax(125px,1fr));
+}
+.metric-card label{
+  display:block;
+  margin-bottom:6px;
+  font-size:0.7rem;
+  color:var(--muted);
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:0.06em;
+}
+.metric-card .readonly-box{
+  min-height:42px;
+  display:flex;
+  align-items:center;
+  font-size:0.92rem;
+  font-weight:600;
+}
+.target-section{
+  background:#fff;
+}
+.sim-detail-box{
+  margin-top:14px;
+}
+.detail-grid{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(180px,1fr));
+  gap:12px;
+}
+@media(max-width:980px){
+  #simulatorModal{padding:14px;}
+  #simulatorModal .simulator-wide-content{width:100%;max-width:100%;padding:18px;}
+  .simulator-grid,.metric-grid.three,.metric-grid.five,.metric-grid.six,.detail-grid{grid-template-columns:1fr;}
+}
+
+  
+    .sim-note {
+      font-size: 12px;
+      color: #53645a;
+      margin: -4px 0 12px 0;
+      line-height: 1.35;
+    }
+
+    .modal-content.editor-wide {
+      width: 95vw;
+      max-width: 1400px;
+      max-height: 92vh;
+    }
+
+    .modal-subtitle {
+      color: #53645a;
+      font-size: 14px;
+      margin-top: 4px;
+    }
+
+    .modal-header-clean {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      border-bottom: 1px solid #d5ded7;
+      padding-bottom: 14px;
+      margin-bottom: 18px;
+    }
+
+    .editor-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px 18px;
+      align-items: end;
+    }
+
+    .editor-grid .form-group {
+      margin-bottom: 0;
+    }
+
+    .editor-grid .full-span {
+      grid-column: 1 / -1;
+    }
+
+    .editor-results {
+      margin-top: 18px;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .metric-grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .editor-actions-bar {
+      position: sticky;
+      bottom: -20px;
+      background: white;
+      border-top: 1px solid #d5ded7;
+      margin: 18px -20px -20px -20px;
+      padding: 14px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      z-index: 5;
+    }
+
+    @media (max-width: 900px) {
+      .editor-grid,
+      .metric-grid,
+      .metric-grid-4 {
+        grid-template-columns: 1fr;
+      }
+    }
+
+  
+    /* IA Lista de Precios - panel flotante */
+    .ai-price-launcher {
+      position: fixed;
+      right: 24px;
+      bottom: 24px;
+      z-index: 1500;
+      border: none;
+      border-radius: 999px;
+      padding: 14px 18px;
+      background: #0f172a;
+      color: #fff;
+      box-shadow: 0 12px 30px rgba(15,23,42,0.25);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      font-weight: 800;
+      letter-spacing: .01em;
+    }
+    .ai-price-panel {
+      position: fixed;
+      right: 24px;
+      bottom: 84px;
+      width: min(460px, calc(100vw - 32px));
+      height: min(680px, calc(100vh - 120px));
+      background: #ffffff;
+      border: 1px solid #d7e0dc;
+      border-radius: 22px;
+      box-shadow: 0 24px 70px rgba(15,23,42,0.26);
+      z-index: 1500;
+      display: none;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .ai-price-panel.open { display: flex; }
+    .ai-price-head {
+      padding: 16px 18px;
+      background: linear-gradient(135deg, #0f172a, #14532d);
+      color: white;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .ai-price-title { font-size: 15px; font-weight: 900; letter-spacing: .02em; }
+    .ai-price-subtitle { font-size: 12px; opacity: .86; margin-top: 3px; line-height: 1.35; }
+    .ai-price-close {
+      background: rgba(255,255,255,.16);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,.24);
+      border-radius: 12px;
+      padding: 8px 10px;
+      cursor: pointer;
+      font-weight: 800;
+    }
+    .ai-price-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      background: #f6f8f7;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .ai-msg {
+      max-width: 92%;
+      border-radius: 16px;
+      padding: 12px 13px;
+      font-size: 13px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+    }
+    .ai-msg.user {
+      align-self: flex-end;
+      background: #0f172a;
+      color: #fff;
+      border-bottom-right-radius: 5px;
+    }
+    .ai-msg.bot {
+      align-self: flex-start;
+      background: #ffffff;
+      color: #18221c;
+      border: 1px solid #dfe7e3;
+      border-bottom-left-radius: 5px;
+    }
+    .ai-price-suggestions {
+      padding: 10px 12px 0 12px;
+      background: #f6f8f7;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .ai-chip {
+      border: 1px solid #cfdad4;
+      background: #fff;
+      color: #243028;
+      border-radius: 999px;
+      padding: 7px 10px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .ai-price-inputbar {
+      padding: 12px;
+      border-top: 1px solid #d7e0dc;
+      background: #fff;
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+    }
+    .ai-price-inputbar textarea {
+      resize: none;
+      min-height: 44px;
+      max-height: 120px;
+      flex: 1;
+      border: 1px solid #cfdad4;
+      border-radius: 14px;
+      padding: 11px 12px;
+      font-family: inherit;
+      font-size: 13px;
+      outline: none;
+    }
+    .ai-price-send {
+      border: none;
+      border-radius: 14px;
+      padding: 12px 14px;
+      background: #15803d;
+      color: white;
+      cursor: pointer;
+      font-weight: 900;
+    }
+    .ai-price-send:disabled { opacity: .55; cursor: not-allowed; }
+    @media (max-width: 700px) {
+      .ai-price-panel {
+        right: 12px;
+        bottom: 78px;
+        width: calc(100vw - 24px);
+        height: calc(100vh - 100px);
+      }
+      .ai-price-launcher { right: 14px; bottom: 16px; }
+    }
+
+  </style>
+
+<style id="tlc-shell-style">
+:root{--tlc-green:#009245;--tlc-dark:#0f172a;--tlc-muted:#667085;--tlc-border:#dfe7df;--tlc-bg:#f6f9f6;--tlc-panel:#ffffff;--tlc-side:250px;--tlc-side-mini:72px;--tlc-ai-width:390px;}
+body.tlc-shell-active{padding-top:76px!important;background:#f6f9f6!important;}
+#tlcAppShell{font-family:'Inter','Segoe UI',Arial,sans-serif!important;position:relative;z-index:999900;}
+#tlcTopbar{position:fixed;left:0;right:0;top:0;height:76px;background:#fff;border-bottom:1px solid var(--tlc-border);display:flex;align-items:center;justify-content:space-between;padding:0 24px;z-index:999950;box-shadow:0 1px 8px rgba(15,23,42,.03);}
+#tlcTopbar .tlc-left{display:flex;align-items:center;gap:16px;}
+#tlcBrandWrap{display:flex;flex-direction:column;line-height:1;}
+#tlcBrand{font-family:'Syne','Inter',sans-serif!important;font-weight:800;letter-spacing:-.04em;text-transform:uppercase;font-size:25px;color:var(--tlc-green);white-space:nowrap;}
+#tlcBrandSub{margin-top:6px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#667085;font-weight:800;}
+#tlcMenuBtn{width:42px;height:42px;border:1px solid var(--tlc-border);background:#fff;border-radius:10px;cursor:pointer;font-size:22px;line-height:1;display:flex;align-items:center;justify-content:center;color:#152238;}
+#tlcMenuBtn:hover{border-color:var(--tlc-green);color:var(--tlc-green);box-shadow:0 4px 14px rgba(0,146,69,.12);}
+#tlcTopbar .tlc-right{display:flex;align-items:center;gap:14px;color:#344054;font-size:13px;}
+#tlcSyncBtn{border:1px solid var(--tlc-border);background:#fff;border-radius:10px;padding:10px 16px;font-weight:800;cursor:pointer;color:var(--tlc-green);}
+#tlcSyncBtn:hover{box-shadow:0 4px 14px rgba(0,146,69,.10);}
+#tlcBell{position:relative;font-size:22px;color:#111827;}
+#tlcBell b{position:absolute;right:-8px;top:-6px;background:var(--tlc-green);color:#fff;border-radius:999px;font-size:11px;min-width:18px;height:18px;display:flex;align-items:center;justify-content:center;}
+#tlcUser{display:flex;align-items:center;gap:8px;font-weight:800;}
+#tlcUser .tlcAvatar{width:34px;height:34px;border-radius:50%;background:#c7f3d8;color:#087a3b;display:flex;align-items:center;justify-content:center;font-weight:900;}
+#tlcUser span{display:block;font-size:11px;color:var(--tlc-muted);font-weight:500;}
+#tlcSidebar{position:fixed;top:76px;left:0;bottom:0;width:var(--tlc-side);background:#fff;border-right:1px solid var(--tlc-border);z-index:999930;padding:22px 14px;transition:width .22s ease;overflow:hidden;box-shadow:1px 0 8px rgba(15,23,42,.025);display:flex;flex-direction:column;}
+#tlcSidebar nav{display:flex;flex-direction:column;gap:8px;}
+.tlcNavLink{height:48px;display:flex;align-items:center;gap:13px;padding:0 12px;border-radius:10px;color:#142033;text-decoration:none;font-size:14px;font-weight:700;white-space:nowrap;position:relative;}
+.tlcNavLink:hover{background:#eef8f1;color:var(--tlc-green);}
+.tlcNavLink.active{background:linear-gradient(90deg,rgba(0,146,69,.15),rgba(0,146,69,.06));color:var(--tlc-green);}
+.tlcNavIcon{font-size:20px;width:24px;text-align:center;flex:0 0 24px;}
+.tlcNewBadge{margin-left:auto;background:var(--tlc-green);color:#fff;border-radius:999px;padding:2px 8px;font-size:10px;font-weight:900;}
+#tlcSidebarSep{height:1px;background:var(--tlc-border);margin:12px 0;}
+#tlcExit{color:#ef233c!important;}
+#tlcSidebarFoot{margin-top:auto;border-top:1px solid var(--tlc-border);padding:16px 10px;color:#475467;font-size:12px;font-weight:700;line-height:1.5;}
+body.tlc-shell-active:not(.tlc-sidebar-collapsed) > :not(#tlcAppShell):not(script):not(style){margin-left:var(--tlc-side)!important;transition:margin-left .22s ease;}
+body.tlc-shell-active.tlc-sidebar-collapsed > :not(#tlcAppShell):not(script):not(style){margin-left:var(--tlc-side-mini)!important;transition:margin-left .22s ease;}
+body.tlc-sidebar-collapsed #tlcSidebar{width:var(--tlc-side-mini);}
+body.tlc-sidebar-collapsed .tlcNavText,body.tlc-sidebar-collapsed .tlcNewBadge,body.tlc-sidebar-collapsed #tlcSidebarFoot{display:none;}
+body.tlc-sidebar-collapsed .tlcNavLink{justify-content:center;padding:0 8px;}
+body.tlc-sidebar-collapsed .tlcNavIcon{width:auto;}
+#tlcAiPanel{position:fixed;right:28px;bottom:92px;width:var(--tlc-ai-width);max-width:calc(100vw - 32px);height:610px;max-height:calc(100vh - 116px);background:#fff;border:1px solid var(--tlc-border);border-radius:14px;box-shadow:0 18px 50px rgba(15,23,42,.16);z-index:999980;display:flex;flex-direction:column;overflow:hidden;}
+#tlcAiPanel.tlc-hidden{display:none;}
+.tlcAiHeader{height:60px;padding:0 18px;border-bottom:1px solid var(--tlc-border);display:flex;align-items:center;justify-content:space-between;font-weight:900;color:#172033;font-size:17px;}
+.tlcAiHeader button{border:0;background:transparent;cursor:pointer;font-size:22px;color:#667085;padding:4px 6px;}
+#tlcAiHistory{flex:1;overflow:auto;padding:18px;background:#fff;}
+.tlcHistTitle{font-size:13px;color:#344054;text-transform:uppercase;font-weight:900;letter-spacing:.04em;margin:4px 0 16px;}
+.tlcHistGroup{font-size:14px;font-weight:900;margin:16px 0 8px;color:#172033;}
+.tlcHistItem{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 12px;border-radius:9px;cursor:pointer;color:#142033;font-size:14px;}
+.tlcHistItem:hover,.tlcHistItem.active{background:#eaf7ee;color:var(--tlc-green);}
+.tlcHistTime{font-size:12px;color:#667085;white-space:nowrap;}
+.tlcFavBox{border:1px solid var(--tlc-border);border-radius:10px;padding:18px;text-align:center;color:#667085;font-size:13px;font-style:italic;background:#fbfdfb;}
+.tlcAiInput{border-top:1px solid var(--tlc-border);padding:12px;display:flex;gap:8px;}
+#tlcAiText{flex:1;border:1px solid var(--tlc-border);border-radius:10px;padding:12px 13px;font-size:14px;outline:none;}
+#tlcAiText:focus{border-color:var(--tlc-green);box-shadow:0 0 0 3px rgba(0,146,69,.09);}
+#tlcAiSend{width:44px;border:0;border-radius:10px;background:var(--tlc-green);color:#fff;font-size:19px;cursor:pointer;}
+#tlcAiExamples{padding:0 14px 16px;color:#667085;font-size:12px;line-height:1.4;}
+#tlcAiFab{position:fixed;right:32px;bottom:24px;width:62px;height:62px;border-radius:50%;border:0;background:var(--tlc-green);color:#fff;font-size:28px;box-shadow:0 14px 30px rgba(0,146,69,.28);cursor:pointer;z-index:999981;}
+#tlcAiFab:hover{transform:translateY(-2px);}
+#tlcResultsMount{margin:24px 430px 24px 24px;max-width:none;padding:0;}
+body.tlc-ai-closed #tlcResultsMount{margin-right:24px;}
+.tlc-results-card{background:#fff;border:1px solid var(--tlc-border);border-radius:14px;overflow:hidden;box-shadow:0 4px 18px rgba(15,23,42,.04);}
+.tlc-results-head{padding:18px 24px 14px;border-bottom:1px solid var(--tlc-border);display:flex;justify-content:space-between;gap:12px;align-items:flex-start;}
+.tlc-breadcrumb{font-size:13px;color:#475467;margin-bottom:12px;font-weight:700;}
+.tlc-breadcrumb b{color:var(--tlc-green);}
+.tlc-title-line{display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+.tlc-title-line h1{font-size:24px;margin:0;color:#142033;line-height:1.15;}
+.tlc-results-meta{font-size:14px;color:#475467;display:flex;align-items:center;gap:14px;margin-top:8px;}
+.tlc-inline-count{color:var(--tlc-green);font-weight:900;}
+.tlc-new-query{border:1px solid var(--tlc-green);background:#fff;color:var(--tlc-green);border-radius:9px;padding:10px 16px;font-weight:900;cursor:pointer;}
+.tlc-section-title{padding:16px 24px;border-bottom:1px solid var(--tlc-border);display:flex;align-items:center;justify-content:space-between;gap:10px;}
+.tlc-section-title h2{font-size:18px;margin:0;color:#142033;}
+.tlc-results-badge{background:#eaf7ee;color:var(--tlc-green);border-radius:999px;padding:5px 10px;font-weight:900;font-size:12px;}
+.tlc-table-actions{display:flex;gap:10px;margin-left:auto;}
+.tlc-mini-btn{border:1px solid var(--tlc-border);background:#fff;border-radius:9px;padding:9px 13px;font-weight:800;color:#142033;cursor:pointer;}
+.tlc-results-table-wrap{max-height:calc(100vh - 300px);overflow:auto;}
+.tlc-results-table{width:100%;border-collapse:collapse;font-size:14px;}
+.tlc-results-table th,.tlc-results-table td{border-bottom:1px solid #edf2ed;padding:12px 14px;text-align:left;vertical-align:top;}
+.tlc-results-table th{background:#fbfdfb;color:#344054;font-size:12px;text-transform:uppercase;letter-spacing:.04em;position:sticky;top:0;z-index:2;}
+.tlc-results-table td b{color:#142033;}
+.tlc-sub{color:#667085;font-size:12px;margin-top:3px;}
+.tlc-pill{display:inline-flex;align-items:center;border-radius:999px;padding:4px 8px;font-weight:900;font-size:12px;background:#eef2ff;color:#2563eb;}
+.tlc-pill.warn{background:#fff3cd;color:#b26a00;}
+.tlc-pill.bad{background:#ffe4e6;color:#e11d48;}
+.tlc-pill.good{background:#eaf7ee;color:var(--tlc-green);}
+.tlc-pagination{padding:14px 24px;display:flex;align-items:center;justify-content:space-between;color:#475467;font-size:13px;}
+@media(max-width:1180px){#tlcAiPanel{width:360px}#tlcResultsMount{margin-right:394px}.tlc-results-table{font-size:13px}}
+@media(max-width:900px){body.tlc-shell-active:not(.tlc-sidebar-collapsed)>:not(#tlcAppShell):not(script):not(style){margin-left:72px!important}#tlcSidebar{width:72px}.tlcNavText,.tlcNewBadge,#tlcSidebarFoot{display:none}#tlcAiPanel{left:12px;right:12px;width:auto}#tlcResultsMount{margin-right:24px}#tlcBrand{font-size:19px}#tlcTopbar{padding:0 12px}.tlc-title-line h1{font-size:20px}}
+
+</style>
+
+  <style id="tlc-precios-single-assistant-fix">
+    /* Lista de Precios usa su propio asistente. Evitar duplicar el Asistente IA global. */
+    #tlcAiPanel,
+    #tlcAiFab {
+      display: none !important;
+      visibility: hidden !important;
+      pointer-events: none !important;
+    }
+  </style>
+
+
+<style id="tlc-ai-price-final-ui-fix">
+  .ai-price-launcher {
+    position: fixed !important;
+    right: 24px !important;
+    bottom: 24px !important;
+    width: 64px !important;
+    height: 64px !important;
+    min-width: 64px !important;
+    padding: 0 !important;
+    border: none !important;
+    border-radius: 50% !important;
+    background: #009846 !important;
+    color: #fff !important;
+    font-size: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    box-shadow: 0 14px 30px rgba(0,0,0,.22) !important;
+    cursor: pointer !important;
+    z-index: 1600 !important;
+  }
+  .ai-price-launcher::before {
+    content: "🤖";
+    font-size: 30px;
+    line-height: 1;
+  }
+  .ai-price-panel {
+    right: 24px !important;
+    bottom: 100px !important;
+  }
+</style>
+
+
+<style id="tlc-online-match-local-final">
+/* ONLINE = LOCAL: ocultar cabeceras viejas que duplicaban logo/título. */
+body.tlc-shell-active > header.app-header,
+body.tlc-shell-active > .page-title-bar {
+  display: none !important;
+}
+
+/* Título del módulo dentro de la única barra superior. */
+.tlcTopDivider{
+  width:1px;
+  height:38px;
+  background:var(--tlc-border);
+  margin-left:2px;
+}
+.tlcTopModule{
+  font-size:16px;
+  line-height:1;
+  color:#172033;
+  font-weight:900;
+  white-space:nowrap;
+}
+
+/* La zona útil empieza inmediatamente debajo de la barra V5. */
+body.tlc-shell-active > .container{
+  margin-top:0 !important;
+}
+
+/* Igualar la densidad de la tabla del local y evitar scroll horizontal innecesario. */
+body.tlc-shell-active .products-table,
+body.tlc-shell-active table.products-table{
+  width:100% !important;
+  min-width:0 !important;
+  table-layout:auto !important;
+}
+body.tlc-shell-active .products-table th,
+body.tlc-shell-active .products-table td{
+  white-space:nowrap;
+}
+body.tlc-shell-active .products-table th:first-child,
+body.tlc-shell-active .products-table td:first-child{
+  white-space:normal;
+  width:34%;
+}
+body.tlc-shell-active .table-container,
+body.tlc-shell-active .products-wrapper,
+body.tlc-shell-active .table-wrap{
+  overflow-x:hidden !important;
+}
+
+/* En el local el menú queda compacto por defecto. */
+@media(min-width:901px){
+  body.tlc-shell-active.tlc-sidebar-collapsed > .container,
+  body.tlc-shell-active.tlc-sidebar-collapsed > footer {
+    margin-left:var(--tlc-side-mini) !important;
+  }
+}
+</style>
+
+</head>
+
+<body>
+
+<div id="tlcAppShell">
+  <div id="tlcTopbar">
+    <div class="tlc-left"><button id="tlcMenuBtn" type="button" title="Ocultar / mostrar menú">☰</button><div id="tlcBrandWrap"><div id="tlcBrand">TELOCONSIGO</div><div id="tlcBrandSub">Panel de Control V5</div></div><div class="tlcTopDivider"></div><div class="tlcTopModule">Lista de Precios</div></div>
+    <div class="tlc-right"><button id="tlcSyncBtn" type="button">↻ Sincronizar</button><div id="tlcBell">🔔<b>2</b></div><div id="tlcUser"><div class="tlcAvatar">A</div><div>admin <span>Administrador</span></div></div></div>
+  </div>
+  <aside id="tlcSidebar"><nav><a class="tlcNavLink " href="publicaciones.html" data-tlc-module="publicaciones"><span class="tlcNavIcon">📦</span><span class="tlcNavText">Publicaciones</span></a><a class="tlcNavLink active" href="precios.html" data-tlc-module="precios"><span class="tlcNavIcon">🏷️</span><span class="tlcNavText">Lista de Precios</span></a><a class="tlcNavLink " href="inbox.html" data-tlc-module="inbox"><span class="tlcNavIcon">💬</span><span class="tlcNavText">Bandeja MeLi</span></a><a class="tlcNavLink " href="meliads.html" data-tlc-module="meliads"><span class="tlcNavIcon">📣</span><span class="tlcNavText">MeLi Ads</span></a><a class="tlcNavLink " href="publicador.html" data-tlc-module="publicador"><span class="tlcNavIcon">➕</span><span class="tlcNavText">Creador de Publicaciones</span></a><a class="tlcNavLink " href="assistant.html" data-tlc-module="assistant"><span class="tlcNavIcon">🤖</span><span class="tlcNavText">Asistente IA</span><span class="tlcNewBadge">NUEVO</span></a><a class="tlcNavLink " href="admin.html" data-tlc-module="admin"><span class="tlcNavIcon">⚙️</span><span class="tlcNavText">Configuración</span></a><div id="tlcSidebarSep"></div><a class="tlcNavLink" id="tlcExit" href="/index.html"><span class="tlcNavIcon">↩</span><span class="tlcNavText">Cerrar sesión</span></a></nav><div id="tlcSidebarFoot">TELOCONSIGO<br>© 2026</div></aside>
+  <section id="tlcAiPanel">
+    <div class="tlcAiHeader"><span>🤖 Asistente IA</span><div><button id="tlcAiMin" type="button" title="Minimizar">−</button><button id="tlcAiClose" type="button" title="Cerrar">×</button></div></div>
+    <div id="tlcAiHistory"><div id="tlcAiHistoryList"></div></div>
+    <form class="tlcAiInput" id="tlcAiForm"><input id="tlcAiText" placeholder="Escribí tu consulta..." autocomplete="off"><button id="tlcAiSend" type="submit">➤</button></form>
+    <div id="tlcAiExamples">Ejemplos: publicaciones activas, sin stock, márgenes bajos, catálogo perdido, etc.</div>
+  </section>
+  <button id="tlcAiFab" type="button" title="Abrir / minimizar Asistente IA">🤖</button>
+</div>
+<script id="tlc-shell-script">
+(function(){
+  document.body.classList.add('tlc-shell-active');
+  if(localStorage.getItem('tlc_sidebar_collapsed') === null){
+    localStorage.setItem('tlc_sidebar_collapsed','1');
+  }
+  var current='precios';
+  if(current && current !== 'index') localStorage.setItem('tlc_last_module', current);
+  if(localStorage.getItem('tlc_sidebar_collapsed') === '1') document.body.classList.add('tlc-sidebar-collapsed');
+  var menu=document.getElementById('tlcMenuBtn');
+  if(menu) menu.addEventListener('click', function(){
+    document.body.classList.toggle('tlc-sidebar-collapsed');
+    localStorage.setItem('tlc_sidebar_collapsed', document.body.classList.contains('tlc-sidebar-collapsed') ? '1' : '0');
+  });
+  var panel=document.getElementById('tlcAiPanel'), fab=document.getElementById('tlcAiFab');
+  function openAi(){ panel.classList.remove('tlc-hidden'); document.body.classList.remove('tlc-ai-closed'); localStorage.setItem('tlc_ai_open','1'); }
+  function closeAi(){ panel.classList.add('tlc-hidden'); document.body.classList.add('tlc-ai-closed'); localStorage.setItem('tlc_ai_open','0'); }
+  function toggleAi(){ if(panel.classList.contains('tlc-hidden')) openAi(); else closeAi(); }
+  if(localStorage.getItem('tlc_ai_open') === '0') closeAi(); else openAi();
+  if(fab) fab.addEventListener('click', toggleAi);
+  var close=document.getElementById('tlcAiClose'), min=document.getElementById('tlcAiMin');
+  if(close) close.addEventListener('click', closeAi);
+  if(min) min.addEventListener('click', closeAi);
+  var sync=document.getElementById('tlcSyncBtn');
+  if(sync) sync.addEventListener('click', function(){ location.reload(); });
+  var form=document.getElementById('tlcAiForm'), input=document.getElementById('tlcAiText');
+  function esc(s){ return String(s||'').replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function nowTime(){ return new Date().toLocaleTimeString('es-UY',{hour:'2-digit',minute:'2-digit'}); }
+  function getHistory(){ try{return JSON.parse(localStorage.getItem('tlc_ai_history')||'[]')}catch(e){return []} }
+  function saveHistory(q){
+    var h=getHistory().filter(function(x){return (x.q||'').toLowerCase()!==q.toLowerCase()});
+    h.unshift({q:q,t:nowTime(),d:new Date().toDateString()});
+    localStorage.setItem('tlc_ai_history', JSON.stringify(h.slice(0,30)));
+  }
+  function renderHistory(){
+    var box=document.getElementById('tlcAiHistoryList'); if(!box) return;
+    var h=getHistory();
+    var today=new Date().toDateString();
+    var fav=JSON.parse(localStorage.getItem('tlc_ai_favorites')||'[]');
+    var html='';
+    var todayItems=h.filter(function(x){return x.d===today}).slice(0,5);
+    var otherItems=h.filter(function(x){return x.d!==today}).slice(0,5);
+    html+='<div class="tlcHistTitle">Historial de consultas</div>';
+    html+='<div class="tlcHistGroup">Hoy</div>'+(todayItems.length?todayItems.map(function(x){return '<div class="tlcHistItem" data-q="'+esc(x.q)+'"><span>'+esc(x.q)+'</span><span class="tlcHistTime">'+esc(x.t)+'</span></div>'}).join(''):'<div class="tlcHistItem"><span>Sin consultas todavía</span></div>');
+    if(otherItems.length) html+='<div class="tlcHistGroup">Anteriores</div>'+otherItems.map(function(x){return '<div class="tlcHistItem" data-q="'+esc(x.q)+'"><span>'+esc(x.q)+'</span><span class="tlcHistTime">'+esc(x.t)+'</span></div>'}).join('');
+    html+='<div class="tlcHistGroup">★ Favoritas</div>'+(fav.length?fav.map(function(q){return '<div class="tlcHistItem" data-q="'+esc(q)+'"><span>'+esc(q)+'</span></div>'}).join(''):'<div class="tlcFavBox">Aún no tenés consultas favoritas<br>Más adelante las vamos agregando según el uso.</div>');
+    box.innerHTML=html;
+    Array.prototype.forEach.call(box.querySelectorAll('[data-q]'), function(el){ el.addEventListener('click', function(){ runQuery(this.getAttribute('data-q')); }); });
+  }
+  function guessCount(q){ q=(q||'').toLowerCase(); if(q.includes('activa')) return '1.248'; if(q.includes('paus')) return '3.844'; if(q.includes('stock')) return '1.755'; if(q.includes('margen')) return '2.593'; if(q.includes('catalog')) return '0'; return '120'; }
+  function runQuery(q){
+    q=(q||'').trim(); if(!q) return;
+    localStorage.setItem('tlc_assistant_query', q);
+    localStorage.setItem('tlc_assistant_count', guessCount(q));
+    saveHistory(q); renderHistory();
+    if(current !== 'assistant') location.href='assistant.html'; else if(window.renderAssistantResults) window.renderAssistantResults();
+  }
+  if(form) form.addEventListener('submit', function(e){e.preventDefault(); var q=(input.value||'').trim(); input.value=''; runQuery(q);});
+  window.tlcRunAssistantQuery=runQuery;
+  renderHistory();
+})();
+</script>
+
+
+
+<header class="app-header">
+  <div class="logo-text">Teloconsigo</div>
+  <div class="header-right">
+    <a href="index.html">← Volver al panel</a>
+    <span id="clock">—</span>
+  </div>
+</header>
+
+<div class="page-title-bar">
+  <a href="index.html" class="back-link">←</a>
+  <span class="page-title">Lista de Precios</span>
+  <span class="page-title-sub">Costos, márgenes, simulador y promociones</span>
+</div>
+
+<div class="container">
+  <div class="topbar topbar-only-actions">
+    <div></div>
+
+    <div class="topbar-actions">
+      <button class="btn-secondary filters-toggle" onclick="toggleFiltersPanel()">
+        <span id="filtersArrow">▼</span>
+        <span>Filtros</span>
+      </button>
+      <button class="btn-sim" onclick="openSimulatorModal()">Simulador</button>
+      <button class="btn-success" onclick="openCreateModal()">Nuevo</button>
+    </div>
+  </div>
+
+  <div id="filtersPanel" class="filters-panel">
+    <div class="search-box">
+      <input id="searchInput" placeholder="Buscar por artículo, TLC, proveedor o código proveedor">
+
+      <select id="filterEstado" onchange="renderProducts()">
+        <option value="todos">Todos los estados</option>
+        <option value="sin_codigo_proveedor">Sin código proveedor</option>
+        <option value="sin_codigo_tlc">Sin código TLC</option>
+        <option value="sin_envio_costo">Sin envío / costo fijo</option>
+        <option value="incompletos">Artículos incompletos</option>
+      </select>
+
+      <select id="filterMargen" onchange="renderProducts()">
+        <option value="todos">Todos los márgenes</option>
+        <option value="mas_20">Más de 20%</option>
+        <option value="entre_10_20">Entre 10% y 20%</option>
+        <option value="entre_0_10">Entre 0% y 10%</option>
+        <option value="menor_0">Menor a 0%</option>
+      </select>
+
+      <select id="filterProveedor" onchange="renderProducts()">
+        <option value="todos">Todos los proveedores</option>
+      </select>
+
+      <div class="search-actions">
+        <button class="btn-primary" onclick="renderProducts()">Buscar</button>
+        <button class="btn-secondary" onclick="resetSearch()">Limpiar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="counter-bar" id="productsCounter">
+    Mostrando <strong>0</strong> de <strong>0</strong> artículos
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Artículo</th>
+          <th>Código TLC</th>
+          <th>Proveedor</th>
+          <th>Código Proveedor</th>
+          <th>Costo</th>
+          <th>PVP</th>
+          <th>Ganancia</th>
+          <th>Margen</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="productsBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="modal" id="editModal">
+  <div class="modal-content editor-wide">
+    <div class="modal-header-clean">
+      <div>
+        <h3 id="modalTitle" style="margin:0;">Editar producto</h3>
+        <div class="modal-subtitle">Costos, margen y rentabilidad del producto</div>
+      </div>
+      <button class="btn-secondary" onclick="closeModal()">Cerrar</button>
+    </div>
+
+    <div class="editor-grid">
+    <div class="form-group">
+      <label>Artículo *</label>
+      <input id="editArticulo" oninput="updatePreview()">
+    </div>
+
+    <div class="form-group">
+      <label>Código TLC *</label>
+      <input id="editCodigoTLC" oninput="updatePreview()">
+    </div>
+
+    <div class="form-group">
+      <label>Proveedor</label>
+      <input id="editProveedor" oninput="updatePreview()">
+    </div>
+
+    <div class="form-group">
+      <label>Código Proveedor</label>
+      <input id="editCodigoProveedor" oninput="updatePreview()">
+    </div>
+
+    <div class="form-group">
+      <label>Código Fábrica</label>
+      <input id="editCodigoFabrica" oninput="updatePreview()">
+    </div>
+
+    <div class="form-group">
+      <label>Moneda *</label>
+      <select id="editMoneda" onchange="updatePreview()">
+        <option value="">Seleccionar</option>
+        <option value="USD">USD</option>
+        <option value="UYU">UYU</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label>Modo Costo</label>
+      <select id="editModoCosto" onchange="updateCostoModeUI('edit'); updatePreview();">
+        <option value="costo_directo">Costo directo</option>
+        <option value="pvp_descuento">PVP proveedor + descuento</option>
+      </select>
+    </div>
+
+    <div id="editCostoDirectoWrap" class="form-group">
+      <label>Precio Proveedor *</label>
+      <input id="editPrecioProveedor" type="number" step="0.01" oninput="updatePreview()">
+    </div>
+
+    <div id="editPvpProveedorWrap" class="form-group hidden">
+      <label>PVP Proveedor</label>
+      <input id="editPvpProveedor" type="number" step="0.01" oninput="updatePreview()">
+    </div>
+
+    <div id="editDescuentoProveedorWrap" class="form-group hidden">
+      <label>Descuento Proveedor %</label>
+      <input id="editDescuentoProveedorPct" type="number" step="0.01" oninput="updatePreview()">
+    </div>
+
+    <div id="editPrecioProveedorCalculadoWrap" class="form-group hidden">
+      <label>Precio Proveedor calculado</label>
+      <div class="readonly-box" id="editPrecioProveedorCalculado">0</div>
+    </div>
+
+    <div id="editPvpWrap" class="form-group">
+      <label>PVP *</label>
+      <input id="editPVP" type="number" step="0.01" oninput="updatePreview()">
+    </div>
+
+    <div class="form-group">
+      <label>Comisión ML %</label>
+      <input id="editComisionMlPct" type="number" step="0.01" oninput="updatePreview()">
+    </div>
+
+    <div class="form-group">
+      <label>Envio / Costo fijo</label>
+      <input id="editEnvioCostoFijo" type="number" step="0.01" oninput="updatePreview()">
+    </div>
+
+    </div>
+
+    <div class="editor-results">
+      <div class="sim-result">
+        <div class="sim-title">Resultado del producto</div>
+        <div class="metric-grid">
+          <div class="form-group">
+            <label>Ganancia real</label>
+            <div class="readonly-box" id="editGananciaResumen">0</div>
+          </div>
+          <div class="form-group">
+            <label>Margen real %</label>
+            <div class="readonly-box" id="editMargenResumen">0%</div>
+          </div>
+          <div class="form-group">
+            <label>Rentabilidad</label>
+            <div class="readonly-box" id="editEstadoResumen">Sin calcular</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sim-result">
+        <div class="sim-title">Cálculo detallado</div>
+    <div id="calculoBox">
+      <div class="collapsible-header" onclick="toggleCalculo()">
+        <span>▼ Ver cálculo</span>
+      </div>
+
+      <div class="collapsible-content">
+        <div class="form-group">
+          <label>Comisión ML $</label>
+          <div class="readonly-box" id="editComisionMlImporte">0</div>
+        </div>
+
+        <div class="form-group">
+          <label>IVA comisión ML</label>
+          <div class="readonly-box" id="editIvaComisionMl">0</div>
+        </div>
+
+        <div class="form-group">
+          <label>IVA compra</label>
+          <div class="readonly-box" id="editIvaCompra">0</div>
+        </div>
+
+        <div class="form-group">
+          <label>IVA venta</label>
+          <div class="readonly-box" id="editIvaVenta">0</div>
+        </div>
+
+        <div class="form-group">
+          <label>IVA DGI</label>
+          <div class="readonly-box" id="editIvaDgi">0</div>
+        </div>
+
+        <div class="form-group">
+          <label>Ganancia real</label>
+          <div class="readonly-box" id="editGanancia">0</div>
+        </div>
+
+        <div class="form-group">
+          <label>Margen real %</label>
+          <div class="readonly-box" id="editMargen">0%</div>
+        </div>
+      </div>
+    </div>
+
+      </div>
+      </div>
+    </div>
+
+    <div class="required-note">(*) campo obligatorio</div>
+
+    <div class="editor-actions-bar">
+      <button id="deleteButton" class="btn-danger" onclick="deleteCurrentProduct()">Eliminar</button>
+      <div class="actions-right">
+        <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button class="btn-primary" onclick="saveProduct()">Guardar producto</button>
+      </div>
+    </div>
+
+    <div id="modalMessage" class="message"></div>
+  </div>
+</div>
+
+<div class="modal" id="simulatorModal">
+  <div class="modal-content simulator-wide-content">
+    <div class="simulator-header">
+      <div>
+        <h3 style="margin:0;">Simulador</h3>
+        <div class="simulator-subhead">Calculá margen, descuento y rentabilidad antes de publicar</div>
+      </div>
+      <button class="btn-secondary" onclick="closeSimulatorModal()">Cerrar</button>
+    </div>
+
+    <div class="simulator-grid">
+      <div class="form-group">
+        <label>Moneda</label>
+        <select id="simMoneda" onchange="updateSimulator(); updateTargetPrice();">
+          <option value="USD">USD</option>
+          <option value="UYU">UYU</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Modo Costo</label>
+        <select id="simModoCosto" onchange="updateCostoModeUI('sim'); updateSimulator(); updateTargetPrice();">
+          <option value="costo_directo">Costo directo</option>
+          <option value="pvp_descuento">PVP proveedor + descuento</option>
+        </select>
+      </div>
+
+      <div id="simCostoDirectoWrap" class="form-group">
+        <label>Precio Proveedor</label>
+        <input id="simPrecioProveedor" type="number" step="0.01" oninput="updateSimulator(); updateTargetPrice();">
+      </div>
+
+      <div id="simPvpWrap" class="form-group">
+        <label>Precio de venta</label>
+        <input id="simPvp" type="number" step="0.01" oninput="updateSimulator()">
+      </div>
+
+      <div id="simPvpProveedorWrap" class="form-group hidden">
+        <label>PVP Proveedor</label>
+        <input id="simPvpProveedor" type="number" step="0.01" oninput="updateSimulator(); updateTargetPrice();">
+      </div>
+
+      <div id="simDescuentoProveedorWrap" class="form-group hidden">
+        <label>Descuento Proveedor %</label>
+        <input id="simDescuentoProveedorPct" type="number" step="0.01" oninput="updateSimulator(); updateTargetPrice();">
+      </div>
+
+      <div id="simPrecioProveedorCalculadoWrap" class="form-group hidden">
+        <label>Precio Proveedor calculado</label>
+        <div class="readonly-box" id="simPrecioProveedorCalculado">USD 0,00</div>
+      </div>
+
+      <div class="form-group">
+        <label>Comisión ML %</label>
+        <input id="simComisionMlPct" type="number" step="0.01" oninput="updateSimulator(); updateTargetPrice();">
+      </div>
+
+      <div class="form-group">
+        <label>Envio / Costo fijo</label>
+        <input id="simEnvioCostoFijo" type="number" step="0.01" oninput="updateSimulator(); updateTargetPrice();">
+      </div>
+
+      <div class="form-group">
+        <label>Descuento publicación / promoción %</label>
+        <input id="simDescuentoPromocion" type="number" step="0.01" min="0" max="100" placeholder="Ej: 10" oninput="updateSimulator(); updateTargetPrice();">
+      </div>
+
+      <div class="form-group">
+        <label>ACOS publicidad %</label>
+        <input id="simAcosPublicidadPct" type="number" step="0.01" min="0" placeholder="Ej: 12" oninput="updateSimulator();">
+      </div>
+
+      <div class="form-group">
+        <label>Margen objetivo %</label>
+        <input id="simTargetMarginPct" type="number" step="0.01" oninput="updateTargetPrice()">
+      </div>
+    </div>
+
+    <div class="sim-panels">
+      <div class="sim-result sim-card-section">
+        <div class="sim-title">Resultado actual</div>
+        <div class="metric-grid three">
+          <div class="metric-card">
+            <label>Ganancia real</label>
+            <div class="readonly-box" id="simGanancia">USD 0,00</div>
+          </div>
+          <div class="metric-card">
+            <label>Margen real %</label>
+            <div class="readonly-box" id="simMargen">0,00%</div>
+          </div>
+          <div class="metric-card">
+            <label>Resultado</label>
+            <div class="readonly-box" id="simEstado">Sin calcular</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sim-result sim-card-section">
+        <div class="sim-title">Resultado con descuento y publicidad</div>
+          <div class="sim-note">El ACOS se descuenta como costo publicitario sobre el precio final con descuento.</div>
+        <div class="metric-grid six">
+          <div class="metric-card">
+            <label>Descuento aplicado</label>
+            <div class="readonly-box" id="simDescuentoImporte">USD 0,00</div>
+          </div>
+          <div class="metric-card">
+            <label>Precio final</label>
+            <div class="readonly-box" id="simVentaFinal">USD 0,00</div>
+          </div>
+          <div class="metric-card">
+            <label>Ganancia final</label>
+            <div class="readonly-box" id="simGananciaFinal">USD 0,00</div>
+          </div>
+          <div class="metric-card">
+            <label>Margen final</label>
+            <div class="readonly-box" id="simMargenFinal">0,00%</div>
+          </div>
+          <div class="metric-card">
+            <label>Rentabilidad final</label>
+            <div class="readonly-box" id="simEstadoFinal">Sin calcular</div>
+          </div>
+          <div class="metric-card">
+            <label>Costo de publicidad</label>
+            <div class="readonly-box" id="simCostoPublicidad">USD 0,00</div>
+          </div>
+          <div class="metric-card">
+            <label>Ganancia después de publicidad</label>
+            <div class="readonly-box" id="simGananciaPublicidad">USD 0,00</div>
+          </div>
+          <div class="metric-card">
+            <label>Margen después de publicidad</label>
+            <div class="readonly-box" id="simMargenPublicidad">0,00%</div>
+          </div>
+          <div class="metric-card">
+            <label>Resultado de venta con publicidad</label>
+            <div class="readonly-box" id="simEstadoPublicidad">Sin calcular</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sim-result sim-card-section target-section">
+        <div class="sim-title">Precio sugerido por margen objetivo</div>
+        <div class="metric-grid three">
+          <div class="metric-card">
+            <label>Precio sugerido</label>
+            <div class="readonly-box" id="simTargetPrice">USD 0,00</div>
+          </div>
+          <div class="metric-card">
+            <label>Margen estimado</label>
+            <div class="readonly-box" id="simTargetAchievedMargin">0,00%</div>
+          </div>
+          <div class="metric-card">
+            <label>Estado objetivo</label>
+            <div class="readonly-box" id="simTargetState">Sin calcular</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="simDetalleBox" class="sim-detail-box">
+      <div class="collapsible-header" onclick="toggleSimDetalle()">
+        <span>▼ Ver cálculo detallado</span>
+      </div>
+
+      <div class="collapsible-content">
+        <div class="detail-grid">
+          <div class="form-group">
+            <label>Comisión ML $</label>
+            <div class="readonly-box" id="simComisionMlImporte">USD 0,00</div>
+          </div>
+
+          <div class="form-group">
+            <label>IVA comisión ML</label>
+            <div class="readonly-box" id="simIvaComisionMl">USD 0,00</div>
+          </div>
+
+          <div class="form-group">
+            <label>IVA compra</label>
+            <div class="readonly-box" id="simIvaCompra">USD 0,00</div>
+          </div>
+
+          <div class="form-group">
+            <label>IVA venta</label>
+            <div class="readonly-box" id="simIvaVenta">USD 0,00</div>
+          </div>
+
+          <div class="form-group">
+            <label>IVA DGI</label>
+            <div class="readonly-box" id="simIvaDgi">USD 0,00</div>
+          </div>
+
+          <div class="form-group">
+            <label>Comisión ML final con descuento</label>
+            <div class="readonly-box" id="simComisionMlFinal">USD 0,00</div>
+          </div>
+
+          <div class="form-group">
+            <label>IVA DGI final con descuento</label>
+            <div class="readonly-box" id="simIvaDgiFinal">USD 0,00</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="simTargetMessage" class="message"></div>
+  </div>
+</div>
+<footer>
+  <div><span>TELOCONSIGO © 2026</span></div>
+  <span>Lista de Precios v1.0</span>
+</footer>
+
+<script>
+let allProducts = [];
+let currentProduct = null;
+let modalMode = 'edit';
+let editPreviewRequestId = 0;
+let simPreviewRequestId = 0;
+let simTargetRequestId = 0;
+
+function formatNumber(n) {
+  return Number(n || 0).toLocaleString('es-UY', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+}
+
+function money(n, moneda) {
+  const m = String(moneda || '').trim().toUpperCase();
+  const prefix = m === 'USD' ? 'USD' : (m === 'UYU' ? 'UYU' : '');
+  return prefix ? `${prefix} ${formatNumber(n)}` : formatNumber(n);
+}
+
+function getMarginClass(m) {
+  const val = Number(m || 0);
+  if (val < 0) return 'margin-red';
+  if (val < 10) return 'margin-orange';
+  if (val < 20) return 'margin-yellow';
+  return 'margin-green';
+}
+
+function normalizeModoCosto(modo) {
+  const m = String(modo || '').trim().toLowerCase();
+  return m === 'pvp_descuento' ? 'pvp_descuento' : 'costo_directo';
+}
+
+function normalizeProveedor(value) {
+  return String(value || '').trim();
+}
+
+function getStateLabelByMargin(margin, gain) {
+  if (Number(gain || 0) < 0) return 'No rentable';
+  if (Number(margin || 0) < 10) return 'Rentabilidad baja';
+  if (Number(margin || 0) < 20) return 'Rentabilidad media';
+  return 'Rentable';
+}
+
+function toggleFiltersPanel() {
+  const panel = document.getElementById('filtersPanel');
+  const arrow = document.getElementById('filtersArrow');
+  const open = panel.classList.toggle('open');
+  arrow.innerText = open ? '▲' : '▼';
+}
+
+function toggleCalculo(forceOpen = null) {
+  const box = document.getElementById('calculoBox');
+  const text = box.querySelector('span');
+
+  if (forceOpen === true) box.classList.add('collapsible-open');
+  else if (forceOpen === false) box.classList.remove('collapsible-open');
+  else box.classList.toggle('collapsible-open');
+
+  text.innerText = box.classList.contains('collapsible-open')
+    ? '▲ Ocultar cálculo'
+    : '▼ Ver cálculo';
+}
+
+function toggleSimDetalle(forceOpen = null) {
+  const box = document.getElementById('simDetalleBox');
+  const text = box.querySelector('span');
+
+  if (forceOpen === true) box.classList.add('collapsible-open');
+  else if (forceOpen === false) box.classList.remove('collapsible-open');
+  else box.classList.toggle('collapsible-open');
+
+  text.innerText = box.classList.contains('collapsible-open')
+    ? '▲ Ocultar cálculo'
+    : '▼ Ver cálculo';
+}
+
+function resetSearch() {
+  document.getElementById('searchInput').value = '';
+  document.getElementById('filterEstado').value = 'todos';
+  document.getElementById('filterMargen').value = 'todos';
+  document.getElementById('filterProveedor').value = 'todos';
+  renderProducts();
+}
+
+function passesEstadoFilter(product, estado) {
+  switch (estado) {
+    case 'sin_codigo_proveedor':
+      return !String(product.codigoProveedor || '').trim();
+    case 'sin_codigo_tlc':
+      return !String(product.codigoTLC || '').trim();
+    case 'sin_envio_costo':
+      return Number(product.envioCostoFijo || 0) <= 0;
+    case 'incompletos':
+      return !!product.incompleto;
+    default:
+      return true;
+  }
+}
+
+function passesMargenFilter(product, margenFilter) {
+  const margen = Number(product.margenReal || 0);
+
+  switch (margenFilter) {
+    case 'mas_20':
+      return margen > 20;
+    case 'entre_10_20':
+      return margen >= 10 && margen < 20;
+    case 'entre_0_10':
+      return margen >= 0 && margen < 10;
+    case 'menor_0':
+      return margen < 0;
+    default:
+      return true;
+  }
+}
+
+function populateProveedorFilter() {
+  const select = document.getElementById('filterProveedor');
+  if (!select) return;
+
+  const currentValue = select.value || 'todos';
+
+  const proveedores = [...new Set(
+    allProducts
+      .map(p => normalizeProveedor(p.proveedor))
+      .filter(p => p !== '')
+  )].sort((a, b) => a.localeCompare(b, 'es'));
+
+  select.innerHTML = '<option value="todos">Todos los proveedores</option>';
+
+  proveedores.forEach(proveedor => {
+    const option = document.createElement('option');
+    option.value = proveedor;
+    option.textContent = proveedor;
+    select.appendChild(option);
+  });
+
+  select.value = proveedores.includes(currentValue) ? currentValue : 'todos';
+}
+
+async function apiRequest(url, options = {}) {
+  const response = await fetch(url, {
+    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    ...options
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error?.message || data.error || 'Error de API');
+  return data;
+}
+
+function loadProducts() {
+  apiRequest('/api/precios')
+    .then(data => {
+      allProducts = data.products || data || [];
+      populateProveedorFilter();
+      renderProducts();
+    })
+    .catch(err => alert(err.message || err));
+}
+
+function renderProducts() {
+  const tbody = document.getElementById('productsBody');
+  const counter = document.getElementById('productsCounter');
+  const s = document.getElementById('searchInput').value.toLowerCase().trim();
+  const estadoFilter = document.getElementById('filterEstado').value;
+  const margenFilter = document.getElementById('filterMargen').value;
+  const proveedorFilter = document.getElementById('filterProveedor').value;
+
+  tbody.innerHTML = '';
+
+  const filteredProducts = allProducts.filter(p => {
+    const proveedorActual = normalizeProveedor(p.proveedor);
+
+    const matchBusqueda =
+      String(p.articulo || '').toLowerCase().includes(s) ||
+      String(p.codigoTLC || '').toLowerCase().includes(s) ||
+      String(p.codigoProveedor || '').toLowerCase().includes(s) ||
+      String(p.proveedor || '').toLowerCase().includes(s);
+
+    const matchEstado = passesEstadoFilter(p, estadoFilter);
+    const matchMargen = passesMargenFilter(p, margenFilter);
+    const matchProveedor = proveedorFilter === 'todos' || proveedorActual === proveedorFilter;
+
+    return matchBusqueda && matchEstado && matchMargen && matchProveedor;
+  });
+
+  filteredProducts.forEach(p => {
+    const tr = document.createElement('tr');
+    if (p.incompleto) tr.classList.add('row-incomplete');
+
+    const articuloLabel = p.incompleto
+      ? `${p.articulo || '(Sin nombre)'} <span class="badge-incomplete">Incompleto</span>`
+      : (p.articulo || '');
+
+    const tooltip = (p.incompleteFields || []).length
+      ? `title="Falta: ${(p.incompleteFields || []).join(', ')}"`
+      : '';
+
+    tr.innerHTML = `
+      <td ${tooltip}>${articuloLabel}</td>
+      <td>${p.codigoTLC || ''}</td>
+      <td>${p.proveedor || ''}</td>
+      <td>${p.codigoProveedor || ''}</td>
+      <td>${money(p.precioProveedor, p.moneda)}</td>
+      <td>${money(p.pvp, p.moneda)}</td>
+      <td>${money(p.gananciaReal, p.moneda)}</td>
+      <td class="${getMarginClass(p.margenReal)}">${formatNumber(p.margenReal)}%</td>
+      <td><button class="btn-primary" onclick="openEditModal(${Number(p.rowNumber)})">Editar</button></td>
+    `;
+
+    tbody.appendChild(tr);
+  });
+
+  counter.innerHTML = `Mostrando <strong>${filteredProducts.length}</strong> de <strong>${allProducts.length}</strong> artículos`;
+}
+
+function updateCostoModeUI(prefix) {
+  const modo = normalizeModoCosto(document.getElementById(prefix + 'ModoCosto').value);
+
+  const costoDirectoWrap = document.getElementById(prefix + 'CostoDirectoWrap');
+  const pvpProveedorWrap = document.getElementById(prefix + 'PvpProveedorWrap');
+  const descuentoProveedorWrap = document.getElementById(prefix + 'DescuentoProveedorWrap');
+  const precioProveedorCalculadoWrap = document.getElementById(prefix + 'PrecioProveedorCalculadoWrap');
+  const pvpWrap = document.getElementById(prefix + 'PvpWrap');
+
+  if (modo === 'pvp_descuento') {
+    costoDirectoWrap.classList.add('hidden');
+    pvpProveedorWrap.classList.remove('hidden');
+    descuentoProveedorWrap.classList.remove('hidden');
+    precioProveedorCalculadoWrap.classList.remove('hidden');
+    pvpWrap.classList.add('hidden');
+  } else {
+    costoDirectoWrap.classList.remove('hidden');
+    pvpProveedorWrap.classList.add('hidden');
+    descuentoProveedorWrap.classList.add('hidden');
+    precioProveedorCalculadoWrap.classList.add('hidden');
+    pvpWrap.classList.remove('hidden');
+  }
+}
+
+function clearForm() {
+  document.getElementById('editArticulo').value = '';
+  document.getElementById('editCodigoTLC').value = '';
+  document.getElementById('editProveedor').value = '';
+  document.getElementById('editCodigoProveedor').value = '';
+  document.getElementById('editCodigoFabrica').value = '';
+  document.getElementById('editMoneda').value = '';
+  document.getElementById('editModoCosto').value = 'costo_directo';
+  document.getElementById('editPrecioProveedor').value = '';
+  document.getElementById('editPvpProveedor').value = '';
+  document.getElementById('editDescuentoProveedorPct').value = '';
+  document.getElementById('editPVP').value = '';
+  document.getElementById('editComisionMlPct').value = '';
+  document.getElementById('editEnvioCostoFijo').value = '';
+  document.getElementById('editPrecioProveedorCalculado').innerText = '0';
+  document.getElementById('editComisionMlImporte').innerText = '0';
+  document.getElementById('editIvaComisionMl').innerText = '0';
+  document.getElementById('editIvaCompra').innerText = '0';
+  document.getElementById('editIvaVenta').innerText = '0';
+  document.getElementById('editIvaDgi').innerText = '0';
+  document.getElementById('editGanancia').innerText = '0';
+  document.getElementById('editMargen').innerText = '0%';
+  document.getElementById('modalMessage').innerHTML = '';
+  updateCostoModeUI('edit');
+}
+
+function setEditMetricsPreview(result) {
+  const moneda = result.moneda || '';
+
+  document.getElementById('editPrecioProveedorCalculado').innerText = money(result.precioProveedor, moneda);
+  document.getElementById('editComisionMlImporte').innerText = money(result.comisionMlImporte, moneda);
+  document.getElementById('editIvaComisionMl').innerText = money(result.ivaComisionMl, moneda);
+  document.getElementById('editIvaCompra').innerText = money(result.ivaCompra, moneda);
+  document.getElementById('editIvaVenta').innerText = money(result.ivaVenta, moneda);
+  document.getElementById('editIvaDgi').innerText = money(result.ivaDgi, moneda);
+  document.getElementById('editGanancia').innerText = money(result.gananciaReal, moneda);
+  document.getElementById('editMargen').innerText = `${formatNumber(result.margenReal)}%`;
+
+  const estado = getStateLabelByMargin(result.margenReal, result.gananciaReal);
+  const gananciaResumen = document.getElementById('editGananciaResumen');
+  const margenResumen = document.getElementById('editMargenResumen');
+  const estadoResumen = document.getElementById('editEstadoResumen');
+  if (gananciaResumen) {
+    gananciaResumen.innerText = money(result.gananciaReal, moneda);
+    gananciaResumen.className = 'readonly-box ' + getMarginClass(result.margenReal);
+  }
+  if (margenResumen) {
+    margenResumen.innerText = `${formatNumber(result.margenReal)}%`;
+    margenResumen.className = 'readonly-box ' + getMarginClass(result.margenReal);
+  }
+  if (estadoResumen) {
+    estadoResumen.innerText = estado;
+    estadoResumen.className = 'readonly-box ' + getMarginClass(result.margenReal);
+  }
+}
+
+function setEditPreviewNeutral() {
+  const moneda = document.getElementById('editMoneda').value || '';
+  document.getElementById('editPrecioProveedorCalculado').innerText = money(0, moneda);
+  document.getElementById('editComisionMlImporte').innerText = money(0, moneda);
+  document.getElementById('editIvaComisionMl').innerText = money(0, moneda);
+  document.getElementById('editIvaCompra').innerText = money(0, moneda);
+  document.getElementById('editIvaVenta').innerText = money(0, moneda);
+  document.getElementById('editIvaDgi').innerText = money(0, moneda);
+  document.getElementById('editGanancia').innerText = money(0, moneda);
+  document.getElementById('editMargen').innerText = '0,00%';
+
+  ['editGananciaResumen', 'editMargenResumen', 'editEstadoResumen'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.className = 'readonly-box';
+    if (id === 'editGananciaResumen') el.innerText = money(0, moneda);
+    if (id === 'editMargenResumen') el.innerText = '0,00%';
+    if (id === 'editEstadoResumen') el.innerText = 'Sin calcular';
+  });
+}
+
+function getFormData() {
+  return {
+    articulo: document.getElementById('editArticulo').value.trim(),
+    codigoTLC: document.getElementById('editCodigoTLC').value.trim(),
+    proveedor: document.getElementById('editProveedor').value.trim(),
+    codigoProveedor: document.getElementById('editCodigoProveedor').value.trim(),
+    codigoFabrica: document.getElementById('editCodigoFabrica').value.trim(),
+    moneda: document.getElementById('editMoneda').value.trim(),
+    modoCosto: document.getElementById('editModoCosto').value || 'costo_directo',
+    precioProveedor: Number(document.getElementById('editPrecioProveedor').value || 0),
+    pvpProveedor: Number(document.getElementById('editPvpProveedor').value || 0),
+    descuentoProveedorPct: Number(document.getElementById('editDescuentoProveedorPct').value || 0),
+    pvp: Number(document.getElementById('editPVP').value || 0),
+    comisionMlPct: Number(document.getElementById('editComisionMlPct').value || 0),
+    envioCostoFijo: Number(document.getElementById('editEnvioCostoFijo').value || 0)
+  };
+}
+
+function canRequestPreview(data) {
+  return !!data.moneda;
+}
+
+function updatePreview() {
+  const data = getFormData();
+  const requestId = ++editPreviewRequestId;
+  const message = document.getElementById('modalMessage');
+
+  if (!canRequestPreview(data)) {
+    setEditPreviewNeutral();
+    message.innerHTML = '';
+    return;
+  }
+
+  apiRequest('/api/precios/preview', { method: 'POST', body: JSON.stringify(data) })
+    .then(result => {
+      if (requestId !== editPreviewRequestId) return;
+      setEditMetricsPreview(result);
+      message.innerHTML = '';
+    })
+    .catch(error => {
+      if (requestId !== editPreviewRequestId) return;
+      setEditPreviewNeutral();
+      message.innerHTML = `<span class="error">${error.message || error}</span>`;
+    });
+}
+
+function openCreateModal() {
+  modalMode = 'create';
+  currentProduct = null;
+  document.getElementById('modalTitle').innerText = 'Nuevo producto';
+  document.getElementById('deleteButton').style.display = 'none';
+  clearForm();
+  toggleCalculo(false);
+  document.getElementById('editModal').style.display = 'flex';
+}
+
+function openEditModal(rowNumber) {
+  modalMode = 'edit';
+  const p = allProducts.find(x => Number(x.rowNumber) === Number(rowNumber));
+  if (!p) return;
+
+  currentProduct = p;
+
+  document.getElementById('modalTitle').innerText = 'Editar producto';
+  document.getElementById('deleteButton').style.display = 'inline-block';
+
+  document.getElementById('editArticulo').value = p.articulo || '';
+  document.getElementById('editCodigoTLC').value = p.codigoTLC || '';
+  document.getElementById('editProveedor').value = p.proveedor || '';
+  document.getElementById('editCodigoProveedor').value = p.codigoProveedor || '';
+  document.getElementById('editCodigoFabrica').value = p.codigoFabrica || '';
+  document.getElementById('editMoneda').value = p.moneda || '';
+  document.getElementById('editModoCosto').value = p.modoCosto || 'costo_directo';
+  document.getElementById('editPrecioProveedor').value = p.precioProveedor ?? '';
+  document.getElementById('editPvpProveedor').value = p.pvpProveedor ?? '';
+  document.getElementById('editDescuentoProveedorPct').value = p.descuentoProveedorPct ?? '';
+  document.getElementById('editPVP').value = p.pvp ?? '';
+  document.getElementById('editComisionMlPct').value = p.comisionMlPct ?? '';
+  document.getElementById('editEnvioCostoFijo').value = p.envioCostoFijo ?? '';
+  document.getElementById('modalMessage').innerHTML = '';
+
+  updateCostoModeUI('edit');
+  toggleCalculo(false);
+  document.getElementById('editModal').style.display = 'flex';
+  updatePreview();
+}
+
+function closeModal() {
+  document.getElementById('editModal').style.display = 'none';
+  document.getElementById('modalMessage').innerHTML = '';
+}
+
+function saveProduct() {
+  const data = getFormData();
+  const message = document.getElementById('modalMessage');
+  message.innerHTML = 'Guardando...';
+
+  if (modalMode === 'create') {
+    apiRequest('/api/precios', { method: 'POST', body: JSON.stringify(data) })
+      .then(result => {
+        allProducts.push(result);
+        populateProveedorFilter();
+        renderProducts();
+        closeModal();
+      })
+      .catch(error => {
+        message.innerHTML = `<span class="error">${error.message || error}</span>`;
+      });
+    return;
+  }
+
+  data.originalRowNumber = currentProduct.rowNumber;
+
+  apiRequest('/api/precios/' + encodeURIComponent(currentProduct.rowNumber), { method: 'PUT', body: JSON.stringify(data) })
+    .then(result => {
+      const index = allProducts.findIndex(p => Number(p.rowNumber) === Number(result.originalRowNumber || result.rowNumber));
+      if (index >= 0) allProducts[index] = { ...allProducts[index], ...result };
+      populateProveedorFilter();
+      renderProducts();
+      closeModal();
+    })
+    .catch(error => {
+      message.innerHTML = `<span class="error">${error.message || error}</span>`;
+    });
+}
+
+function deleteCurrentProduct() {
+  if (!currentProduct) return;
+  const ok = confirm(`¿Seguro que querés eliminar el artículo "${currentProduct.articulo || '(Sin nombre)'}"?`);
+  if (!ok) return;
+
+  const message = document.getElementById('modalMessage');
+  message.innerHTML = 'Eliminando...';
+
+  apiRequest('/api/precios/' + encodeURIComponent(currentProduct.rowNumber), { method: 'DELETE' })
+    .then(() => {
+      allProducts = allProducts.filter(p => Number(p.rowNumber) !== Number(currentProduct.rowNumber));
+      populateProveedorFilter();
+      renderProducts();
+      closeModal();
+    })
+    .catch(error => {
+      message.innerHTML = `<span class="error">${error.message || error}</span>`;
+    });
+}
+
+function getSimulatorData() {
+  return {
+    articulo: 'Simulador',
+    codigoTLC: '',
+    proveedor: '',
+    codigoProveedor: '',
+    codigoFabrica: '',
+    moneda: document.getElementById('simMoneda').value || 'USD',
+    modoCosto: document.getElementById('simModoCosto').value || 'costo_directo',
+    precioProveedor: Number(document.getElementById('simPrecioProveedor').value || 0),
+    pvpProveedor: Number(document.getElementById('simPvpProveedor').value || 0),
+    descuentoProveedorPct: Number(document.getElementById('simDescuentoProveedorPct').value || 0),
+    pvp: Number(document.getElementById('simPvp').value || 0),
+    comisionMlPct: Number(document.getElementById('simComisionMlPct').value || 0),
+    envioCostoFijo: Number(document.getElementById('simEnvioCostoFijo').value || 0),
+    descuentoPromocion: Number(document.getElementById('simDescuentoPromocion').value || 0)
+  };
+}
+
+function setSimNeutral() {
+  const moneda = document.getElementById('simMoneda').value || 'USD';
+  document.getElementById('simPrecioProveedorCalculado').innerText = money(0, moneda);
+  document.getElementById('simGanancia').innerText = money(0, moneda);
+  document.getElementById('simMargen').innerText = '0,00%';
+  document.getElementById('simComisionMlImporte').innerText = money(0, moneda);
+  document.getElementById('simIvaComisionMl').innerText = money(0, moneda);
+  document.getElementById('simIvaCompra').innerText = money(0, moneda);
+  document.getElementById('simIvaVenta').innerText = money(0, moneda);
+  document.getElementById('simIvaDgi').innerText = money(0, moneda);
+  document.getElementById('simDescuentoImporte').innerText = money(0, moneda);
+  document.getElementById('simVentaFinal').innerText = money(0, moneda);
+  document.getElementById('simGananciaFinal').innerText = money(0, moneda);
+  document.getElementById('simMargenFinal').innerText = '0,00%';
+  document.getElementById('simComisionMlFinal').innerText = money(0, moneda);
+  document.getElementById('simIvaDgiFinal').innerText = money(0, moneda);
+  ['simMargenPublicidad'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.innerText = '0,00%';
+      el.className = 'readonly-box';
+    }
+  });
+  ['simCostoPublicidad','simGananciaPublicidad'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.innerText = money(0, moneda);
+      el.className = 'readonly-box';
+    }
+  });
+  const estadoPubEl = document.getElementById('simEstadoPublicidad');
+  if (estadoPubEl) {
+    estadoPubEl.innerText = 'Sin calcular';
+    estadoPubEl.className = 'readonly-box';
+  }
+
+  const estadoEl = document.getElementById('simEstado');
+  estadoEl.innerText = 'Sin calcular';
+  estadoEl.className = 'readonly-box';
+
+  const estadoFinalEl = document.getElementById('simEstadoFinal');
+  estadoFinalEl.innerText = 'Sin calcular';
+  estadoFinalEl.className = 'readonly-box';
+
+  document.getElementById('simTargetPrice').innerText = money(0, moneda);
+  document.getElementById('simTargetAchievedMargin').innerText = '0,00%';
+  document.getElementById('simTargetState').innerText = 'Sin calcular';
+  document.getElementById('simTargetMessage').innerHTML = '';
+}
+
+
+function updatePublicidadResult(result) {
+  const moneda = (result && result.moneda) || document.getElementById('simMoneda').value || 'USD';
+  const acosPct = Number(document.getElementById('simAcosPublicidadPct')?.value || 0);
+  const ventaFinal = Number((result && result.ventaFinal) || 0);
+  const gananciaFinal = Number((result && result.gananciaFinal) || 0);
+
+  const costoPublicidad = ventaFinal * (acosPct / 100);
+  const gananciaPublicidad = gananciaFinal - costoPublicidad;
+  const margenPublicidad = ventaFinal > 0 ? (gananciaPublicidad / ventaFinal) * 100 : 0;
+  const estadoPublicidad = getStateLabelByMargin(margenPublicidad, gananciaPublicidad);
+
+  const setText = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.innerText = value;
+  };
+  const setClass = (id, margin) => {
+    const el = document.getElementById(id);
+    if (el) el.className = 'readonly-box ' + getMarginClass(margin);
+  };
+setText('simCostoPublicidad', money(costoPublicidad, moneda));
+  setText('simGananciaPublicidad', money(gananciaPublicidad, moneda));
+  setText('simMargenPublicidad', `${formatNumber(margenPublicidad)}%`);
+  setText('simEstadoPublicidad', estadoPublicidad);
+
+  setClass('simGananciaPublicidad', margenPublicidad);
+  setClass('simMargenPublicidad', margenPublicidad);
+  setClass('simEstadoPublicidad', margenPublicidad);
+}
+
+function setSimulatorResult(result) {
+  const moneda = result.moneda || 'USD';
+
+  document.getElementById('simPrecioProveedorCalculado').innerText = money(result.precioProveedor, moneda);
+  document.getElementById('simGanancia').innerText = money(result.gananciaReal, moneda);
+  document.getElementById('simMargen').innerText = `${formatNumber(result.margenReal)}%`;
+  document.getElementById('simComisionMlImporte').innerText = money(result.comisionMlImporte, moneda);
+  document.getElementById('simIvaComisionMl').innerText = money(result.ivaComisionMl, moneda);
+  document.getElementById('simIvaCompra').innerText = money(result.ivaCompra, moneda);
+  document.getElementById('simIvaVenta').innerText = money(result.ivaVenta, moneda);
+  document.getElementById('simIvaDgi').innerText = money(result.ivaDgi, moneda);
+  document.getElementById('simDescuentoImporte').innerText = money(result.descuentoPromocionImporte, moneda);
+  document.getElementById('simVentaFinal').innerText = money(result.ventaFinal, moneda);
+  document.getElementById('simGananciaFinal').innerText = money(result.gananciaFinal, moneda);
+  document.getElementById('simMargenFinal').innerText = `${formatNumber(result.margenFinal)}%`;
+  document.getElementById('simComisionMlFinal').innerText = money(result.comisionMlImporteFinal, moneda);
+  document.getElementById('simIvaDgiFinal').innerText = money(result.ivaDgiFinal, moneda);
+  updatePublicidadResult(result);
+
+  const estado = getStateLabelByMargin(result.margenReal, result.gananciaReal);
+
+  const estadoEl = document.getElementById('simEstado');
+  estadoEl.innerText = estado;
+  estadoEl.className = 'readonly-box ' + getMarginClass(result.margenReal);
+
+  const estadoFinal = getStateLabelByMargin(result.margenFinal, result.gananciaFinal);
+  const estadoFinalEl = document.getElementById('simEstadoFinal');
+  estadoFinalEl.innerText = estadoFinal;
+  estadoFinalEl.className = 'readonly-box ' + getMarginClass(result.margenFinal);
+}
+
+function openSimulatorModal() {
+  document.getElementById('simMoneda').value = 'USD';
+  document.getElementById('simModoCosto').value = 'costo_directo';
+  document.getElementById('simPrecioProveedor').value = '';
+  document.getElementById('simPvpProveedor').value = '';
+  document.getElementById('simDescuentoProveedorPct').value = '';
+  document.getElementById('simPvp').value = '';
+  document.getElementById('simComisionMlPct').value = '';
+  document.getElementById('simEnvioCostoFijo').value = '';
+  document.getElementById('simDescuentoPromocion').value = '';
+  document.getElementById('simTargetMarginPct').value = '';
+  if (document.getElementById('simAcosPublicidadPct')) document.getElementById('simAcosPublicidadPct').value = '';
+  updateCostoModeUI('sim');
+  toggleSimDetalle(false);
+  setSimNeutral();
+  document.getElementById('simulatorModal').style.display = 'flex';
+}
+
+function closeSimulatorModal() {
+  document.getElementById('simulatorModal').style.display = 'none';
+}
+
+function updateSimulator() {
+  const requestId = ++simPreviewRequestId;
+  const data = getSimulatorData();
+
+  apiRequest('/api/precios/preview', { method: 'POST', body: JSON.stringify(data) })
+    .then(result => {
+      if (requestId !== simPreviewRequestId) return;
+      setSimulatorResult(result);
+    })
+    .catch(() => {
+      if (requestId !== simPreviewRequestId) return;
+      setSimNeutral();
+    });
+}
+
+function updateTargetPrice() {
+  const targetMarginPct = Number(document.getElementById('simTargetMarginPct').value || 0);
+  const requestId = ++simTargetRequestId;
+  const data = getSimulatorData();
+  const message = document.getElementById('simTargetMessage');
+
+  if (String(document.getElementById('simTargetMarginPct').value).trim() === '') {
+    document.getElementById('simTargetPrice').innerText = money(0, data.moneda);
+    document.getElementById('simTargetAchievedMargin').innerText = '0,00%';
+    document.getElementById('simTargetState').innerText = 'Sin calcular';
+    message.innerHTML = '';
+    return;
+  }
+
+  apiRequest('/api/precios/target-price', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, targetMarginPct: targetMarginPct })
+  })
+    .then(result => {
+      if (requestId !== simTargetRequestId) return;
+
+      document.getElementById('simTargetPrice').innerText = money(result.suggestedPvp, result.moneda);
+      document.getElementById('simTargetAchievedMargin').innerText = `${formatNumber(result.achievedMarginPct)}%`;
+      document.getElementById('simTargetState').innerText = getStateLabelByMargin(result.margenReal, result.gananciaReal);
+      document.getElementById('simTargetState').className = 'readonly-box ' + getMarginClass(result.achievedMarginPct);
+      message.innerHTML = '';
+    })
+    .catch(error => {
+      if (requestId !== simTargetRequestId) return;
+
+      document.getElementById('simTargetPrice').innerText = money(0, data.moneda);
+      document.getElementById('simTargetAchievedMargin').innerText = '0,00%';
+      document.getElementById('simTargetState').innerText = 'Sin calcular';
+      document.getElementById('simTargetState').className = 'readonly-box';
+      message.innerHTML = `<span class="error">${error.message || error}</span>`;
+    });
+}
+
+function updateClock() {
+  const el = document.getElementById('clock');
+  if (!el) return;
+  const now = new Date();
+  el.textContent = now.toLocaleTimeString('es-UY', { hour: 'numeric', minute: '2-digit' });
+}
+
+window.onload = function() {
+  updateClock();
+  setInterval(updateClock, 30000);
+  loadProducts();
+
+  const searchInput = document.getElementById('searchInput');
+  searchInput.addEventListener('keydown', function(event) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      renderProducts();
+    }
+  });
+};
+
+
+function togglePriceAiPanel(force) {
+  const panel = document.getElementById('priceAiPanel');
+  if (!panel) return;
+  const shouldOpen = typeof force === 'boolean' ? force : !panel.classList.contains('open');
+  panel.classList.toggle('open', shouldOpen);
+  if (shouldOpen) setTimeout(() => document.getElementById('priceAiInput')?.focus(), 100);
+}
+
+function appendPriceAiMessage(role, text) {
+  const box = document.getElementById('priceAiMessages');
+  if (!box) return;
+  const div = document.createElement('div');
+  div.className = 'ai-msg ' + (role === 'user' ? 'user' : 'bot');
+  div.textContent = text;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+
+function sendPriceAiSuggestion(text) {
+  const input = document.getElementById('priceAiInput');
+  if (!input) return;
+  input.value = text;
+  input.focus();
+}
+
+function handlePriceAiKey(event) {
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault();
+    sendPriceAiMessage();
+  }
+}
+
+
+
+function normalizePriceAiText(text) {
+  return String(text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
+function singularizePriceAiTerm(term) {
+  let t = String(term || '').trim();
+  if (t.length > 4 && t.endsWith('es')) return t.slice(0, -2);
+  if (t.length > 3 && t.endsWith('s')) return t.slice(0, -1);
+  return t;
+}
+
+function extractPriceAiSearchTerm(message) {
+  if (/(margen|ganancia)/i.test(String(message || ''))) return '';
+  const raw = String(message || '').trim();
+  const normalized = normalizePriceAiText(raw);
+
+  const patterns = [
+    /(?:palabra|contengan|contiene|contenga|buscar|busca|buscame|mostrame|mostrar|articulos?|productos?)\s+["']?([a-z0-9áéíóúñü\- ]{3,})["']?/i,
+    /(?:codigo\s*tlc|tlc)\s+([0-9]{4,})/i,
+    /(?:proveedor)\s+([a-z0-9áéíóúñü\- ]{3,})/i
+  ];
+
+  for (const pattern of patterns) {
+    const m = raw.match(pattern);
+    if (m && m[1]) {
+      let term = m[1]
+        .replace(/\b(con|que|tengan|tenga|contengan|contenga|la|el|los|las|palabra|codigo|tlc|proveedor|articulos|productos|todos|todas)\b/gi, ' ')
+        .replace(/[¿?.,;:]/g, ' ')
+        .trim();
+      const parts = term.split(/\s+/).filter(Boolean);
+      if (parts.length) return parts[parts.length - 1];
+    }
+  }
+
+  // fallback: si es una consulta corta, usar la última palabra útil
+  const words = raw
+    .replace(/[¿?.,;:]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length >= 3)
+    .filter(w => !/^(buscame|buscar|busca|mostrame|mostrar|todos|todas|articulos|productos|contengan|contiene|palabra|codigo|proveedor)$/i.test(w));
+
+  return words.length ? words[words.length - 1] : '';
+}
+
+function countProductsMatchingSearch(term) {
+  const q = normalizePriceAiText(term);
+  if (!q) return 0;
+
+  return (allProducts || []).filter(p => {
+    const hay = normalizePriceAiText([
+      p.articulo,
+      p.codigoTLC,
+      p.codigoProveedor,
+      p.codigoFabrica,
+      p.proveedor
+    ].join(' '));
+    return hay.includes(q);
+  }).length;
+}
+
+
+
+function extractPriceAiMarginFilter(message) {
+  const raw = String(message || '').toLowerCase().replace(',', '.');
+  if (!/margen/.test(raw)) return null;
+
+  const m = raw.match(/(?:menor|menos|menores|menor\s+al|menor\s+a|menos\s+de|menor\s+que)\D*(\d+(?:\.\d+)?)\s*%?/i);
+  if (m) {
+    return { operator: 'lt', value: Number(m[1]) };
+  }
+
+  const m2 = raw.match(/(?:mayor|mas|más|mayores|mayor\s+al|mayor\s+a|mas\s+de|más\s+de|mayor\s+que)\D*(\d+(?:\.\d+)?)\s*%?/i);
+  if (m2) {
+    return { operator: 'gt', value: Number(m2[1]) };
+  }
+
+  return null;
+}
+
+function applyPriceAiMarginFilterToMainTable(message) {
+  const filter = extractPriceAiMarginFilter(message);
+  if (!filter) return null;
+
+  const searchInput = document.getElementById('searchInput');
+  const filterEstado = document.getElementById('filterEstado');
+  const filterMargen = document.getElementById('filterMargen');
+  const filterProveedor = document.getElementById('filterProveedor');
+
+  if (searchInput) searchInput.value = '';
+  if (filterEstado) filterEstado.value = 'todos';
+  if (filterMargen) filterMargen.value = 'todos';
+  if (filterProveedor) filterProveedor.value = 'todos';
+
+  const filtered = (allProducts || []).filter(p => {
+    const margen = Number(p.margenReal || 0);
+    if (filter.operator === 'lt') return margen < filter.value;
+    if (filter.operator === 'gt') return margen > filter.value;
+    return false;
+  });
+
+  const tbody = document.getElementById('productsBody');
+  const counter = document.getElementById('productsCounter');
+  if (tbody) tbody.innerHTML = '';
+
+  filtered.forEach(p => {
+    const tr = document.createElement('tr');
+    if (p.incompleto) tr.classList.add('row-incomplete');
+
+    const articuloLabel = p.incompleto
+      ? `${p.articulo || '(Sin nombre)'} <span class="badge-incomplete">Incompleto</span>`
+      : (p.articulo || '');
+
+    const tooltip = (p.incompleteFields || []).length
+      ? `title="Falta: ${(p.incompleteFields || []).join(', ')}"`
+      : '';
+
+    tr.innerHTML = `
+      <td ${tooltip}>${articuloLabel}</td>
+      <td>${p.codigoTLC || ''}</td>
+      <td>${p.proveedor || ''}</td>
+      <td>${p.codigoProveedor || ''}</td>
+      <td>${money(p.precioProveedor, p.moneda)}</td>
+      <td>${money(p.pvp, p.moneda)}</td>
+      <td>${money(p.gananciaReal, p.moneda)}</td>
+      <td class="${getMarginClass(p.margenReal)}">${formatNumber(p.margenReal)}%</td>
+      <td><button class="btn-primary" onclick="openEditModal(${Number(p.rowNumber)})">Editar</button></td>
+    `;
+
+    tbody.appendChild(tr);
+  });
+
+  if (counter) {
+    const opText = filter.operator === 'lt' ? 'menor a' : 'mayor a';
+    counter.innerHTML = `Mostrando <strong>${filtered.length}</strong> de <strong>${allProducts.length}</strong> artículos con margen ${opText} <strong>${formatNumber(filter.value)}%</strong>`;
+  }
+
+  const panel = document.getElementById('filtersPanel');
+  const arrow = document.getElementById('filtersArrow');
+  if (panel && !panel.classList.contains('open')) {
+    panel.classList.add('open');
+    if (arrow) arrow.innerText = '▲';
+  }
+
+  return { count: filtered.length, operator: filter.operator, value: filter.value };
+}
+
+function applyPriceAiSearchToMainTable(message) {
+  const termRaw = extractPriceAiSearchTerm(message);
+  if (!termRaw) return null;
+
+  let term = termRaw.trim();
+  let count = countProductsMatchingSearch(term);
+
+  if (count === 0) {
+    const singular = singularizePriceAiTerm(term);
+    if (singular !== term) {
+      const singularCount = countProductsMatchingSearch(singular);
+      if (singularCount > 0) {
+        term = singular;
+        count = singularCount;
+      }
+    }
+  }
+
+  if (count <= 0) return { term, count: 0 };
+
+  const searchInput = document.getElementById('searchInput');
+  const filterEstado = document.getElementById('filterEstado');
+  const filterMargen = document.getElementById('filterMargen');
+  const filterProveedor = document.getElementById('filterProveedor');
+
+  if (searchInput) searchInput.value = term;
+  if (filterEstado) filterEstado.value = 'todos';
+  if (filterMargen) filterMargen.value = 'todos';
+  if (filterProveedor) filterProveedor.value = 'todos';
+
+  renderProducts();
+
+  const panel = document.getElementById('filtersPanel');
+  const arrow = document.getElementById('filtersArrow');
+  if (panel && !panel.classList.contains('open')) {
+    panel.classList.add('open');
+    if (arrow) arrow.innerText = '▲';
+  }
+
+  return { term, count };
+}
+
+
+
+function parsePriceAiMarginRequest(message) {
+  const text = String(message || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(',', '.');
+
+  if (!text.includes('margen')) return null;
+
+  const numMatch = text.match(/(\d+(?:\.\d+)?)\s*%?/);
+  if (!numMatch) return null;
+
+  const value = Number(numMatch[1]);
+  if (!Number.isFinite(value)) return null;
+
+  if (/\b(menor|menos|debajo|inferior|bajo)\b/.test(text)) {
+    return { operator: 'lt', value };
+  }
+
+  if (/\b(mayor|mas|arriba|superior)\b/.test(text)) {
+    return { operator: 'gt', value };
+  }
+
+  return null;
+}
+
+function renderPriceAiMarginResults(filter) {
+  const searchInput = document.getElementById('searchInput');
+  const filterEstado = document.getElementById('filterEstado');
+  const filterMargen = document.getElementById('filterMargen');
+  const filterProveedor = document.getElementById('filterProveedor');
+
+  if (searchInput) searchInput.value = '';
+  if (filterEstado) filterEstado.value = 'todos';
+  if (filterMargen) filterMargen.value = 'todos';
+  if (filterProveedor) filterProveedor.value = 'todos';
+
+  const filtered = (allProducts || []).filter(p => {
+    const margen = Number(p.margenReal || 0);
+    return filter.operator === 'lt' ? margen < filter.value : margen > filter.value;
+  });
+
+  const tbody = document.getElementById('productsBody');
+  const counter = document.getElementById('productsCounter');
+  if (!tbody) return { count: 0, value: filter.value, operator: filter.operator };
+
+  tbody.innerHTML = '';
+
+  filtered.forEach(p => {
+    const tr = document.createElement('tr');
+    if (p.incompleto) tr.classList.add('row-incomplete');
+
+    const articuloLabel = p.incompleto
+      ? `${p.articulo || '(Sin nombre)'} <span class="badge-incomplete">Incompleto</span>`
+      : (p.articulo || '');
+
+    const tooltip = (p.incompleteFields || []).length
+      ? `title="Falta: ${(p.incompleteFields || []).join(', ')}"`
+      : '';
+
+    tr.innerHTML = `
+      <td ${tooltip}>${articuloLabel}</td>
+      <td>${p.codigoTLC || ''}</td>
+      <td>${p.proveedor || ''}</td>
+      <td>${p.codigoProveedor || ''}</td>
+      <td>${money(p.precioProveedor, p.moneda)}</td>
+      <td>${money(p.pvp, p.moneda)}</td>
+      <td>${money(p.gananciaReal, p.moneda)}</td>
+      <td class="${getMarginClass(p.margenReal)}">${formatNumber(p.margenReal)}%</td>
+      <td><button class="btn-primary" onclick="openEditModal(${Number(p.rowNumber)})">Editar</button></td>
+    `;
+
+    tbody.appendChild(tr);
+  });
+
+  if (counter) {
+    const opText = filter.operator === 'lt' ? 'menor a' : 'mayor a';
+    counter.innerHTML = `Mostrando <strong>${filtered.length}</strong> de <strong>${allProducts.length}</strong> artículos con margen ${opText} <strong>${formatNumber(filter.value)}%</strong>`;
+  }
+
+  const panel = document.getElementById('filtersPanel');
+  const arrow = document.getElementById('filtersArrow');
+  if (panel && !panel.classList.contains('open')) {
+    panel.classList.add('open');
+    if (arrow) arrow.innerText = '▲';
+  }
+
+  return { count: filtered.length, value: filter.value, operator: filter.operator };
+}
+
+
+
+function parsePriceAiAdvancedRequest(message) {
+  const raw = String(message || '');
+  const text = raw
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(',', '.');
+
+  const req = { provider: '', gain: null, margin: null };
+
+  const providerMatch =
+    text.match(/(?:proveedor\s+|productos?\s+de\s+|articulos?\s+de\s+|articulos?\s+del\s+proveedor\s+|productos?\s+del\s+proveedor\s+)([a-z0-9ñáéíóúü\s\-]+?)(?=\s+(?:que|con|tengan|tiene|ganancia|margen|mayor|menor)|$)/i);
+
+  if (providerMatch && providerMatch[1]) {
+    req.provider = providerMatch[1]
+      .replace(/\b(todos|todas|los|las|articulos|productos|del|de|proveedor)\b/gi, ' ')
+      .trim();
+  }
+
+  if (text.includes('ganancia')) {
+    const m = text.match(/ganancia.*?(\d+(?:\.\d+)?)/i);
+    if (m) {
+      const value = Number(m[1]);
+      if (Number.isFinite(value)) {
+        const operator = /\b(menor|menos|inferior|debajo)\b/.test(text) ? 'lt' : 'gt';
+        req.gain = { operator, value };
+      }
+    }
+  }
+
+  if (text.includes('margen')) {
+    const m = text.match(/margen.*?(\d+(?:\.\d+)?)/i);
+    if (m) {
+      const value = Number(m[1]);
+      if (Number.isFinite(value)) {
+        const operator = /\b(menor|menos|inferior|debajo|bajo)\b/.test(text) ? 'lt' : 'gt';
+        req.margin = { operator, value };
+      }
+    }
+  }
+
+  if (!req.provider && !req.gain && !req.margin) return null;
+  return req;
+}
+
+function renderPriceAiAdvancedResults(req) {
+  let filtered = [...(allProducts || [])];
+
+  if (req.provider) {
+    const providerNeedle = normalizePriceAiText(req.provider);
+    filtered = filtered.filter(p => normalizePriceAiText(p.proveedor || '').includes(providerNeedle));
+  }
+
+  if (req.gain) {
+    filtered = filtered.filter(p => {
+      const gain = Number(p.gananciaReal || 0);
+      return req.gain.operator === 'lt' ? gain < req.gain.value : gain > req.gain.value;
+    });
+  }
+
+  if (req.margin) {
+    filtered = filtered.filter(p => {
+      const margin = Number(p.margenReal || 0);
+      return req.margin.operator === 'lt' ? margin < req.margin.value : margin > req.margin.value;
+    });
+  }
+
+  const searchInput = document.getElementById('searchInput');
+  const filterEstado = document.getElementById('filterEstado');
+  const filterMargen = document.getElementById('filterMargen');
+  const filterProveedor = document.getElementById('filterProveedor');
+
+  if (searchInput) searchInput.value = '';
+  if (filterEstado) filterEstado.value = 'todos';
+  if (filterMargen) filterMargen.value = 'todos';
+  if (filterProveedor) filterProveedor.value = 'todos';
+
+  const tbody = document.getElementById('productsBody');
+  const counter = document.getElementById('productsCounter');
+  if (!tbody) return { count: 0, label: 'consulta avanzada' };
+
+  tbody.innerHTML = '';
+
+  filtered.forEach(p => {
+    const tr = document.createElement('tr');
+    if (p.incompleto) tr.classList.add('row-incomplete');
+
+    const articuloLabel = p.incompleto
+      ? `${p.articulo || '(Sin nombre)'} <span class="badge-incomplete">Incompleto</span>`
+      : (p.articulo || '');
+
+    const tooltip = (p.incompleteFields || []).length
+      ? `title="Falta: ${(p.incompleteFields || []).join(', ')}"`
+      : '';
+
+    tr.innerHTML = `
+      <td ${tooltip}>${articuloLabel}</td>
+      <td>${p.codigoTLC || ''}</td>
+      <td>${p.proveedor || ''}</td>
+      <td>${p.codigoProveedor || ''}</td>
+      <td>${money(p.precioProveedor, p.moneda)}</td>
+      <td>${money(p.pvp, p.moneda)}</td>
+      <td>${money(p.gananciaReal, p.moneda)}</td>
+      <td class="${getMarginClass(p.margenReal)}">${formatNumber(p.margenReal)}%</td>
+      <td><button class="btn-primary" onclick="openEditModal(${Number(p.rowNumber)})">Editar</button></td>
+    `;
+
+    tbody.appendChild(tr);
+  });
+
+  const parts = [];
+  if (req.provider) parts.push(`proveedor "${req.provider}"`);
+  if (req.gain) parts.push(`ganancia ${req.gain.operator === 'lt' ? 'menor a' : 'mayor a'} ${formatNumber(req.gain.value)}`);
+  if (req.margin) parts.push(`margen ${req.margin.operator === 'lt' ? 'menor a' : 'mayor a'} ${formatNumber(req.margin.value)}%`);
+  const label = parts.join(' + ') || 'consulta avanzada';
+
+  if (counter) {
+    counter.innerHTML = `Mostrando <strong>${filtered.length}</strong> de <strong>${allProducts.length}</strong> artículos por <strong>${label}</strong>`;
+  }
+
+  const panel = document.getElementById('filtersPanel');
+  const arrow = document.getElementById('filtersArrow');
+  if (panel && !panel.classList.contains('open')) {
+    panel.classList.add('open');
+    if (arrow) arrow.innerText = '▲';
+  }
+
+  return { count: filtered.length, label };
+}
+
+
+
+function parsePriceAiQueryEngine(message) {
+  const text = String(message || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(',', '.');
+
+  const query = { filters: {}, sort: null, limit: null, understood: false };
+
+  const providerMatch = text.match(/(?:proveedor\s+|productos?\s+de\s+|articulos?\s+de\s+|articulos?\s+del\s+proveedor\s+|productos?\s+del\s+proveedor\s+)([a-z0-9ñ\s\-]+?)(?=\s+(?:que|con|tengan|tiene|ganancia|margen|mayor|menor|orden|en\s+usd|en\s+uyu)|$)/i);
+  if (providerMatch && providerMatch[1]) {
+    query.filters.provider = providerMatch[1].replace(/\b(todos|todas|los|las|articulos|productos|del|de|proveedor)\b/gi, ' ').trim();
+    query.understood = true;
+  }
+
+  if (/\busd\b/.test(text)) { query.filters.moneda = 'USD'; query.understood = true; }
+  if (/\buyu\b|\bpesos\b/.test(text)) { query.filters.moneda = 'UYU'; query.understood = true; }
+  if (/incomplet/.test(text)) { query.filters.incompleto = true; query.understood = true; }
+
+  if (text.includes('margen')) {
+    const m = text.match(/margen.*?(\d+(?:\.\d+)?)/i);
+    if (m) {
+      query.filters.margin = {
+        op: /\b(menor|menos|inferior|debajo|bajo)\b/.test(text) ? 'lt' : 'gt',
+        value: Number(m[1])
+      };
+      query.understood = true;
+    }
+  }
+
+  if (text.includes('ganancia')) {
+    const m = text.match(/ganancia.*?(\d+(?:\.\d+)?)/i);
+    if (m) {
+      query.filters.gain = {
+        op: /\b(menor|menos|inferior|debajo)\b/.test(text) ? 'lt' : 'gt',
+        value: Number(m[1])
+      };
+      query.understood = true;
+    }
+  }
+
+  if ((text.includes('pvp') || text.includes('precio')) && /\b(mayor|mas|menor|menos|superior|inferior)\b/.test(text)) {
+    const m = text.match(/(?:pvp|precio).*?(\d+(?:\.\d+)?)/i);
+    if (m) {
+      query.filters.pvp = {
+        op: /\b(menor|menos|inferior|debajo)\b/.test(text) ? 'lt' : 'gt',
+        value: Number(m[1])
+      };
+      query.understood = true;
+    }
+  }
+
+  const limitMatch = text.match(/(?:primeros?|top|ultimos?|ultimas?)\s+(\d+)/i);
+  if (limitMatch) {
+    query.limit = Number(limitMatch[1]);
+    query.understood = true;
+  }
+
+  let sortField = null;
+  if (text.includes('orden') || /mayor\s+a\s+menor|menor\s+a\s+mayor|descendente|ascendente/.test(text)) {
+    if (text.includes('margen')) sortField = 'margenReal';
+    else if (text.includes('ganancia')) sortField = 'gananciaReal';
+    else if (text.includes('pvp') || text.includes('precio')) sortField = 'pvp';
+    else if (text.includes('costo')) sortField = 'precioProveedor';
+    else if (text.includes('proveedor')) sortField = 'proveedor';
+    else if (text.includes('codigo') || text.includes('tlc')) sortField = 'codigoTLC';
+  }
+
+  if (sortField) {
+    query.sort = {
+      field: sortField,
+      direction: /mayor\s+a\s+menor|de\s+mayor\s+a\s+menor|descendente/.test(text) ? 'desc' : 'asc'
+    };
+    query.understood = true;
+  }
+
+  return query.understood ? query : null;
+}
+
+function renderPriceAiQueryEngineResults(query) {
+  let filtered = [...(allProducts || [])];
+
+  if (query.filters.provider) {
+    const providerNeedle = normalizePriceAiText(query.filters.provider);
+    filtered = filtered.filter(p => normalizePriceAiText(p.proveedor || '').includes(providerNeedle));
+  }
+
+  if (query.filters.moneda) filtered = filtered.filter(p => String(p.moneda || '').toUpperCase() === query.filters.moneda);
+  if (query.filters.incompleto) filtered = filtered.filter(p => !!p.incompleto);
+
+  if (query.filters.margin) {
+    filtered = filtered.filter(p => {
+      const v = Number(p.margenReal || 0);
+      return query.filters.margin.op === 'lt' ? v < query.filters.margin.value : v > query.filters.margin.value;
+    });
+  }
+
+  if (query.filters.gain) {
+    filtered = filtered.filter(p => {
+      const v = Number(p.gananciaReal || 0);
+      return query.filters.gain.op === 'lt' ? v < query.filters.gain.value : v > query.filters.gain.value;
+    });
+  }
+
+  if (query.filters.pvp) {
+    filtered = filtered.filter(p => {
+      const v = Number(p.pvp || 0);
+      return query.filters.pvp.op === 'lt' ? v < query.filters.pvp.value : v > query.filters.pvp.value;
+    });
+  }
+
+  if (query.sort) {
+    const field = query.sort.field;
+    const direction = query.sort.direction;
+    filtered.sort((a, b) => {
+      if (field === 'proveedor' || field === 'codigoTLC') {
+        return direction === 'asc'
+          ? String(a[field] || '').localeCompare(String(b[field] || ''), 'es')
+          : String(b[field] || '').localeCompare(String(a[field] || ''), 'es');
+      }
+      const na = Number(a[field] || 0);
+      const nb = Number(b[field] || 0);
+      return direction === 'asc' ? na - nb : nb - na;
+    });
+  }
+
+  const totalBeforeLimit = filtered.length;
+  if (query.limit && query.limit > 0) filtered = filtered.slice(0, query.limit);
+
+  const searchInput = document.getElementById('searchInput');
+  const filterEstado = document.getElementById('filterEstado');
+  const filterMargen = document.getElementById('filterMargen');
+  const filterProveedor = document.getElementById('filterProveedor');
+  if (searchInput) searchInput.value = '';
+  if (filterEstado) filterEstado.value = 'todos';
+  if (filterMargen) filterMargen.value = 'todos';
+  if (filterProveedor) filterProveedor.value = 'todos';
+
+  const tbody = document.getElementById('productsBody');
+  const counter = document.getElementById('productsCounter');
+  if (!tbody) return { count: 0, totalBeforeLimit, label: 'consulta' };
+
+  tbody.innerHTML = '';
+  filtered.forEach(p => {
+    const tr = document.createElement('tr');
+    if (p.incompleto) tr.classList.add('row-incomplete');
+    const articuloLabel = p.incompleto
+      ? `${p.articulo || '(Sin nombre)'} <span class="badge-incomplete">Incompleto</span>`
+      : (p.articulo || '');
+    const tooltip = (p.incompleteFields || []).length ? `title="Falta: ${(p.incompleteFields || []).join(', ')}"` : '';
+    tr.innerHTML = `
+      <td ${tooltip}>${articuloLabel}</td>
+      <td>${p.codigoTLC || ''}</td>
+      <td>${p.proveedor || ''}</td>
+      <td>${p.codigoProveedor || ''}</td>
+      <td>${money(p.precioProveedor, p.moneda)}</td>
+      <td>${money(p.pvp, p.moneda)}</td>
+      <td>${money(p.gananciaReal, p.moneda)}</td>
+      <td class="${getMarginClass(p.margenReal)}">${formatNumber(p.margenReal)}%</td>
+      <td><button class="btn-primary" onclick="openEditModal(${Number(p.rowNumber)})">Editar</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  const parts = [];
+  if (query.filters.provider) parts.push(`proveedor "${query.filters.provider}"`);
+  if (query.filters.moneda) parts.push(`moneda ${query.filters.moneda}`);
+  if (query.filters.incompleto) parts.push('artículos incompletos');
+  if (query.filters.margin) parts.push(`margen ${query.filters.margin.op === 'lt' ? 'menor a' : 'mayor a'} ${formatNumber(query.filters.margin.value)}%`);
+  if (query.filters.gain) parts.push(`ganancia ${query.filters.gain.op === 'lt' ? 'menor a' : 'mayor a'} ${formatNumber(query.filters.gain.value)}`);
+  if (query.filters.pvp) parts.push(`PVP ${query.filters.pvp.op === 'lt' ? 'menor a' : 'mayor a'} ${formatNumber(query.filters.pvp.value)}`);
+  if (query.sort) {
+    const names = { margenReal: 'margen', gananciaReal: 'ganancia', pvp: 'PVP', precioProveedor: 'costo', proveedor: 'proveedor', codigoTLC: 'código TLC' };
+    parts.push(`ordenado por ${names[query.sort.field] || query.sort.field} ${query.sort.direction === 'asc' ? 'de menor a mayor' : 'de mayor a menor'}`);
+  }
+  if (query.limit) parts.push(`límite ${query.limit}`);
+  const label = parts.join(' + ') || 'consulta';
+
+  if (counter) counter.innerHTML = `Mostrando <strong>${filtered.length}</strong> de <strong>${allProducts.length}</strong> artículos por <strong>${label}</strong>`;
+
+  const panel = document.getElementById('filtersPanel');
+  const arrow = document.getElementById('filtersArrow');
+  if (panel && !panel.classList.contains('open')) {
+    panel.classList.add('open');
+    if (arrow) arrow.innerText = '▲';
+  }
+
+  return { count: filtered.length, totalBeforeLimit, label };
+}
+
+
+
+function parsePriceAiCommandFinal(message) {
+  const text = String(message || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(',', '.');
+  const command = { filters: {}, sort: null, limit: null, shouldHandle: false };
+
+  const providerMatch = text.match(/(?:proveedor\s+|productos?\s+de\s+|articulos?\s+de\s+|articulos?\s+del\s+proveedor\s+|productos?\s+del\s+proveedor\s+)([a-z0-9ñ\s\-]+?)(?=\s+(?:que|con|tengan|tiene|ganancia|margen|mayor|menor|orden|en\s+usd|en\s+uyu)|$)/i);
+  if (providerMatch && providerMatch[1]) {
+    command.filters.provider = providerMatch[1].replace(/\b(todos|todas|los|las|articulos|productos|del|de|proveedor)\b/gi, ' ').trim();
+    command.shouldHandle = true;
+  }
+  if (/\busd\b/.test(text)) { command.filters.moneda = 'USD'; command.shouldHandle = true; }
+  if (/\buyu\b|\bpesos\b/.test(text)) { command.filters.moneda = 'UYU'; command.shouldHandle = true; }
+  if (/incomplet/.test(text)) { command.filters.incompleto = true; command.shouldHandle = true; }
+
+  if (text.includes('margen')) {
+    const m = text.match(/margen.*?(\d+(?:\.\d+)?)/i);
+    if (m) {
+      command.filters.margin = { op: /\b(menor|menos|inferior|debajo|bajo)\b/.test(text) ? 'lt' : 'gt', value: Number(m[1]) };
+      command.shouldHandle = true;
+    }
+  }
+  if (text.includes('ganancia')) {
+    const m = text.match(/ganancia.*?(\d+(?:\.\d+)?)/i);
+    if (m) {
+      command.filters.gain = { op: /\b(menor|menos|inferior|debajo)\b/.test(text) ? 'lt' : 'gt', value: Number(m[1]) };
+      command.shouldHandle = true;
+    }
+  }
+  if ((text.includes('pvp') || text.includes('precio')) && /\b(mayor|mas|menor|menos|superior|inferior)\b/.test(text)) {
+    const m = text.match(/(?:pvp|precio).*?(\d+(?:\.\d+)?)/i);
+    if (m) {
+      command.filters.pvp = { op: /\b(menor|menos|inferior|debajo)\b/.test(text) ? 'lt' : 'gt', value: Number(m[1]) };
+      command.shouldHandle = true;
+    }
+  }
+
+  const limitMatch = text.match(/(?:primeros?|top|ultimos?|ultimas?)\s+(\d+)/i);
+  if (limitMatch) { command.limit = Number(limitMatch[1]); command.shouldHandle = true; }
+
+  let sortField = null;
+  if (text.includes('orden') || /mayor\s+a\s+menor|menor\s+a\s+mayor|descendente|ascendente/.test(text)) {
+    if (text.includes('margen')) sortField = 'margenReal';
+    else if (text.includes('ganancia')) sortField = 'gananciaReal';
+    else if (text.includes('pvp') || text.includes('precio')) sortField = 'pvp';
+    else if (text.includes('costo')) sortField = 'precioProveedor';
+    else if (text.includes('proveedor')) sortField = 'proveedor';
+    else if (text.includes('codigo') || text.includes('tlc')) sortField = 'codigoTLC';
+  }
+  if (sortField) {
+    command.sort = { field: sortField, direction: /mayor\s+a\s+menor|de\s+mayor\s+a\s+menor|descendente/.test(text) ? 'desc' : 'asc' };
+    command.shouldHandle = true;
+  }
+  return command.shouldHandle ? command : null;
+}
+
+function renderPriceAiCommandFinal(command) {
+  let filtered = [...(allProducts || [])];
+
+  if (command.filters.provider) {
+    const needle = normalizePriceAiText(command.filters.provider);
+    filtered = filtered.filter(p => normalizePriceAiText(p.proveedor || '').includes(needle));
+  }
+  if (command.filters.moneda) filtered = filtered.filter(p => String(p.moneda || '').toUpperCase() === command.filters.moneda);
+  if (command.filters.incompleto) filtered = filtered.filter(p => !!p.incompleto);
+  if (command.filters.margin) filtered = filtered.filter(p => command.filters.margin.op === 'lt' ? Number(p.margenReal || 0) < command.filters.margin.value : Number(p.margenReal || 0) > command.filters.margin.value);
+  if (command.filters.gain) filtered = filtered.filter(p => command.filters.gain.op === 'lt' ? Number(p.gananciaReal || 0) < command.filters.gain.value : Number(p.gananciaReal || 0) > command.filters.gain.value);
+  if (command.filters.pvp) filtered = filtered.filter(p => command.filters.pvp.op === 'lt' ? Number(p.pvp || 0) < command.filters.pvp.value : Number(p.pvp || 0) > command.filters.pvp.value);
+
+  if (command.sort) {
+    const field = command.sort.field;
+    const direction = command.sort.direction;
+    filtered.sort((a, b) => {
+      if (field === 'proveedor' || field === 'codigoTLC') {
+        return direction === 'asc' ? String(a[field] || '').localeCompare(String(b[field] || ''), 'es') : String(b[field] || '').localeCompare(String(a[field] || ''), 'es');
+      }
+      const na = Number(a[field] || 0);
+      const nb = Number(b[field] || 0);
+      return direction === 'asc' ? na - nb : nb - na;
+    });
+  }
+  if (command.limit && command.limit > 0) filtered = filtered.slice(0, command.limit);
+
+  const searchInput = document.getElementById('searchInput');
+  const filterEstado = document.getElementById('filterEstado');
+  const filterMargen = document.getElementById('filterMargen');
+  const filterProveedor = document.getElementById('filterProveedor');
+  if (searchInput) searchInput.value = '';
+  if (filterEstado) filterEstado.value = 'todos';
+  if (filterMargen) filterMargen.value = 'todos';
+  if (filterProveedor) filterProveedor.value = 'todos';
+
+  const tbody = document.getElementById('productsBody');
+  const counter = document.getElementById('productsCounter');
+  if (!tbody) return { count: 0, label: 'consulta' };
+  tbody.innerHTML = '';
+
+  filtered.forEach(p => {
+    const tr = document.createElement('tr');
+    if (p.incompleto) tr.classList.add('row-incomplete');
+    const articuloLabel = p.incompleto ? `${p.articulo || '(Sin nombre)'} <span class="badge-incomplete">Incompleto</span>` : (p.articulo || '');
+    const tooltip = (p.incompleteFields || []).length ? `title="Falta: ${(p.incompleteFields || []).join(', ')}"` : '';
+    tr.innerHTML = `
+      <td ${tooltip}>${articuloLabel}</td>
+      <td>${p.codigoTLC || ''}</td>
+      <td>${p.proveedor || ''}</td>
+      <td>${p.codigoProveedor || ''}</td>
+      <td>${money(p.precioProveedor, p.moneda)}</td>
+      <td>${money(p.pvp, p.moneda)}</td>
+      <td>${money(p.gananciaReal, p.moneda)}</td>
+      <td class="${getMarginClass(p.margenReal)}">${formatNumber(p.margenReal)}%</td>
+      <td><button class="btn-primary" onclick="openEditModal(${Number(p.rowNumber)})">Editar</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  const parts = [];
+  if (command.filters.provider) parts.push(`proveedor "${command.filters.provider}"`);
+  if (command.filters.moneda) parts.push(`moneda ${command.filters.moneda}`);
+  if (command.filters.incompleto) parts.push('artículos incompletos');
+  if (command.filters.margin) parts.push(`margen ${command.filters.margin.op === 'lt' ? 'menor a' : 'mayor a'} ${formatNumber(command.filters.margin.value)}%`);
+  if (command.filters.gain) parts.push(`ganancia ${command.filters.gain.op === 'lt' ? 'menor a' : 'mayor a'} ${formatNumber(command.filters.gain.value)}`);
+  if (command.filters.pvp) parts.push(`PVP ${command.filters.pvp.op === 'lt' ? 'menor a' : 'mayor a'} ${formatNumber(command.filters.pvp.value)}`);
+  if (command.sort) {
+    const names = { margenReal: 'margen', gananciaReal: 'ganancia', pvp: 'PVP', precioProveedor: 'costo', proveedor: 'proveedor', codigoTLC: 'código TLC' };
+    parts.push(`ordenado por ${names[command.sort.field] || command.sort.field} ${command.sort.direction === 'asc' ? 'de menor a mayor' : 'de mayor a menor'}`);
+  }
+  if (command.limit) parts.push(`límite ${command.limit}`);
+  const label = parts.join(' + ') || 'consulta';
+
+  if (counter) counter.innerHTML = `Mostrando <strong>${filtered.length}</strong> de <strong>${allProducts.length}</strong> artículos por <strong>${label}</strong>`;
+
+  const panel = document.getElementById('filtersPanel');
+  const arrow = document.getElementById('filtersArrow');
+  if (panel && !panel.classList.contains('open')) {
+    panel.classList.add('open');
+    if (arrow) arrow.innerText = '▲';
+  }
+  return { count: filtered.length, label };
+}
+
+async function sendPriceAiMessage() {
+  const input = document.getElementById('priceAiInput');
+  const btn = document.getElementById('priceAiSendBtn');
+  if (!input || !btn) return;
+
+  const message = input.value.trim();
+  if (!message) return;
+
+  appendPriceAiMessage('user', message);
+  input.value = '';
+
+  const command = parsePriceAiCommandFinal(message);
+  if (command) {
+    const result = renderPriceAiCommandFinal(command);
+    appendPriceAiMessage(
+      'bot',
+      `Encontré ${result.count} artículo${result.count === 1 ? '' : 's'} para ${result.label} y ya te los mostré en la lista principal.`
+    );
+    return;
+  }
+
+  const tableSearch = applyPriceAiSearchToMainTable(message);
+  if (tableSearch && tableSearch.count > 0) {
+    appendPriceAiMessage(
+      'bot',
+      `Encontré ${tableSearch.count} artículo${tableSearch.count === 1 ? '' : 's'} para "${tableSearch.term}" y ya te los mostré en la lista principal.`
+    );
+    return;
+  }
+
+  if (tableSearch && tableSearch.count === 0) {
+    appendPriceAiMessage(
+      'bot',
+      `No encontré artículos para "${tableSearch.term}" en la lista principal. Probá con otra palabra, código TLC, proveedor o código proveedor.`
+    );
+    return;
+  }
+
+  btn.disabled = true;
+  appendPriceAiMessage('bot', 'Analizando la lista de precios...');
+
+  try {
+    const res = await fetch('/api/precios/ia-chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message })
+    });
+
+    const data = await res.json().catch(() => ({}));
+    const messages = document.getElementById('priceAiMessages');
+    const last = messages?.lastElementChild;
+    if (last && last.textContent === 'Analizando la lista de precios...') last.remove();
+
+    if (!res.ok) {
+      appendPriceAiMessage('bot', data.error || 'No pude consultar la IA. Revisá OPENAI_API_KEY.');
+      return;
+    }
+
+    appendPriceAiMessage('bot', data.answer || 'No encontré respuesta.');
+  } catch (err) {
+    const messages = document.getElementById('priceAiMessages');
+    const last = messages?.lastElementChild;
+    if (last && last.textContent === 'Analizando la lista de precios...') last.remove();
+    appendPriceAiMessage('bot', 'Error consultando la IA: ' + (err.message || err));
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+
+// OVERRIDE FINAL - IA Lista de Precios: resultados siempre en tabla principal
+function tlcAiNormalize(text) {
+  return String(text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(',', '.')
+    .trim();
+}
+
+function tlcAiParseCommand(message) {
+  const text = tlcAiNormalize(message);
+  const cmd = { filters: {}, sort: null, limit: null, textSearch: '', handled: false };
+
+  const providerMatch = text.match(/(?:proveedor\s+|productos?\s+de\s+|articulos?\s+de\s+|articulos?\s+del\s+proveedor\s+|productos?\s+del\s+proveedor\s+)([a-z0-9ñ\s\-]+?)(?=\s+(?:que|con|tengan|tiene|ganancia|margen|mayor|menor|orden|en\s+usd|en\s+uyu|y)|$)/i);
+  if (providerMatch && providerMatch[1]) {
+    cmd.filters.provider = providerMatch[1].replace(/\b(todos|todas|los|las|articulos|productos|del|de|proveedor)\b/gi, ' ').trim();
+    cmd.handled = true;
+  }
+
+  if (/\busd\b/.test(text)) { cmd.filters.moneda = 'USD'; cmd.handled = true; }
+  if (/\buyu\b|\bpesos\b/.test(text)) { cmd.filters.moneda = 'UYU'; cmd.handled = true; }
+  if (/incomplet/.test(text)) { cmd.filters.incompleto = true; cmd.handled = true; }
+
+  if (text.includes('margen')) {
+    const m = text.match(/margen.*?(\d+(?:\.\d+)?)/i);
+    if (m) {
+      cmd.filters.margin = {
+        op: /\b(menor|menos|inferior|debajo|bajo)\b/.test(text) ? 'lt' : 'gt',
+        value: Number(m[1])
+      };
+      cmd.handled = true;
+    }
+  }
+
+  if (text.includes('ganancia')) {
+    const m = text.match(/ganancia.*?(\d+(?:\.\d+)?)/i);
+    if (m) {
+      cmd.filters.gain = {
+        op: /\b(menor|menos|inferior|debajo)\b/.test(text) ? 'lt' : 'gt',
+        value: Number(m[1])
+      };
+      cmd.handled = true;
+    }
+  }
+
+  if ((text.includes('pvp') || text.includes('precio')) && /\b(mayor|mas|menor|menos|superior|inferior)\b/.test(text)) {
+    const m = text.match(/(?:pvp|precio).*?(\d+(?:\.\d+)?)/i);
+    if (m) {
+      cmd.filters.pvp = {
+        op: /\b(menor|menos|inferior|debajo)\b/.test(text) ? 'lt' : 'gt',
+        value: Number(m[1])
+      };
+      cmd.handled = true;
+    }
+  }
+
+  const limitMatch = text.match(/(?:primeros?|top|ultimos?|ultimas?)\s+(\d+)/i);
+  if (limitMatch) {
+    cmd.limit = Number(limitMatch[1]);
+    cmd.handled = true;
+  }
+
+  let sortField = null;
+  if (text.includes('orden') || /mayor\s+a\s+menor|menor\s+a\s+mayor|descendente|ascendente/.test(text)) {
+    if (text.includes('margen')) sortField = 'margenReal';
+    else if (text.includes('ganancia')) sortField = 'gananciaReal';
+    else if (text.includes('pvp') || text.includes('precio')) sortField = 'pvp';
+    else if (text.includes('costo')) sortField = 'precioProveedor';
+    else if (text.includes('proveedor')) sortField = 'proveedor';
+    else if (text.includes('codigo') || text.includes('tlc')) sortField = 'codigoTLC';
+  }
+
+  if (sortField) {
+    cmd.sort = {
+      field: sortField,
+      direction: /mayor\s+a\s+menor|de\s+mayor\s+a\s+menor|descendente/.test(text) ? 'desc' : 'asc'
+    };
+    cmd.handled = true;
+  }
+
+  // Búsquedas simples por texto: "lagarto", "buscame lagarto", "mostrar gelbring"
+  const simpleSearchRequest = /\b(mostrar|mostrame|buscar|buscame|filtrar|listar|lista|articulos|productos|contengan|contenga|contiene|palabra)\b/.test(text);
+  if (!cmd.handled && simpleSearchRequest) {
+    let term = text
+      .replace(/\b(mostrar|mostrame|buscar|buscame|filtrar|listar|lista|todos|todas|los|las|articulos|articulo|productos|producto|que|contengan|contenga|contiene|la|el|palabra|por|favor)\b/g, ' ')
+      .replace(/[¿?.,;:]/g, ' ')
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .pop() || '';
+    cmd.textSearch = term;
+    cmd.handled = !!term;
+  }
+
+  return cmd.handled ? cmd : null;
+}
+
+function tlcAiRenderRows(products) {
+  const tbody = document.getElementById('productsBody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  products.forEach(p => {
+    const tr = document.createElement('tr');
+    if (p.incompleto) tr.classList.add('row-incomplete');
+
+    const articuloLabel = p.incompleto
+      ? `${p.articulo || '(Sin nombre)'} <span class="badge-incomplete">Incompleto</span>`
+      : (p.articulo || '');
+
+    const tooltip = (p.incompleteFields || []).length
+      ? `title="Falta: ${(p.incompleteFields || []).join(', ')}"`
+      : '';
+
+    tr.innerHTML = `
+      <td ${tooltip}>${articuloLabel}</td>
+      <td>${p.codigoTLC || ''}</td>
+      <td>${p.proveedor || ''}</td>
+      <td>${p.codigoProveedor || ''}</td>
+      <td>${money(p.precioProveedor, p.moneda)}</td>
+      <td>${money(p.pvp, p.moneda)}</td>
+      <td>${money(p.gananciaReal, p.moneda)}</td>
+      <td class="${getMarginClass(p.margenReal)}">${formatNumber(p.margenReal)}%</td>
+      <td><button class="btn-primary" onclick="openEditModal(${Number(p.rowNumber)})">Editar</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function tlcAiApplyCommandToTable(cmd) {
+  let filtered = [...(allProducts || [])];
+
+  if (cmd.textSearch) {
+    let term = cmd.textSearch;
+    let needle = tlcAiNormalize(term);
+    let result = filtered.filter(p => {
+      const hay = tlcAiNormalize([p.articulo, p.codigoTLC, p.codigoProveedor, p.codigoFabrica, p.proveedor].join(' '));
+      return hay.includes(needle);
+    });
+
+    if (!result.length && needle.endsWith('s')) {
+      term = term.replace(/s$/i, '');
+      needle = tlcAiNormalize(term);
+      result = filtered.filter(p => {
+        const hay = tlcAiNormalize([p.articulo, p.codigoTLC, p.codigoProveedor, p.codigoFabrica, p.proveedor].join(' '));
+        return hay.includes(needle);
+      });
+    }
+
+    filtered = result;
+    cmd.textSearch = term;
+  }
+
+  if (cmd.filters.provider) {
+    const needle = tlcAiNormalize(cmd.filters.provider);
+    filtered = filtered.filter(p => tlcAiNormalize(p.proveedor || '').includes(needle));
+  }
+
+  if (cmd.filters.moneda) filtered = filtered.filter(p => String(p.moneda || '').toUpperCase() === cmd.filters.moneda);
+  if (cmd.filters.incompleto) filtered = filtered.filter(p => !!p.incompleto);
+  if (cmd.filters.margin) filtered = filtered.filter(p => cmd.filters.margin.op === 'lt' ? Number(p.margenReal || 0) < cmd.filters.margin.value : Number(p.margenReal || 0) > cmd.filters.margin.value);
+  if (cmd.filters.gain) filtered = filtered.filter(p => cmd.filters.gain.op === 'lt' ? Number(p.gananciaReal || 0) < cmd.filters.gain.value : Number(p.gananciaReal || 0) > cmd.filters.gain.value);
+  if (cmd.filters.pvp) filtered = filtered.filter(p => cmd.filters.pvp.op === 'lt' ? Number(p.pvp || 0) < cmd.filters.pvp.value : Number(p.pvp || 0) > cmd.filters.pvp.value);
+
+  if (cmd.sort) {
+    const field = cmd.sort.field;
+    const direction = cmd.sort.direction;
+    filtered.sort((a, b) => {
+      if (field === 'proveedor' || field === 'codigoTLC') {
+        return direction === 'asc'
+          ? String(a[field] || '').localeCompare(String(b[field] || ''), 'es')
+          : String(b[field] || '').localeCompare(String(a[field] || ''), 'es');
+      }
+      const na = Number(a[field] || 0);
+      const nb = Number(b[field] || 0);
+      return direction === 'asc' ? na - nb : nb - na;
+    });
+  }
+
+  if (cmd.limit && cmd.limit > 0) filtered = filtered.slice(0, cmd.limit);
+
+  const searchInput = document.getElementById('searchInput');
+  const filterEstado = document.getElementById('filterEstado');
+  const filterMargen = document.getElementById('filterMargen');
+  const filterProveedor = document.getElementById('filterProveedor');
+  if (searchInput) searchInput.value = '';
+  if (filterEstado) filterEstado.value = 'todos';
+  if (filterMargen) filterMargen.value = 'todos';
+  if (filterProveedor) filterProveedor.value = 'todos';
+
+  tlcAiRenderRows(filtered);
+
+  const parts = [];
+  if (cmd.textSearch) parts.push(`texto "${cmd.textSearch}"`);
+  if (cmd.filters.provider) parts.push(`proveedor "${cmd.filters.provider}"`);
+  if (cmd.filters.moneda) parts.push(`moneda ${cmd.filters.moneda}`);
+  if (cmd.filters.incompleto) parts.push('artículos incompletos');
+  if (cmd.filters.margin) parts.push(`margen ${cmd.filters.margin.op === 'lt' ? 'menor a' : 'mayor a'} ${formatNumber(cmd.filters.margin.value)}%`);
+  if (cmd.filters.gain) parts.push(`ganancia ${cmd.filters.gain.op === 'lt' ? 'menor a' : 'mayor a'} ${formatNumber(cmd.filters.gain.value)}`);
+  if (cmd.filters.pvp) parts.push(`PVP ${cmd.filters.pvp.op === 'lt' ? 'menor a' : 'mayor a'} ${formatNumber(cmd.filters.pvp.value)}`);
+  if (cmd.sort) {
+    const names = { margenReal: 'margen', gananciaReal: 'ganancia', pvp: 'PVP', precioProveedor: 'costo', proveedor: 'proveedor', codigoTLC: 'código TLC' };
+    parts.push(`ordenado por ${names[cmd.sort.field] || cmd.sort.field} ${cmd.sort.direction === 'asc' ? 'de menor a mayor' : 'de mayor a menor'}`);
+  }
+  if (cmd.limit) parts.push(`límite ${cmd.limit}`);
+
+  const label = parts.join(' + ') || 'consulta';
+  const counter = document.getElementById('productsCounter');
+  if (counter) counter.innerHTML = `Mostrando <strong>${filtered.length}</strong> de <strong>${allProducts.length}</strong> artículos por <strong>${label}</strong>`;
+
+  const panel = document.getElementById('filtersPanel');
+  const arrow = document.getElementById('filtersArrow');
+  if (panel && !panel.classList.contains('open')) {
+    panel.classList.add('open');
+    if (arrow) arrow.innerText = '▲';
+  }
+
+  return { count: filtered.length, label };
+}
+
+async function sendPriceAiMessage() {
+  const input = document.getElementById('priceAiInput');
+  const btn = document.getElementById('priceAiSendBtn');
+  if (!input || !btn) return;
+
+  const message = input.value.trim();
+  if (!message) return;
+
+  appendPriceAiMessage('user', message);
+  input.value = '';
+
+  const cmd = tlcAiParseCommand(message);
+  if (cmd) {
+    const result = tlcAiApplyCommandToTable(cmd);
+    appendPriceAiMessage('bot', `Encontré ${result.count} artículo${result.count === 1 ? '' : 's'} y ya te los mostré en la lista principal.`);
+    return;
+  }
+
+  btn.disabled = true;
+  appendPriceAiMessage('bot', 'Analizando la lista de precios...');
+
+  try {
+    const res = await fetch('/api/precios/ia-chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message })
+    });
+
+    const data = await res.json().catch(() => ({}));
+    const messages = document.getElementById('priceAiMessages');
+    const last = messages?.lastElementChild;
+    if (last && last.textContent === 'Analizando la lista de precios...') last.remove();
+
+    if (!res.ok) {
+      appendPriceAiMessage('bot', data.error || 'No pude consultar la IA. Revisá OPENAI_API_KEY.');
+      return;
+    }
+
+    appendPriceAiMessage('bot', data.answer || 'No encontré respuesta.');
+  } catch (err) {
+    const messages = document.getElementById('priceAiMessages');
+    const last = messages?.lastElementChild;
+    if (last && last.textContent === 'Analizando la lista de precios...') last.remove();
+    appendPriceAiMessage('bot', 'Error consultando la IA: ' + (err.message || err));
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+
+
+// PATCH ranking IA: "top 10 mayor ganancia", "10 articulos con mayor margen", etc.
+(function() {
+  const previousParse = window.tlcAiParseCommand || (typeof tlcAiParseCommand === 'function' ? tlcAiParseCommand : null);
+
+  window.tlcAiParseCommand = function(message) {
+    const base = previousParse ? previousParse(message) : null;
+    const text = String(message || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(',', '.');
+
+    const isRanking =
+      /\b(mayor|mejor|mas|menor|peor|menos)\s+(ganancia|margen|pvp|precio|costo)\b/.test(text) ||
+      /\b(ganancia|margen|pvp|precio|costo)\s+(mayor|mejor|mas|menor|peor|menos)\b/.test(text) ||
+      /\btop\s+\d+\b/.test(text) ||
+      /\b(primeros?|mejores|peores)\s+\d+\b/.test(text);
+
+    if (!isRanking) return base;
+
+    const cmd = base || { filters: {}, sort: null, limit: null, textSearch: '', handled: true };
+    cmd.handled = true;
+    cmd.textSearch = '';
+
+    const limitMatch =
+      text.match(/\b(?:top|primeros?|mejores|peores)\s+(\d+)\b/i) ||
+      text.match(/\b(\d+)\s+(?:articulos?|productos?)\b/i);
+    if (limitMatch) cmd.limit = Number(limitMatch[1]);
+
+    let field = null;
+    if (text.includes('ganancia')) field = 'gananciaReal';
+    else if (text.includes('margen')) field = 'margenReal';
+    else if (text.includes('pvp') || text.includes('precio')) field = 'pvp';
+    else if (text.includes('costo')) field = 'precioProveedor';
+
+    if (field) {
+      const direction = /\b(menor|peor|menos)\b/.test(text) ? 'asc' : 'desc';
+      cmd.sort = { field, direction };
+    }
+
+    // Si no hay filtro de valor concreto, no aplicar filtro por ganancia/margen con el número del límite.
+    if (cmd.filters) {
+      if (cmd.filters.gain && !/\bganancia\s+(mayor|menor|mas|menos|superior|inferior)\s+(a|al|de)?\s*\d/.test(text)) {
+        delete cmd.filters.gain;
+      }
+      if (cmd.filters.margin && !/\bmargen\s+(mayor|menor|mas|menos|superior|inferior)\s+(a|al|de)?\s*\d/.test(text)) {
+        delete cmd.filters.margin;
+      }
+    }
+
+    return cmd;
+  };
+
+  if (typeof sendPriceAiMessage === 'function') {
+    const oldSend = sendPriceAiMessage;
+    window.sendPriceAiMessage = async function() {
+      const input = document.getElementById('priceAiInput');
+      const btn = document.getElementById('priceAiSendBtn');
+      if (!input || !btn) return;
+
+      const message = input.value.trim();
+      if (!message) return;
+
+      appendPriceAiMessage('user', message);
+      input.value = '';
+
+      const cmd = window.tlcAiParseCommand(message);
+      if (cmd) {
+        const result = tlcAiApplyCommandToTable(cmd);
+        appendPriceAiMessage('bot', `Encontré ${result.count} artículo${result.count === 1 ? '' : 's'} y ya te los mostré en la lista principal.`);
+        return;
+      }
+
+      input.value = message;
+      return oldSend();
+    };
+  }
+})();
+
+
+
+// PATCH orden IA: si dice "mayor a menor" / "menor a mayor" sin campo, ordenar por ganancia.
+(function() {
+  const prevParse = window.tlcAiParseCommand || (typeof tlcAiParseCommand === 'function' ? tlcAiParseCommand : null);
+
+  window.tlcAiParseCommand = function(message) {
+    const cmd = prevParse ? prevParse(message) : null;
+    const text = String(message || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(',', '.');
+
+    const asksOrder = /mayor\s+a\s+menor|de\s+mayor\s+a\s+menor|menor\s+a\s+mayor|de\s+menor\s+a\s+mayor|descendente|ascendente|orden/i.test(text);
+    if (!asksOrder) return cmd;
+
+    const finalCmd = cmd || { filters: {}, sort: null, limit: null, textSearch: '', handled: true };
+    finalCmd.handled = true;
+
+    let field = null;
+    if (text.includes('margen')) field = 'margenReal';
+    else if (text.includes('ganancia')) field = 'gananciaReal';
+    else if (text.includes('pvp') || text.includes('precio')) field = 'pvp';
+    else if (text.includes('costo')) field = 'precioProveedor';
+    else if (text.includes('codigo') || text.includes('tlc')) field = 'codigoTLC';
+    else if (text.includes('proveedor')) field = 'proveedor';
+
+    // Default útil para Lista de Precios: si no dice columna, ordenar por ganancia.
+    if (!field) field = 'gananciaReal';
+
+    let direction = 'desc';
+    if (/menor\s+a\s+mayor|de\s+menor\s+a\s+mayor|ascendente/.test(text)) direction = 'asc';
+    if (/mayor\s+a\s+menor|de\s+mayor\s+a\s+menor|descendente/.test(text)) direction = 'desc';
+
+    finalCmd.sort = { field, direction };
+
+    return finalCmd;
+  };
+
+  if (typeof sendPriceAiMessage === 'function') {
+    const oldSend = sendPriceAiMessage;
+    window.sendPriceAiMessage = async function() {
+      const input = document.getElementById('priceAiInput');
+      const btn = document.getElementById('priceAiSendBtn');
+      if (!input || !btn) return;
+
+      const message = input.value.trim();
+      if (!message) return;
+
+      appendPriceAiMessage('user', message);
+      input.value = '';
+
+      const cmd = window.tlcAiParseCommand(message);
+      if (cmd) {
+        const result = tlcAiApplyCommandToTable(cmd);
+        appendPriceAiMessage('bot', `Encontré ${result.count} artículo${result.count === 1 ? '' : 's'} y ya te los mostré en la lista principal.`);
+        return;
+      }
+
+      input.value = message;
+      return oldSend();
+    };
+  }
+})();
+
+
+
+// === FINAL FIX: IA Lista de Precios ===
+// Busquedas y filtros se muestran SIEMPRE en la tabla principal.
+// El chat solo confirma la accion.
+
+window.tlcPriceAiContext = window.tlcPriceAiContext || {
+  baseProducts: null,
+  lastFiltered: null,
+  lastQuery: null
+};
+
+function tlcPriceAiNorm(v) {
+  return String(v ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
+function tlcPriceAiAllProducts() {
+  return Array.isArray(window.allProducts) ? window.allProducts : [];
+}
+
+function tlcPriceAiRender(products, label) {
+  const tbody = document.getElementById('productsBody');
+  if (!tbody) return false;
+
+  tbody.innerHTML = '';
+
+  products.forEach(p => {
+    const tr = document.createElement('tr');
+    if (p.incompleto) tr.classList.add('row-incomplete');
+
+    const articuloLabel = p.incompleto
+      ? `${p.articulo || '(Sin nombre)'} <span class="badge-incomplete">Incompleto</span>`
+      : (p.articulo || '');
+
+    const tooltip = (p.incompleteFields || []).length
+      ? `title="Falta: ${(p.incompleteFields || []).join(', ')}"`
+      : '';
+
+    tr.innerHTML = `
+      <td ${tooltip}>${articuloLabel}</td>
+      <td>${p.codigoTLC || ''}</td>
+      <td>${p.proveedor || ''}</td>
+      <td>${p.codigoProveedor || ''}</td>
+      <td>${money(p.precioProveedor, p.moneda)}</td>
+      <td>${money(p.pvp, p.moneda)}</td>
+      <td>${money(p.gananciaReal, p.moneda)}</td>
+      <td class="${getMarginClass(p.margenReal)}">${formatNumber(p.margenReal)}%</td>
+      <td><button class="btn-primary" onclick="openEditModal(${Number(p.rowNumber)})">Editar</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  const counter = document.getElementById('productsCounter');
+  if (counter) {
+    counter.innerHTML = `Mostrando <strong>${products.length}</strong> de <strong>${tlcPriceAiAllProducts().length}</strong> artículos${label ? ` por <strong>${label}</strong>` : ''}`;
+  }
+
+  const filtersPanel = document.getElementById('filtersPanel');
+  const filtersArrow = document.getElementById('filtersArrow');
+  if (filtersPanel && !filtersPanel.classList.contains('open')) {
+    filtersPanel.classList.add('open');
+    if (filtersArrow) filtersArrow.innerText = '▲';
+  }
+
+  return true;
+}
+
+function tlcPriceAiSearchText(term, source) {
+  const q = tlcPriceAiNorm(term);
+  if (!q) return [];
+
+  const products = Array.isArray(source) ? source : tlcPriceAiAllProducts();
+
+  let result = products.filter(p => {
+    const hay = tlcPriceAiNorm([
+      p.articulo,
+      p.codigoTLC,
+      p.codigoProveedor,
+      p.codigoFabrica,
+      p.proveedor
+    ].join(' '));
+    return hay.includes(q);
+  });
+
+  // plural simple: "lagartos" -> "lagarto"
+  if (!result.length && q.endsWith('s') && q.length > 3) {
+    const q2 = q.slice(0, -1);
+    result = products.filter(p => {
+      const hay = tlcPriceAiNorm([
+        p.articulo,
+        p.codigoTLC,
+        p.codigoProveedor,
+        p.codigoFabrica,
+        p.proveedor
+      ].join(' '));
+      return hay.includes(q2);
+    });
+  }
+
+  return result;
+}
+
+function tlcPriceAiParse(message) {
+  const raw = String(message || '').trim();
+  const text = tlcPriceAiNorm(raw);
+
+  const cmd = {
+    search: '',
+    provider: '',
+    margin: null,
+    gain: null,
+    sort: null,
+    limit: null,
+    usePrevious: false,
+    handled: false
+  };
+
+  // Buscar proveedor explicitamente.
+  const providerMatch = text.match(
+    /(?:proveedor\s+|productos?\s+de\s+|articulos?\s+de\s+|articulos?\s+del\s+proveedor\s+|productos?\s+del\s+proveedor\s+)(.+?)(?=\s+(?:que|con|tengan|tiene|ganancia|margen|orden|ordenados?|de\s+mayor|de\s+menor)|$)/
+  );
+  if (providerMatch && providerMatch[1]) {
+    cmd.provider = providerMatch[1]
+      .replace(/\b(todos|todas|los|las|articulos|productos|del|de|proveedor)\b/g, ' ')
+      .trim();
+    cmd.handled = true;
+  }
+
+  if (text.includes('margen')) {
+    const m = text.match(/margen.*?(\d+(?:\.\d+)?)/);
+    if (m) {
+      cmd.margin = {
+        op: /\b(menor|menos|debajo|inferior|bajo)\b/.test(text) ? 'lt' : 'gt',
+        value: Number(m[1])
+      };
+      cmd.handled = true;
+    }
+  }
+
+  if (text.includes('ganancia')) {
+    const m = text.match(/ganancia.*?(\d+(?:\.\d+)?)/);
+    if (m && /\b(mayor|menor|mas|menos|superior|inferior)\b/.test(text)) {
+      cmd.gain = {
+        op: /\b(menor|menos|inferior|debajo)\b/.test(text) ? 'lt' : 'gt',
+        value: Number(m[1])
+      };
+      cmd.handled = true;
+    }
+  }
+
+  // Ordenamiento.
+  const asksSort = /orden|ordenalos|ordenalos|mayor\s+a\s+menor|menor\s+a\s+mayor|descendente|ascendente/.test(text);
+  if (asksSort) {
+    let field = 'gananciaReal'; // default útil
+    if (text.includes('margen')) field = 'margenReal';
+    else if (text.includes('ganancia')) field = 'gananciaReal';
+    else if (text.includes('pvp') || text.includes('precio')) field = 'pvp';
+    else if (text.includes('costo')) field = 'precioProveedor';
+    else if (text.includes('proveedor')) field = 'proveedor';
+    else if (text.includes('codigo') || text.includes('tlc')) field = 'codigoTLC';
+
+    cmd.sort = {
+      field,
+      direction: /menor\s+a\s+mayor|ascendente/.test(text) ? 'asc' : 'desc'
+    };
+    cmd.usePrevious = !cmd.provider && !cmd.margin && !cmd.gain;
+    cmd.handled = true;
+  }
+
+  // Ranking / limite.
+  const limitMatch =
+    text.match(/\b(?:top|primeros?|ultimos?|ultimas?)\s+(\d+)\b/) ||
+    text.match(/\b(\d+)\s+(?:articulos?|productos?)\b/);
+  if (limitMatch) {
+    cmd.limit = Number(limitMatch[1]);
+    cmd.handled = true;
+
+    if (text.includes('ganancia') && !cmd.sort) {
+      cmd.sort = {
+        field: 'gananciaReal',
+        direction: /\bmenor|peor|menos\b/.test(text) ? 'asc' : 'desc'
+      };
+    }
+    if (text.includes('margen') && !cmd.sort) {
+      cmd.sort = {
+        field: 'margenReal',
+        direction: /\bmenor|peor|menos\b/.test(text) ? 'asc' : 'desc'
+      };
+    }
+  }
+
+  // Si no entendimos filtros, una frase corta o "mostrame X" se trata como búsqueda textual.
+  if (!cmd.handled) {
+    let candidate = raw;
+
+    candidate = candidate
+      .replace(/^(mostrame|mostrar|buscame|buscar|filtrar|listar|lista)\s+/i, '')
+      .replace(/^(todos|todas|los|las)\s+/i, '')
+      .replace(/^(articulos|artículos|productos|producto|articulo|artículo)\s+(de\s+)?/i, '')
+      .trim();
+
+    // Una consulta corta como "matias gonzalez" o "gelbring" debe buscar en la tabla.
+    const wordCount = candidate.split(/\s+/).filter(Boolean).length;
+    const isQuestion = /^(que|qué|como|cómo|cuanto|cuánto|por que|por qué|explica|analiza)/i.test(candidate);
+
+    if (candidate && !isQuestion && wordCount <= 6) {
+      cmd.search = candidate;
+      cmd.handled = true;
+    }
+  }
+
+  return cmd.handled ? cmd : null;
+}
+
+function tlcPriceAiApply(cmd) {
+  const all = tlcPriceAiAllProducts();
+
+  let products = (cmd.usePrevious && Array.isArray(window.tlcPriceAiContext.lastFiltered))
+    ? [...window.tlcPriceAiContext.lastFiltered]
+    : [...all];
+
+  if (cmd.provider) {
+    const q = tlcPriceAiNorm(cmd.provider);
+    products = products.filter(p => tlcPriceAiNorm(p.proveedor || '').includes(q));
+  }
+
+  if (cmd.search) {
+    products = tlcPriceAiSearchText(cmd.search, products);
+  }
+
+  if (cmd.margin) {
+    products = products.filter(p => {
+      const v = Number(p.margenReal || 0);
+      return cmd.margin.op === 'lt' ? v < cmd.margin.value : v > cmd.margin.value;
+    });
+  }
+
+  if (cmd.gain) {
+    products = products.filter(p => {
+      const v = Number(p.gananciaReal || 0);
+      return cmd.gain.op === 'lt' ? v < cmd.gain.value : v > cmd.gain.value;
+    });
+  }
+
+  if (cmd.sort) {
+    const field = cmd.sort.field;
+    const dir = cmd.sort.direction;
+
+    products.sort((a, b) => {
+      if (field === 'proveedor' || field === 'codigoTLC') {
+        return dir === 'asc'
+          ? String(a[field] || '').localeCompare(String(b[field] || ''), 'es')
+          : String(b[field] || '').localeCompare(String(a[field] || ''), 'es');
+      }
+      const av = Number(a[field] || 0);
+      const bv = Number(b[field] || 0);
+      return dir === 'asc' ? av - bv : bv - av;
+    });
+  }
+
+  if (cmd.limit && cmd.limit > 0) {
+    products = products.slice(0, cmd.limit);
+  }
+
+  const parts = [];
+  if (cmd.provider) parts.push(`proveedor "${cmd.provider}"`);
+  if (cmd.search) parts.push(`texto "${cmd.search}"`);
+  if (cmd.margin) parts.push(`margen ${cmd.margin.op === 'lt' ? 'menor a' : 'mayor a'} ${formatNumber(cmd.margin.value)}%`);
+  if (cmd.gain) parts.push(`ganancia ${cmd.gain.op === 'lt' ? 'menor a' : 'mayor a'} ${formatNumber(cmd.gain.value)}`);
+  if (cmd.sort) {
+    const names = {
+      margenReal: 'margen',
+      gananciaReal: 'ganancia',
+      pvp: 'PVP',
+      precioProveedor: 'costo',
+      proveedor: 'proveedor',
+      codigoTLC: 'código TLC'
+    };
+    parts.push(`ordenado por ${names[cmd.sort.field] || cmd.sort.field} ${cmd.sort.direction === 'asc' ? 'de menor a mayor' : 'de mayor a menor'}`);
+  }
+
+  const label = parts.join(' + ');
+  tlcPriceAiRender(products, label);
+
+  window.tlcPriceAiContext.lastFiltered = [...products];
+  window.tlcPriceAiContext.lastQuery = cmd;
+
+  return { products, label };
+}
+
+// Override final de sendPriceAiMessage. Al estar al final del archivo, gana sobre versiones anteriores.
+async function sendPriceAiMessage() {
+  const input = document.getElementById('priceAiInput');
+  const btn = document.getElementById('priceAiSendBtn');
+  if (!input || !btn) return;
+
+  const message = input.value.trim();
+  if (!message) return;
+
+  appendPriceAiMessage('user', message);
+  input.value = '';
+
+  const cmd = tlcPriceAiParse(message);
+
+  if (cmd) {
+    const result = tlcPriceAiApply(cmd);
+    appendPriceAiMessage(
+      'bot',
+      `Encontré ${result.products.length} artículo${result.products.length === 1 ? '' : 's'} y ya te los mostré en la lista principal.`
+    );
+    return;
+  }
+
+  // Solo preguntas realmente analíticas van al backend de IA.
+  btn.disabled = true;
+  appendPriceAiMessage('bot', 'Analizando...');
+
+  try {
+    const res = await fetch('/api/precios/ia-chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message })
+    });
+
+    const data = await res.json().catch(() => ({}));
+    const box = document.getElementById('priceAiMessages');
+    const last = box?.lastElementChild;
+    if (last && last.textContent === 'Analizando...') last.remove();
+
+    if (!res.ok) {
+      appendPriceAiMessage('bot', data.error || 'No pude consultar la IA.');
+      return;
+    }
+
+    appendPriceAiMessage('bot', data.answer || 'No encontré respuesta.');
+  } catch (err) {
+    const box = document.getElementById('priceAiMessages');
+    const last = box?.lastElementChild;
+    if (last && last.textContent === 'Analizando...') last.remove();
+    appendPriceAiMessage('bot', 'Error consultando la IA: ' + (err.message || err));
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+
+
+// ============================================================
+// IA LISTA DE PRECIOS - INTERPRETE V2
+// Busqueda/filtros/orden siempre en tabla principal.
+// Ediciones de precio requieren confirmacion.
+// ============================================================
+
+window.tlcSmartPriceState = window.tlcSmartPriceState || {
+  lastResults: null,
+  lastDescription: '',
+  pendingAction: null,
+  activeProvider: '',
+  activeMargin: null,
+  activeGain: null
+};
+
+function tlcSmartNorm(v) {
+  return String(v ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
+function tlcSmartAll() {
+  return Array.isArray(window.allProducts) ? window.allProducts : [];
+}
+
+function tlcSmartRender(products, description) {
+  const tbody = document.getElementById('productsBody');
+  if (!tbody) return false;
+
+  tbody.innerHTML = '';
+
+  products.forEach(p => {
+    const tr = document.createElement('tr');
+    if (p.incompleto) tr.classList.add('row-incomplete');
+
+    const articuloLabel = p.incompleto
+      ? `${p.articulo || '(Sin nombre)'} <span class="badge-incomplete">Incompleto</span>`
+      : (p.articulo || '');
+
+    const tooltip = (p.incompleteFields || []).length
+      ? `title="Falta: ${(p.incompleteFields || []).join(', ')}"`
+      : '';
+
+    tr.innerHTML = `
+      <td ${tooltip}>${articuloLabel}</td>
+      <td>${p.codigoTLC || ''}</td>
+      <td>${p.proveedor || ''}</td>
+      <td>${p.codigoProveedor || ''}</td>
+      <td>${money(p.precioProveedor, p.moneda)}</td>
+      <td>${money(p.pvp, p.moneda)}</td>
+      <td>${money(p.gananciaReal, p.moneda)}</td>
+      <td class="${getMarginClass(p.margenReal)}">${formatNumber(p.margenReal)}%</td>
+      <td><button class="btn-primary" onclick="openEditModal(${Number(p.rowNumber)})">Editar</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  const counter = document.getElementById('productsCounter');
+  if (counter) {
+    counter.innerHTML = `Mostrando <strong>${products.length}</strong> de <strong>${tlcSmartAll().length}</strong> artículos${description ? ` por <strong>${description}</strong>` : ''}`;
+  }
+
+  window.tlcSmartPriceState.lastResults = [...products];
+  window.tlcSmartPriceState.lastDescription = description || '';
+
+  return true;
+}
+
+function tlcSmartSearchProducts(term, source) {
+  const q = tlcSmartNorm(term);
+  const items = Array.isArray(source) ? source : tlcSmartAll();
+  if (!q) return [];
+
+  let found = items.filter(p => {
+    const hay = tlcSmartNorm([
+      p.articulo,
+      p.codigoTLC,
+      p.codigoProveedor,
+      p.codigoFabrica,
+      p.proveedor
+    ].join(' '));
+    return hay.includes(q);
+  });
+
+  if (!found.length && q.endsWith('s') && q.length > 3) {
+    const singular = q.slice(0, -1);
+    found = items.filter(p => {
+      const hay = tlcSmartNorm([
+        p.articulo,
+        p.codigoTLC,
+        p.codigoProveedor,
+        p.codigoFabrica,
+        p.proveedor
+      ].join(' '));
+      return hay.includes(singular);
+    });
+  }
+
+  return found;
+}
+
+function tlcSmartExtractProvider(text) {
+  const t = tlcSmartNorm(text);
+
+  const patterns = [
+    /(?:articulos?|productos?)\s+(?:del\s+proveedor\s+|de\s+)(.+?)(?=\s+(?:con|que|y|orden|ordenados?|margen|rentabilidad|ganancia|precio|pvp)|$)/,
+    /proveedor\s+(.+?)(?=\s+(?:con|que|y|orden|ordenados?|margen|rentabilidad|ganancia|precio|pvp)|$)/
+  ];
+
+  for (const re of patterns) {
+    const m = t.match(re);
+    if (m && m[1]) {
+      return m[1].replace(/\b(todos|todas|los|las)\b/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+  }
+  return '';
+}
+
+function tlcSmartParseNumericCondition(text, words, isPercent=false) {
+  const t = tlcSmartNorm(text);
+  const wordPart = words.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  const re = new RegExp(`(?:${wordPart}).*?(\\d+(?:\\.\\d+)?)\\s*${isPercent ? '%?' : ''}`, 'i');
+  const m = t.match(re);
+  if (!m) return null;
+
+  const value = Number(m[1]);
+  if (!Number.isFinite(value)) return null;
+
+  const less = /\b(menor|menos|debajo|inferior|bajo|por debajo)\b/.test(t);
+  const greater = /\b(mayor|mas|arriba|superior|por encima)\b/.test(t);
+
+  return { op: less && !greater ? 'lt' : 'gt', value };
+}
+
+function tlcSmartParseSort(text) {
+  const t = tlcSmartNorm(text);
+  const asksSort = /orden|ordena|ordenalos|ordenar|mayor\s+a\s+menor|menor\s+a\s+mayor|ascendente|descendente/.test(t);
+  if (!asksSort) return null;
+
+  let field = 'gananciaReal';
+  if (/margen|rentabilidad/.test(t)) field = 'margenReal';
+  else if (/ganancia/.test(t)) field = 'gananciaReal';
+  else if (/pvp|precio/.test(t)) field = 'pvp';
+  else if (/costo/.test(t)) field = 'precioProveedor';
+  else if (/proveedor/.test(t)) field = 'proveedor';
+  else if (/codigo|tlc/.test(t)) field = 'codigoTLC';
+
+  const direction = /menor\s+a\s+mayor|ascendente/.test(t) ? 'asc' : 'desc';
+  return { field, direction };
+}
+
+function tlcSmartSort(products, sort) {
+  if (!sort) return products;
+  const out = [...products];
+  const { field, direction } = sort;
+
+  out.sort((a, b) => {
+    if (field === 'proveedor' || field === 'codigoTLC') {
+      return direction === 'asc'
+        ? String(a[field] || '').localeCompare(String(b[field] || ''), 'es')
+        : String(b[field] || '').localeCompare(String(a[field] || ''), 'es');
+    }
+
+    const av = Number(a[field] || 0);
+    const bv = Number(b[field] || 0);
+    return direction === 'asc' ? av - bv : bv - av;
+  });
+  return out;
+}
+
+function tlcSmartParseLimit(text) {
+  const t = tlcSmartNorm(text);
+  const m =
+    t.match(/\b(?:top|primeros?|ultimos?)\s+(\d+)\b/) ||
+    t.match(/\b(\d+)\s+(?:articulos?|productos?)\b/);
+  return m ? Number(m[1]) : null;
+}
+
+function tlcSmartFindByCode(code) {
+  const c = String(code || '').trim();
+  return tlcSmartAll().find(p =>
+    String(p.codigoTLC || '') === c ||
+    String(p.codigoProveedor || '') === c ||
+    String(p.codigoFabrica || '') === c
+  ) || null;
+}
+
+function tlcSmartParseEdit(text) {
+  const raw = String(text || '');
+  const t = tlcSmartNorm(raw);
+
+  const codeMatch = raw.match(/\b(\d{6,})\b/);
+  if (!codeMatch) return null;
+  const code = codeMatch[1];
+
+  if (!/(edita|editalo|editar|sumale|aumenta|subile|restale|bajale|ponele|cambiale)/.test(t)) return null;
+
+  const amountMatch = t.match(/\b(\d+(?:[.,]\d+)?)\s*(uyu|usd)?\b/g);
+  const nums = (amountMatch || []).map(x => {
+    const n = x.match(/(\d+(?:[.,]\d+)?)/);
+    return n ? Number(n[1].replace(',', '.')) : NaN;
+  }).filter(n => Number.isFinite(n));
+
+  // El primer numero largo es el codigo; el importe suele ser el ultimo numero.
+  const amount = nums.length > 1 ? nums[nums.length - 1] : null;
+
+  if (/sumale|aumenta|subile/.test(t) && amount != null) {
+    return { type: 'delta_pvp', code, delta: Math.abs(amount) };
+  }
+
+  if (/restale|bajale/.test(t) && amount != null) {
+    return { type: 'delta_pvp', code, delta: -Math.abs(amount) };
+  }
+
+  const setMatch = t.match(/(?:ponele|cambiale|precio\s+a|pvp\s+a).*?(\d+(?:\.\d+)?)/);
+  if (setMatch) {
+    return { type: 'set_pvp', code, value: Number(setMatch[1]) };
+  }
+
+  return { type: 'open_edit', code };
+}
+
+async function tlcSmartApplyPendingEdit() {
+  const pending = window.tlcSmartPriceState.pendingAction;
+  if (!pending) {
+    appendPriceAiMessage('bot', 'No hay ningún cambio pendiente para confirmar.');
+    return;
+  }
+
+  const p = pending.product;
+  const newPvp = pending.newPvp;
+
+  try {
+    appendPriceAiMessage('bot', 'Aplicando cambio...');
+
+    const payload = {
+      articulo: p.articulo,
+      codigoTLC: p.codigoTLC,
+      proveedor: p.proveedor,
+      codigoProveedor: p.codigoProveedor,
+      codigoFabrica: p.codigoFabrica,
+      moneda: p.moneda,
+      modoCosto: p.modoCosto || 'costo_directo',
+      precioProveedor: p.precioProveedor,
+      pvpProveedor: p.pvpProveedor || 0,
+      descuentoProveedorPct: p.descuentoProveedorPct || 0,
+      pvp: newPvp,
+      comisionMlPct: p.comisionMlPct || 0,
+      envioCostoFijo: p.envioCostoFijo || 0,
+      acos: p.acos || 0,
+      descuentoPromocion: p.descuentoPromocion || 0,
+      originalRowNumber: p.rowNumber
+    };
+
+    const result = await apiRequest('/api/precios/' + encodeURIComponent(p.rowNumber), {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+
+    const idx = allProducts.findIndex(x => Number(x.rowNumber) === Number(p.rowNumber));
+    if (idx >= 0) allProducts[idx] = { ...allProducts[idx], ...result };
+
+    window.tlcSmartPriceState.pendingAction = null;
+
+    // Mantener contexto visual si habia resultados previos.
+    const prev = window.tlcSmartPriceState.lastResults;
+    if (Array.isArray(prev)) {
+      const updated = prev.map(x => Number(x.rowNumber) === Number(p.rowNumber) ? { ...x, ...result } : x);
+      tlcSmartRender(updated, window.tlcSmartPriceState.lastDescription);
+    } else {
+      renderProducts();
+    }
+
+    appendPriceAiMessage(
+      'bot',
+      `Listo. Actualicé ${p.codigoTLC} — ${p.articulo}. Nuevo PVP: ${money(result.pvp, result.moneda)}.`
+    );
+  } catch (err) {
+    appendPriceAiMessage('bot', 'No pude aplicar el cambio: ' + (err.message || err));
+  }
+}
+
+function tlcSmartHandleDataCommand(message) {
+  const raw = String(message || '').trim();
+  const t = tlcSmartNorm(raw);
+
+  // Confirmar / cancelar cambios pendientes.
+  if (/^(confirmar|confirmo|si|sí|aplicar|aplica|dale)$/.test(t)) {
+    if (window.tlcSmartPriceState.pendingAction) {
+      tlcSmartApplyPendingEdit();
+      return true;
+    }
+  }
+
+  if (/^(cancelar|cancela|no)$/.test(t) && window.tlcSmartPriceState.pendingAction) {
+    window.tlcSmartPriceState.pendingAction = null;
+    appendPriceAiMessage('bot', 'Cambio cancelado.');
+    return true;
+  }
+
+  // Edicion de PVP.
+  const edit = tlcSmartParseEdit(raw);
+  if (edit) {
+    const p = tlcSmartFindByCode(edit.code);
+    if (!p) {
+      appendPriceAiMessage('bot', `No encontré un producto con el código ${edit.code}.`);
+      return true;
+    }
+
+    if (edit.type === 'open_edit') {
+      openEditModal(p.rowNumber);
+      appendPriceAiMessage('bot', `Abrí la edición de ${p.articulo} (${p.codigoTLC}).`);
+      return true;
+    }
+
+    const oldPvp = Number(p.pvp || 0);
+    const newPvp = edit.type === 'delta_pvp' ? oldPvp + edit.delta : edit.value;
+
+    if (!Number.isFinite(newPvp) || newPvp <= 0) {
+      appendPriceAiMessage('bot', 'El nuevo precio no es válido.');
+      return true;
+    }
+
+    window.tlcSmartPriceState.pendingAction = { product: p, oldPvp, newPvp };
+
+    appendPriceAiMessage(
+      'bot',
+      `Voy a cambiar el PVP de ${p.articulo} (${p.codigoTLC}) de ${money(oldPvp, p.moneda)} a ${money(newPvp, p.moneda)}. Escribí "confirmar" para aplicarlo o "cancelar".`
+    );
+    return true;
+  }
+
+  let source = tlcSmartAll();
+  let description = [];
+  let handled = false;
+
+  const provider = tlcSmartExtractProvider(raw);
+  if (provider) {
+    const q = tlcSmartNorm(provider);
+    source = source.filter(p => tlcSmartNorm(p.proveedor || '').includes(q));
+    description.push(`proveedor "${provider}"`);
+    handled = true;
+  }
+
+  const marginCond = tlcSmartParseNumericCondition(raw, ['margen', 'rentabilidad', 'rentable'], true);
+  if (marginCond) {
+    source = source.filter(p => {
+      const v = Number(p.margenReal || 0);
+      return marginCond.op === 'lt' ? v < marginCond.value : v > marginCond.value;
+    });
+    description.push(`margen ${marginCond.op === 'lt' ? 'menor a' : 'mayor a'} ${formatNumber(marginCond.value)}%`);
+    handled = true;
+  }
+
+  const gainCond = tlcSmartParseNumericCondition(raw, ['ganancia'], false);
+  if (gainCond) {
+    source = source.filter(p => {
+      const v = Number(p.gananciaReal || 0);
+      return gainCond.op === 'lt' ? v < gainCond.value : v > gainCond.value;
+    });
+    description.push(`ganancia ${gainCond.op === 'lt' ? 'menor a' : 'mayor a'} ${formatNumber(gainCond.value)}`);
+    handled = true;
+  }
+
+  const sort = tlcSmartParseSort(raw);
+
+  // Si es solo una orden de ordenamiento, usar resultados anteriores.
+  if (sort && !provider && !marginCond && !gainCond && Array.isArray(window.tlcSmartPriceState.lastResults)) {
+    source = [...window.tlcSmartPriceState.lastResults];
+    description = [window.tlcSmartPriceState.lastDescription].filter(Boolean);
+    handled = true;
+  }
+
+  // Rankings "10 articulos con mayor ganancia/margen".
+  const limit = tlcSmartParseLimit(raw);
+  if (limit && !sort) {
+    if (/ganancia/.test(t)) {
+      source = tlcSmartSort(source, { field: 'gananciaReal', direction: /\bmenor|peor|menos\b/.test(t) ? 'asc' : 'desc' });
+      description.push(`ordenado por ganancia ${/\bmenor|peor|menos\b/.test(t) ? 'de menor a mayor' : 'de mayor a menor'}`);
+      handled = true;
+    } else if (/margen|rentabilidad/.test(t)) {
+      source = tlcSmartSort(source, { field: 'margenReal', direction: /\bmenor|peor|menos\b/.test(t) ? 'asc' : 'desc' });
+      description.push(`ordenado por margen ${/\bmenor|peor|menos\b/.test(t) ? 'de menor a mayor' : 'de mayor a menor'}`);
+      handled = true;
+    }
+  }
+
+  if (sort) {
+    source = tlcSmartSort(source, sort);
+    const names = {
+      margenReal: 'margen',
+      gananciaReal: 'ganancia',
+      pvp: 'PVP',
+      precioProveedor: 'costo',
+      proveedor: 'proveedor',
+      codigoTLC: 'código TLC'
+    };
+    description.push(`ordenado por ${names[sort.field] || sort.field} ${sort.direction === 'asc' ? 'de menor a mayor' : 'de mayor a menor'}`);
+    handled = true;
+  }
+
+  if (limit && limit > 0) {
+    source = source.slice(0, limit);
+    description.push(`primeros ${limit}`);
+    handled = true;
+  }
+
+  // Búsqueda textual solo si no se detectó un comando estructurado.
+  if (!handled) {
+    let candidate = raw
+      .replace(/^(mostrame|mostrar|buscame|buscar|filtrar|listar)\s+/i, '')
+      .replace(/^(todos|todas|los|las)\s+/i, '')
+      .replace(/^(articulos|artículos|productos|producto|articulo|artículo)\s+(de\s+)?/i, '')
+      .trim();
+
+    const wc = candidate.split(/\s+/).filter(Boolean).length;
+    const analytical = /^(que|qué|como|cómo|cuanto|cuánto|por que|por qué|explica|analiza)/i.test(candidate);
+
+    if (candidate && !analytical && wc <= 7) {
+      source = tlcSmartSearchProducts(candidate);
+      description.push(`texto "${candidate}"`);
+      handled = true;
+    }
+  }
+
+  if (!handled) return false;
+
+  tlcSmartRender(source, description.join(' + '));
+  appendPriceAiMessage(
+    'bot',
+    `Encontré ${source.length} artículo${source.length === 1 ? '' : 's'} y ya te los mostré en la lista principal.`
+  );
+  return true;
+}
+
+// Override definitivo
+async function sendPriceAiMessage() {
+  const input = document.getElementById('priceAiInput');
+  const btn = document.getElementById('priceAiSendBtn');
+  if (!input || !btn) return;
+
+  const message = input.value.trim();
+  if (!message) return;
+
+  appendPriceAiMessage('user', message);
+  input.value = '';
+
+  if (tlcSmartHandleDataCommand(message)) return;
+
+  btn.disabled = true;
+  appendPriceAiMessage('bot', 'Analizando...');
+
+  try {
+    const res = await fetch('/api/precios/ia-chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message })
+    });
+
+    const data = await res.json().catch(() => ({}));
+    const box = document.getElementById('priceAiMessages');
+    const last = box?.lastElementChild;
+    if (last && last.textContent === 'Analizando...') last.remove();
+
+    if (!res.ok) {
+      appendPriceAiMessage('bot', data.error || 'No pude consultar la IA.');
+      return;
+    }
+
+    appendPriceAiMessage('bot', data.answer || 'No encontré respuesta.');
+  } catch (err) {
+    const box = document.getElementById('priceAiMessages');
+    const last = box?.lastElementChild;
+    if (last && last.textContent === 'Analizando...') last.remove();
+    appendPriceAiMessage('bot', 'Error consultando la IA: ' + (err.message || err));
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+
+// ===== HOTFIX V4: proveedor + contexto conversacional + filtros combinados =====
+function tlcV3ProviderInText(text){
+  const t=tlcSmartNorm(text);
+  const providers=[...new Set(tlcSmartAll().map(p=>String(p.proveedor||'').trim()).filter(Boolean))];
+  const sorted=providers.sort((a,b)=>b.length-a.length);
+  // Coincidencia exacta o parcial: "Gelbring" encuentra "Gelbring S.A.", etc.
+  for(const p of sorted){
+    const pn=tlcSmartNorm(p);
+    if(t.includes(pn)) return p;
+    const words=pn.split(/\s+/).filter(w=>w.length>=4 && !/^(sa|srl|ltda)$/.test(w));
+    if(words.some(w=>new RegExp(`\\b${w.replace(/[.*+?^${}()|[\\]\\]/g,'\\$&')}\\b`).test(t))) return p;
+  }
+  return '';
+}
+function tlcV3Condition(text, kind){
+  const t=tlcSmartNorm(text);
+  const hasKind=kind==='margin'?/(margen|rentabilidad|rentable)/.test(t):/ganancia/.test(t);
+  if(!hasKind) return null;
+  const m=t.match(/(\d+(?:[.,]\d+)?)/g); if(!m) return null;
+  const value=Number(m[m.length-1].replace(',','.'));
+  const lt=/(por debajo|debajo|menor|menos|inferior|bajo)/.test(t);
+  const gt=/(por encima|encima|mayor|mas|superior)/.test(t);
+  if(!lt&&!gt) return null;
+  return {op:lt&&!gt?'lt':'gt',value};
+}
+function tlcV3FindCode(code){
+  const c=String(code||'').replace(/\D/g,'');
+  return tlcSmartAll().find(p=>[p.codigoTLC,p.codigoProveedor,p.codigoFabrica,p.rowNumber].some(v=>String(v??'').replace(/\D/g,'')===c))||null;
+}
+function tlcV3ApplyContext(source, st, skip={}){
+  if(st.activeProvider && !skip.provider) source=source.filter(p=>tlcSmartNorm(p.proveedor)===tlcSmartNorm(st.activeProvider));
+  if(st.activeMargin && !skip.margin){const c=st.activeMargin;source=source.filter(p=>c.op==='lt'?Number(p.margenReal||0)<c.value:Number(p.margenReal||0)>c.value)}
+  if(st.activeGain && !skip.gain){const c=st.activeGain;source=source.filter(p=>c.op==='lt'?Number(p.gananciaReal||0)<c.value:Number(p.gananciaReal||0)>c.value)}
+  return source;
+}
+function tlcV3Handle(message){
+  const raw=String(message||'').trim(), t=tlcSmartNorm(raw), st=window.tlcSmartPriceState;
+  if(/^(confirmar|confirmo|si|sí|aplicar|aplica|dale)$/.test(t)&&st.pendingAction){tlcSmartApplyPendingEdit();return true}
+  if(/^(cancelar|cancela|no)$/.test(t)&&st.pendingAction){st.pendingAction=null;appendPriceAiMessage('bot','Cambio cancelado.');return true}
+  const cm=raw.match(/\b(\d{6,})\b/);
+  if(cm&&/(edita|editalo|editar|sumale|aumenta|subile|restale|bajale|ponele|cambiale)/.test(t)){
+    const p=tlcV3FindCode(cm[1]);
+    if(!p){appendPriceAiMessage('bot',`No encontré un producto con el código ${cm[1]}.`);return true}
+    if(/edita|editalo|editar/.test(t)&&!/(sumale|aumenta|subile|restale|bajale|ponele|cambiale)/.test(t)){openEditModal(p.rowNumber);appendPriceAiMessage('bot',`Abrí la edición de ${p.articulo} (${p.codigoTLC}).`);return true}
+    const after=raw.slice(raw.indexOf(cm[1])+cm[1].length); const am=after.match(/(\d+(?:[.,]\d+)?)/); const amount=am?Number(am[1].replace(',','.')):null;
+    if(amount!=null){const old=Number(p.pvp||0); let neu=old; if(/sumale|aumenta|subile/.test(t))neu=old+amount; else if(/restale|bajale/.test(t))neu=old-amount; else neu=amount; st.pendingAction={product:p,oldPvp:old,newPvp:neu}; appendPriceAiMessage('bot',`Voy a cambiar el PVP de ${p.articulo} (${p.codigoTLC}) de ${money(old,p.moneda)} a ${money(neu,p.moneda)}. Escribí "confirmar" para aplicarlo o "cancelar".`);return true}
+  }
+  const provider=tlcV3ProviderInText(raw), mc=tlcV3Condition(raw,'margin'), gc=tlcV3Condition(raw,'gain'), sort=tlcSmartParseSort(raw);
+  const onlySort=!!sort&&!provider&&!mc&&!gc;
+  let source=onlySort&&Array.isArray(st.lastResults)?[...st.lastResults]:tlcSmartAll(), desc=[], structured=false;
+  if(onlySort){desc=[st.lastDescription].filter(Boolean);structured=true}
+  else {
+    // Una consulta que nombra proveedor inicia/reemplaza el contexto de proveedor.
+    if(provider){st.activeProvider=provider; st.activeMargin=null; st.activeGain=null}
+    // Si la frase no nombra proveedor pero agrega una condición, conserva el proveedor activo.
+    if(mc) st.activeMargin=mc;
+    if(gc) st.activeGain=gc;
+    source=tlcV3ApplyContext(source,st);
+    if(st.activeProvider){desc.push(`proveedor "${st.activeProvider}"`);structured=true}
+    if(st.activeMargin){desc.push(`margen ${st.activeMargin.op==='lt'?'menor a':'mayor a'} ${st.activeMargin.value}%`);structured=true}
+    if(st.activeGain){desc.push(`ganancia ${st.activeGain.op==='lt'?'menor a':'mayor a'} ${st.activeGain.value}`);structured=true}
+  }
+  if(sort){source=tlcSmartSort(source,sort);desc.push(`ordenado por ${sort.field==='margenReal'?'margen':sort.field==='gananciaReal'?'ganancia':sort.field} ${sort.direction==='asc'?'de menor a mayor':'de mayor a menor'}`);structured=true}
+  const lim=tlcSmartParseLimit(raw); if(lim&&lim>0){if(!sort&&/ganancia/.test(t))source=tlcSmartSort(source,{field:'gananciaReal',direction:/menor/.test(t)?'asc':'desc'});if(!sort&&/(margen|rentabilidad)/.test(t))source=tlcSmartSort(source,{field:'margenReal',direction:/menor/.test(t)?'asc':'desc'});source=source.slice(0,lim);desc.push(`primeros ${lim}`);structured=true}
+  if(structured){tlcSmartRender(source,desc.join(' + '));appendPriceAiMessage('bot',`Encontré ${source.length} artículo${source.length===1?'':'s'} y ya te los mostré en la lista principal.`);return true}
+  return tlcSmartHandleDataCommand(raw);
+}
+async function sendPriceAiMessage(){
+ const input=document.getElementById('priceAiInput'),btn=document.getElementById('priceAiSendBtn');if(!input||!btn)return;const message=input.value.trim();if(!message)return;appendPriceAiMessage('user',message);input.value='';if(tlcV3Handle(message))return;btn.disabled=true;appendPriceAiMessage('bot','Analizando...');try{const res=await fetch('/api/precios/ia-chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message})});const data=await res.json().catch(()=>({}));const box=document.getElementById('priceAiMessages'),last=box?.lastElementChild;if(last&&last.textContent==='Analizando...')last.remove();appendPriceAiMessage('bot',res.ok?(data.answer||'No encontré respuesta.'):(data.error||'No pude consultar la IA.'))}catch(err){const box=document.getElementById('priceAiMessages'),last=box?.lastElementChild;if(last&&last.textContent==='Analizando...')last.remove();appendPriceAiMessage('bot','Error consultando la IA: '+(err.message||err))}finally{btn.disabled=false}}
+
+</script>
+
+
+<button class="ai-price-launcher" onclick="togglePriceAiPanel()">
+  🤖 IA Lista de Precios
+</button>
+
+<div class="ai-price-panel" id="priceAiPanel">
+  <div class="ai-price-head">
+    <div>
+      <div class="ai-price-title">IA Lista de Precios</div>
+      <div class="ai-price-subtitle">Buscá productos, analizá márgenes y simulá descuentos o ACOS.</div>
+    </div>
+  </div>
+
+  <div class="ai-price-suggestions">
+    <button class="ai-chip" onclick="sendPriceAiSuggestion('Buscame el código TLC ')">Buscar código TLC</button>
+    <button class="ai-chip" onclick="sendPriceAiSuggestion('Mostrame productos con margen menor a 10%')">Margen bajo</button>
+    <button class="ai-chip" onclick="sendPriceAiSuggestion('Mostrame productos incompletos')">Incompletos</button>
+  </div>
+
+  <div class="ai-price-messages" id="priceAiMessages">
+    <div class="ai-msg bot">Hola. Puedo ayudarte con la lista de precios.\n\nCuando me pidas buscar productos, te los voy a mostrar en la tabla principal.\n\nEjemplos:\n• Buscame el código TLC 12345\n• Mostrame productos del proveedor Montesur\n• Mostrame artículos que contengan lagarto\n• Qué productos tienen margen menor a 10%\n• Mostrame productos de Gelbring con ganancia mayor a 10\n• Mostrame artículos con margen mayor al 20% y ordenalos de menor a mayor\n• Mostrame los 10 artículos con mayor ganancia</div>
+  </div>
+
+  <div class="ai-price-inputbar">
+    <textarea id="priceAiInput" placeholder="Escribí tu consulta..." onkeydown="handlePriceAiKey(event)"></textarea>
+    <button class="ai-price-send" id="priceAiSendBtn" onclick="sendPriceAiMessage()">Enviar</button>
+  </div>
+</div>
+
+</body>
+</html>
+<style id="tlc-hide-old-price-ai">#ia-float,#iaChat,#iaPanel,.ia-floating,.ai-floating,.precio-ai-float{display:none!important}</style>
