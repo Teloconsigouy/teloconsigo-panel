@@ -2786,7 +2786,7 @@ async function getMeliItemForSmartUpdate(cuenta, itemId) {
   const attrs = [
     'id','title','price','currency_id','available_quantity','status','sold_quantity',
     'variations','user_product_id','inventory_id','catalog_listing','catalog_product_id','seller_id',
-    'seller_custom_field','attributes','shipping','tags'
+    'seller_custom_field','attributes','shipping','tags','pictures','permalink','category_id'
   ].join(',');
   return await meliApi(cuenta, `/items/${encodeURIComponent(itemId)}?attributes=${encodeURIComponent(attrs)}`);
 }
@@ -4290,7 +4290,7 @@ async function handleAgentApi(req, res, u, pathName) {
 //  Lectura amplia + escrituras que exigen confirm:true para evitar cambios accidentales.
 // ═══════════════════════════════════════════════
 const MCP_SERVER_NAME = 'teloconsigo-mercadolibre';
-const MCP_SERVER_VERSION = '5.3.1-technical-specs';
+const MCP_SERVER_VERSION = '5.3.2-item-photos';
 const MCP_PROTOCOLS = ['2025-11-25', '2025-06-18', '2025-03-26'];
 
 // Consulta exclusivamente de lectura; reutiliza OAuth y meliApi del panel.
@@ -4363,7 +4363,7 @@ const MCP_TOOLS = [
   { name:'meli_questions', title:'Preguntas de Mercado Libre', description:'Lista preguntas de Mercado Libre. Por defecto devuelve preguntas sin responder.', inputSchema:{type:'object',properties:{cuenta:{type:'string',enum:['tlc','topshop']},status:{type:'string',default:'UNANSWERED'},limit:{type:'integer',minimum:1,maximum:100,default:50},offset:{type:'integer',minimum:0,default:0}},required:['cuenta'],additionalProperties:false}, annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:true} },
   { name:'meli_claims', title:'Reclamos de Mercado Libre', description:'Lista reclamos de posventa de Mercado Libre. Por defecto devuelve reclamos abiertos.', inputSchema:{type:'object',properties:{cuenta:{type:'string',enum:['tlc','topshop']},status:{type:'string',default:'opened'},limit:{type:'integer',minimum:1,maximum:100,default:50},offset:{type:'integer',minimum:0,default:0}},required:['cuenta'],additionalProperties:false}, annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:true} },
   { name:'meli_order', title:'Venta de Mercado Libre', description:'Consulta una venta de Mercado Libre por ID.', inputSchema:{type:'object',properties:{cuenta:{type:'string',enum:['tlc','topshop']},id:{type:'string'}},required:['cuenta','id'],additionalProperties:false}, annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:true} },
-  { name:'meli_item', title:'Publicacion de Mercado Libre', description:'Consulta una publicacion de Mercado Libre por ID MLU.', inputSchema:{type:'object',properties:{cuenta:{type:'string',enum:['tlc','topshop']},id:{type:'string'}},required:['cuenta','id'],additionalProperties:false}, annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:true} },
+  { name:'meli_item', title:'Publicacion de Mercado Libre', description:'Consulta una publicacion por ID MLU e incluye fotos originales como imagenes. image_delivery informa descargas y errores. Solo lectura.', inputSchema:{type:'object',properties:{cuenta:{type:'string',enum:['tlc','topshop']},id:{type:'string'}},required:['cuenta','id'],additionalProperties:false}, annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:true} },
   { name:'meli_publications', title:'Publicaciones de Mercado Libre', description:'Busca publicaciones de Mercado Libre por titulo, ID, SKU o texto. Usa q vacio para listar.', inputSchema:{type:'object',properties:{cuenta:{type:'string',enum:['tlc','topshop']},q:{type:'string',default:''},limit:{type:'integer',minimum:1,maximum:100,default:50},offset:{type:'integer',minimum:0,default:0},refresh:{type:'boolean',default:false}},required:['cuenta'],additionalProperties:false}, annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:true} },
   { name:'meli_question_context', title:'Contexto de una pregunta', description:'Obtiene la pregunta y TODO el contexto de la publicacion para preparar una respuesta: titulo, atributos, descripcion, fotos y preguntas/respuestas anteriores. Las fotos se devuelven tambien como contenido de imagen para que ChatGPT pueda analizarlas. IMPORTANTE: primero interpretar la intencion real de la pregunta y usar las fotos como evidencia valida cuando el dato sea claramente observable (por ejemplo geometria/forma del cuadro, color visible, presencia de componentes, cantidad visible o accesorios visibles), aunque no exista un atributo textual equivalente. No exigir que la frase del cliente aparezca literalmente en atributos. No usar fotos para inferir datos no verificables visualmente como medidas exactas, potencia, autonomia, capacidad de carga, material interno o compatibilidad tecnica. No inventar datos que no esten respaldados por este contexto. Para TLC la marca/firma es siempre TELOCONSIGO (una sola palabra); para TOP SHOP es TOP SHOP.', inputSchema:{type:'object',properties:{cuenta:{type:'string',enum:['tlc','topshop']},question_id:{type:['string','number']},history_limit:{type:'integer',minimum:1,maximum:100,default:50}},required:['cuenta','question_id'],additionalProperties:false}, annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:true} },
   { name:'meli_messages_unread', title:'Mensajes de ventas pendientes', description:'Lista conversaciones posventa con mensajes pendientes de leer. No marca mensajes como leidos.', inputSchema:{type:'object',properties:{cuenta:{type:'string',enum:['tlc','topshop']}},required:['cuenta'],additionalProperties:false}, annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:true} },
@@ -4391,24 +4391,47 @@ const MCP_TOOLS = [
 ];
 
 async function mcpTextResult(data) {
-  const imageUrls = Array.isArray(data?._mcpImageUrls) ? data._mcpImageUrls : [];
+  const imageUrls = Array.isArray(data?._mcpImageUrls) ? [...new Set(data._mcpImageUrls)] : [];
   const structured = data && typeof data === 'object' ? {...data} : data;
   if (structured && typeof structured === 'object') delete structured._mcpImageUrls;
-  const content = [{type:'text', text:JSON.stringify(structured)}];
-  // MCP permite contenido image (base64). Esto hace visibles a ChatGPT las fotos de la publicacion.
-  for (const url of imageUrls.slice(0, 8)) {
+  const content = [];
+  const delivery = {requested:imageUrls.length, returned:0, limit:8, errors:[]};
+  const maxBytes = 5 * 1024 * 1024;
+  let totalBytes = 0;
+  for (const rawUrl of imageUrls.slice(0, 8)) {
     try {
-      const r = await fetch(url, {headers:{'User-Agent':'TELOCONSIGO-MCP/3.2'}});
-      if (!r.ok) continue;
-      const ct = String(r.headers.get('content-type') || 'image/jpeg').split(';')[0].trim();
-      if (!ct.startsWith('image/')) continue;
-      const ab = await r.arrayBuffer();
-      if (ab.byteLength > 5 * 1024 * 1024) continue;
-      content.push({type:'image', data:Buffer.from(ab).toString('base64'), mimeType:ct});
-    } catch (_) {}
+      const url = new URL(rawUrl);
+      if (structured?.item && !/^(?:[a-z0-9-]+\.)*mlstatic\.com$/i.test(url.hostname)) throw new Error('Host de imagen no permitido');
+      if (url.protocol === 'http:') url.protocol = 'https:';
+      if (url.protocol !== 'https:' || url.username || url.password) throw new Error('URL de imagen no permitida');
+      const r = await fetch(url.href, {headers:{'User-Agent':'TELOCONSIGO-MCP/5.3.2'}, redirect:'error', signal:AbortSignal.timeout(12000)});
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const ct = String(r.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+      if (!['image/jpeg','image/png','image/webp','image/gif'].includes(ct)) { await r.body?.cancel(); throw new Error('Formato de imagen no admitido'); }
+      if (Number(r.headers.get('content-length')) > maxBytes) { await r.body?.cancel(); throw new Error('Imagen supera 5 MiB'); }
+      if (!r.body) throw new Error('Respuesta sin imagen');
+      const reader = r.body.getReader();
+      const chunks = []; let size = 0;
+      try {
+        for (;;) {
+          const {done,value} = await reader.read();
+          if (done) break;
+          size += value.byteLength;
+          if (size > maxBytes || totalBytes + size > 20 * 1024 * 1024) { await reader.cancel(); throw new Error('Limite de bytes excedido'); }
+          chunks.push(Buffer.from(value));
+        }
+      } finally { reader.releaseLock(); }
+      if (!size) throw new Error('Imagen vacia');
+      totalBytes += size;
+      content.push({type:'image', data:Buffer.concat(chunks).toString('base64'), mimeType:ct});
+      delivery.returned++;
+    } catch (e) { delivery.errors.push({index:imageUrls.indexOf(rawUrl),message:String(e.message || e)}); }
   }
-  return { content, structuredContent:structured, isError:false };
+  if (imageUrls.length || structured?.picture_urls) structured.image_delivery = delivery;
+  content.unshift({type:'text',text:JSON.stringify(structured)});
+  return {content,structuredContent:structured,isError:false};
 }
+
 function mcpErrorResult(message) {
   return { content:[{type:'text', text:String(message)}], isError:true };
 }
@@ -4791,7 +4814,9 @@ async function mcpCallTool(name, args={}) {
   if (name === 'meli_technical_specs') return mcpTechnicalSpecs(cuenta, args);
   if (name === 'meli_item') {
     const id=String(args.id||'').trim(); if(!id) throw new Error('Falta id de publicacion.');
-    return {ok:true,cuenta,item:await getMeliItemForSmartUpdate(cuenta,id)};
+    const item = await getMeliItemForSmartUpdate(cuenta,id);
+    const pictureUrls = [...new Set((item.pictures || []).map(p => p.secure_url || p.url).filter(Boolean))];
+    return {ok:true,cuenta,item,picture_urls:pictureUrls,_mcpImageUrls:pictureUrls};
   }
   if (name === 'meli_publications') {
     const q=String(args.q||'').trim().toLowerCase();
