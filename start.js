@@ -4290,10 +4290,75 @@ async function handleAgentApi(req, res, u, pathName) {
 //  Lectura amplia + escrituras que exigen confirm:true para evitar cambios accidentales.
 // ═══════════════════════════════════════════════
 const MCP_SERVER_NAME = 'teloconsigo-mercadolibre';
-const MCP_SERVER_VERSION = '5.3.0-ads-update-ad-no-gtin';
+const MCP_SERVER_VERSION = '5.3.1-technical-specs';
 const MCP_PROTOCOLS = ['2025-11-25', '2025-06-18', '2025-03-26'];
 
+// Consulta exclusivamente de lectura; reutiliza OAuth y meliApi del panel.
+async function mcpTechnicalSpecs(cuenta, args) {
+  if (!['tlc', 'topshop'].includes(cuenta)) throw new Error('Cuenta invalida.');
+  const id = String(args.id || '').trim().toUpperCase();
+  if (!/^MLU\d+$/.test(id)) throw new Error('Indica un ID MLU valido.');
+  const item = await meliApi(cuenta, `/items/${encodeURIComponent(id)}`);
+  const sellerId = await fetchMeliSellerId(cuenta);
+  if (String(item.id) !== id || String(item.seller_id) !== String(sellerId)) {
+    throw new Error('La publicacion no pertenece a la cuenta indicada.');
+  }
+  if (!item.category_id) throw new Error('Mercado Libre no devolvio la categoria.');
+  const category = encodeURIComponent(item.category_id);
+  const paths = [`/categories/${category}/attributes`, `/categories/${category}/technical_specs/input`];
+  const responses = await Promise.allSettled(paths.map(path => meliApi(cuenta, path)));
+  const errors = responses.flatMap((r, i) => r.status === 'rejected'
+    ? [{resource: paths[i], error: String(r.reason?.message || r.reason)}] : []);
+  if (responses[0].status !== 'fulfilled' || !Array.isArray(responses[0].value) || !responses[0].value.length) {
+    throw new Error('No se obtuvo la lista de atributos de la categoria; no se puede determinar que falta.');
+  }
+  const definitions = new Map(responses[0].value.filter(a => a?.id).map(a => [a.id, {...a}]));
+  // El input puede anidar grupos, componentes y atributos. Solo incorpora
+  // nodos que describen atributos, no IDs de grupos o valores sugeridos.
+  function walk(node) {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node.attributes)) {
+      for (const a of node.attributes) {
+        if (a?.id && (definitions.has(a.id) || a.value_type || a.name)) {
+          const old = definitions.get(a.id) || {};
+          definitions.set(a.id, {...old, ...a, tags: {...old.tags, ...a.tags}});
+        }
+      }
+    }
+    for (const [key, value] of Object.entries(node)) {
+      if (key === 'values' || key === 'suggested_values' || key === 'units') continue;
+      if (Array.isArray(value)) value.forEach(walk);
+      else if (value && typeof value === 'object') walk(value);
+    }
+  }
+  if (responses[1].status === 'fulfilled') walk(responses[1].value);
+  const hasValue = a => a && (a.value_id != null ||
+    (a.value_name != null && String(a.value_name).trim() !== '') ||
+    (a.value_struct?.number != null) ||
+    (Array.isArray(a.values) && a.values.some(hasValue)));
+  const rows = [...definitions.values()].map(definition => {
+    const current = (item.attributes || []).find(a => a.id === definition.id);
+    const variations = (item.variations || []).map(v => ({variation_id: v.id,
+      current: [...(v.attributes || []), ...(v.attribute_combinations || [])].find(a => a.id === definition.id)}))
+      .filter(v => v.current);
+    const filled = hasValue(current);
+    const variationFilled = variations.filter(v => hasValue(v.current)).length;
+    const status = filled ? 'loaded' : variationFilled ? 'variation_values' : 'missing_value';
+    return {...definition, group: definition.attribute_group_id === 'MAIN' ? 'main' :
+      definition.attribute_group_id ? 'secondary' : 'unclassified',
+      current: current || null, variations, status};
+  });
+  return {ok: true, cuenta, item_id: id, title: item.title, category_id: item.category_id,
+    checked_at: new Date().toISOString(), schema_complete: errors.length === 0, errors,
+    summary: {total: rows.length, loaded: rows.filter(a => a.status === 'loaded').length,
+      missing_value: rows.filter(a => a.status === 'missing_value').length,
+      variation_values: rows.filter(a => a.status === 'variation_values').length},
+    attributes: rows,
+    note: 'missing_value indica ausencia de valor devuelto, no un error ni una obligacion de completarlo. Si schema_complete=false, la consulta es parcial. No equivale a los objetivos de calidad del panel. Completar solo con evidencia del modelo exacto; conservar los valores por variante y no inventar datos.'};
+}
+
 const MCP_TOOLS = [
+  {"name": "meli_technical_specs", "title": "Ficha tecnica completa y campos vacios", "description": "Consulta autenticada de solo lectura. Trae los atributos de la categoria y technical_specs/input, compara con los valores de la publicacion y sus variantes. Devuelve principales, secundarias y campos sin valor, formatos, unidades, opciones y requisitos. No inventa datos ni modifica la publicacion. No equivale a los objetivos de calidad del panel. schema_complete=false indica consulta parcial. Usar antes de proponer cambios con meli_update_publication.", "inputSchema": {"type": "object", "properties": {"cuenta": {"type": "string", "enum": ["tlc", "topshop"]}, "id": {"type": "string", "pattern": "^MLU[0-9]+$"}}, "required": ["cuenta", "id"], "additionalProperties": false}, "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true}},
   { name:'meli_account', title:'Cuenta de Mercado Libre', description:'Obtiene datos basicos de la cuenta vendedora de Mercado Libre de TELOCONSIGO o TOP SHOP.', inputSchema:{type:'object',properties:{cuenta:{type:'string',enum:['tlc','topshop']}},required:['cuenta'],additionalProperties:false}, annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:true} },
   { name:'meli_questions', title:'Preguntas de Mercado Libre', description:'Lista preguntas de Mercado Libre. Por defecto devuelve preguntas sin responder.', inputSchema:{type:'object',properties:{cuenta:{type:'string',enum:['tlc','topshop']},status:{type:'string',default:'UNANSWERED'},limit:{type:'integer',minimum:1,maximum:100,default:50},offset:{type:'integer',minimum:0,default:0}},required:['cuenta'],additionalProperties:false}, annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:true} },
   { name:'meli_claims', title:'Reclamos de Mercado Libre', description:'Lista reclamos de posventa de Mercado Libre. Por defecto devuelve reclamos abiertos.', inputSchema:{type:'object',properties:{cuenta:{type:'string',enum:['tlc','topshop']},status:{type:'string',default:'opened'},limit:{type:'integer',minimum:1,maximum:100,default:50},offset:{type:'integer',minimum:0,default:0}},required:['cuenta'],additionalProperties:false}, annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:true} },
@@ -4723,6 +4788,7 @@ async function mcpCallTool(name, args={}) {
     const id=String(args.id||'').trim(); if(!id) throw new Error('Falta id de venta.');
     return {ok:true,cuenta,order:await meliApi(cuenta, `/orders/${encodeURIComponent(id)}`)};
   }
+  if (name === 'meli_technical_specs') return mcpTechnicalSpecs(cuenta, args);
   if (name === 'meli_item') {
     const id=String(args.id||'').trim(); if(!id) throw new Error('Falta id de publicacion.');
     return {ok:true,cuenta,item:await getMeliItemForSmartUpdate(cuenta,id)};
