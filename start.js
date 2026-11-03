@@ -2405,6 +2405,8 @@ function buildCreatedPublicationSku(itemId, draft) {
   const id=String(itemId||'').trim();
   const code=String(draft.supplierCode||draft.codigo_proveedor||draft.sku||'').trim().replace(/^MLU?\d+\s*-\s*/i,'').replace(/^\d{8,}\s*-\s*/,'').replace('ING_','ING');
   if(!/^MLU[0-9]+$/.test(id) || !code) throw new Error('Falta ID MLU o codigo del proveedor para generar SKU.');
+  const isDiego=(()=>{try{return /(^|\.)diego\.com\.uy$/i.test(new URL(draft.url||'').hostname);}catch{return false;}})();
+  if(isDiego) return id.slice(3)+' - DCM '+code.replace(/^DCM\s+/i,'');
   return id.slice(3)+'-'+code;
 }
 
