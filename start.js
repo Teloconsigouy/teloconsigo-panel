@@ -4290,7 +4290,7 @@ async function handleAgentApi(req, res, u, pathName) {
 //  Lectura amplia + escrituras que exigen confirm:true para evitar cambios accidentales.
 // ═══════════════════════════════════════════════
 const MCP_SERVER_NAME = 'teloconsigo-mercadolibre';
-const MCP_SERVER_VERSION = '5.3.2-item-photos';
+const MCP_SERVER_VERSION = '5.4.0-quality-performance';
 const MCP_PROTOCOLS = ['2025-11-25', '2025-06-18', '2025-03-26'];
 
 // Consulta exclusivamente de lectura; reutiliza OAuth y meliApi del panel.
@@ -4357,7 +4357,170 @@ async function mcpTechnicalSpecs(cuenta, args) {
     note: 'missing_value indica ausencia de valor devuelto, no un error ni una obligacion de completarlo. Si schema_complete=false, la consulta es parcial. No equivale a los objetivos de calidad del panel. Completar solo con evidencia del modelo exacto; conservar los valores por variante y no inventar datos.'};
 }
 
+function mcpNormalizePerformance(performance, includeCompleted = false) {
+  if (!performance || typeof performance !== 'object') return null;
+  const pending = [];
+  const completed = [];
+  const bucketSummary = [];
+  const addObjective = (bucket, variable, rule, kind) => {
+    const status = String(rule?.status || variable?.status || bucket?.status || '').toUpperCase() || 'UNKNOWN';
+    const row = {
+      key: rule?.key || variable?.key || bucket?.key || '',
+      kind,
+      status,
+      progress: rule?.progress ?? variable?.score ?? bucket?.score ?? null,
+      mode: rule?.mode || null,
+      title: rule?.wordings?.title || variable?.title || bucket?.title || '',
+      label: rule?.wordings?.label || '',
+      link: rule?.wordings?.link || '',
+      bucket_key: bucket?.key || '',
+      bucket_title: bucket?.title || '',
+      variable_key: variable?.key || null,
+      calculated_at: rule?.calculated_at || variable?.calculated_at || bucket?.calculated_at || performance.calculated_at || null,
+    };
+    (status === 'COMPLETED' ? completed : pending).push(row);
+  };
+  for (const bucket of Array.isArray(performance.buckets) ? performance.buckets : []) {
+    const variables = Array.isArray(bucket?.variables) ? bucket.variables : [];
+    const directRules = Array.isArray(bucket?.rules) ? bucket.rules : [];
+    let leaves = 0;
+    for (const rule of directRules) { addObjective(bucket, null, rule, 'rule'); leaves++; }
+    for (const variable of variables) {
+      const rules = Array.isArray(variable?.rules) ? variable.rules : [];
+      if (rules.length) {
+        for (const rule of rules) { addObjective(bucket, variable, rule, 'rule'); leaves++; }
+      } else {
+        addObjective(bucket, variable, null, 'variable'); leaves++;
+      }
+    }
+    if (!leaves) addObjective(bucket, null, null, 'bucket');
+    bucketSummary.push({
+      key: bucket?.key || '', type: bucket?.type || '', status: bucket?.status || '',
+      score: bucket?.score ?? null, title: bucket?.title || '', calculated_at: bucket?.calculated_at || null,
+      variables: variables.length, direct_rules: directRules.length,
+    });
+  }
+  const result = {
+    entity_type: performance.entity_type || '',
+    entity_id: performance.entity_id || '',
+    score: performance.score ?? null,
+    level: performance.level || '',
+    level_wording: performance.level_wording || performance.level || '',
+    calculated_at: performance.calculated_at || null,
+    pending_count: pending.length,
+    completed_count: completed.length,
+    applicable_count: pending.length + completed.length,
+    pending_objectives: pending,
+    buckets: bucketSummary,
+  };
+  if (includeCompleted) result.completed_objectives = completed;
+  return result;
+}
+
+async function mcpQualityObjectives(cuenta, args) {
+  if (!['tlc', 'topshop'].includes(cuenta)) throw new Error('Cuenta invalida.');
+  const id = String(args.id || '').trim().toUpperCase();
+  if (!/^MLU\d+$/.test(id)) throw new Error('Indica un ID MLU valido.');
+  const item = await meliApi(cuenta, `/items/${encodeURIComponent(id)}`);
+  const sellerId = await fetchMeliSellerId(cuenta);
+  if (String(item?.id) !== id || String(item?.seller_id) !== String(sellerId)) {
+    throw new Error('La publicacion no pertenece a la cuenta indicada.');
+  }
+  const resources = [
+    {key:'item', path:`/item/${encodeURIComponent(id)}/performance`},
+    ...(item?.user_product_id ? [{key:'user_product', path:`/user-product/${encodeURIComponent(item.user_product_id)}/performance`}] : []),
+  ];
+  const settled = await Promise.allSettled(resources.map(resource => meliApi(cuenta, resource.path)));
+  const performance = {};
+  const errors = [];
+  for (let i = 0; i < resources.length; i++) {
+    const resource = resources[i];
+    const result = settled[i];
+    if (result.status === 'fulfilled') performance[resource.key] = mcpNormalizePerformance(result.value, args.include_completed === true);
+    else errors.push({resource:resource.path,error:String(result.reason?.message || result.reason)});
+  }
+  if (!performance.item && !performance.user_product) {
+    throw new Error('Mercado Libre no devolvio datos de calidad para la publicacion. ' + errors.map(e => e.error).join(' | '));
+  }
+  const preferred = performance.item || performance.user_product;
+  return {
+    ok:true, cuenta, item_id:id, title:item?.title || '', status:item?.status || '',
+    user_product_id:item?.user_product_id || null, catalog_listing:item?.catalog_listing === true,
+    score:preferred?.score ?? null, level:preferred?.level || '', level_wording:preferred?.level_wording || '',
+    pending_count:preferred?.pending_count ?? 0, pending_objectives:preferred?.pending_objectives || [],
+    performance, errors,
+    note:'Datos oficiales de /performance. Son los objetivos de calidad de Mercado Libre, no todos los campos vacios de la categoria. El puntaje puede demorar en recalcularse despues de una correccion.',
+  };
+}
+
+async function mcpMapLimit(rows, concurrency, mapper) {
+  const out = new Array(rows.length);
+  let cursor = 0;
+  const workers = Array.from({length:Math.min(concurrency, rows.length)}, async () => {
+    for (;;) {
+      const index = cursor++;
+      if (index >= rows.length) return;
+      out[index] = await mapper(rows[index], index);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
+async function mcpQualityAudit(args) {
+  const requestedAccount = String(args.cuenta || 'both').toLowerCase();
+  if (!['tlc','topshop','both'].includes(requestedAccount)) throw new Error('Cuenta invalida.');
+  const accounts = requestedAccount === 'both' ? ['tlc','topshop'] : [requestedAccount];
+  const q = String(args.q || '').trim().toLowerCase();
+  const status = String(args.status || 'active').trim().toLowerCase();
+  const limit = Math.max(1, Math.min(Number(args.limit || 25), 50));
+  const offset = Math.max(0, Number(args.offset || 0));
+  const cache = loadPublicationsCache();
+  const candidates = [];
+  for (const cuenta of accounts) {
+    if (args.refresh || !Array.isArray(cache[cuenta]) || !cache[cuenta].length) {
+      cache[cuenta] = await fetchAllPublicationsDirect(cuenta, {});
+      cache.updatedAt = new Date().toISOString();
+    }
+    let items = cache[cuenta] || [];
+    if (status) items = items.filter(item => String(item.status || '').toLowerCase() === status);
+    if (q) items = items.filter(item => JSON.stringify([item.id,item.mlu,item.title,item.sku,item.seller_custom_field]).toLowerCase().includes(q));
+    for (const item of items) candidates.push({cuenta,item});
+  }
+  if (args.refresh) savePublicationsCache(cache);
+  const page = candidates.slice(offset, offset + limit);
+  const rows = await mcpMapLimit(page, 4, async ({cuenta,item}) => {
+    const id = String(item.id || item.mlu || '').trim().toUpperCase();
+    try {
+      const quality = await mcpQualityObjectives(cuenta, {id, include_completed:false});
+      return {ok:true,cuenta,id,title:quality.title,status:quality.status,score:quality.score,
+        level:quality.level,level_wording:quality.level_wording,pending_count:quality.pending_count,
+        pending_objectives:quality.pending_objectives,user_product_id:quality.user_product_id,
+        catalog_listing:quality.catalog_listing,errors:quality.errors};
+    } catch (e) {
+      return {ok:false,cuenta,id,title:item.title || '',status:item.status || '',error:String(e.message || e)};
+    }
+  });
+  rows.sort((a,b) => {
+    if (a.ok !== b.ok) return a.ok ? -1 : 1;
+    const aScore = Number.isFinite(Number(a.score)) ? Number(a.score) : 101;
+    const bScore = Number.isFinite(Number(b.score)) ? Number(b.score) : 101;
+    return aScore - bScore || Number(b.pending_count || 0) - Number(a.pending_count || 0);
+  });
+  return {
+    ok:true, cuenta:requestedAccount, q, status, offset, limit,
+    total_candidates:candidates.length, reviewed:rows.length,
+    with_pending:rows.filter(row => row.ok && Number(row.pending_count || 0) > 0).length,
+    perfect_score:rows.filter(row => row.ok && Number(row.score) === 100).length,
+    unavailable:rows.filter(row => !row.ok).length,
+    items:rows,
+    note:'Auditoria oficial de /performance ordenada por menor puntaje. Una respuesta no disponible no significa calidad cero; puede indicar que Mercado Libre aun no genero performance o que la API rechazo la consulta.',
+  };
+}
+
 const MCP_TOOLS = [
+  { name:'meli_quality_objectives', title:'Objetivos de calidad de una publicacion', description:'Consulta oficial de solo lectura usando /performance. Devuelve puntaje de 0 a 100, nivel y objetivos pendientes exactos de Mercado Libre para un MLU; cuando existe, tambien consulta su User Product. No modifica la publicacion y no confunde objetivos con todos los atributos vacios de la categoria.', inputSchema:{type:'object',properties:{cuenta:{type:'string',enum:['tlc','topshop']},id:{type:'string',pattern:'^MLU[0-9]+$'},include_completed:{type:'boolean',default:false}},required:['cuenta','id'],additionalProperties:false}, annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:true} },
+  { name:'meli_quality_audit', title:'Auditoria de calidad por lotes', description:'Revisa por lotes publicaciones de TELOCONSIGO, TOP SHOP o ambas con la API oficial /performance. Devuelve puntaje y objetivos pendientes, ordenados por menor puntaje. Solo lectura. Limite maximo 50 por llamada para evitar sobrecargar la API.', inputSchema:{type:'object',properties:{cuenta:{type:'string',enum:['tlc','topshop','both'],default:'both'},q:{type:'string',default:''},status:{type:'string',default:'active'},limit:{type:'integer',minimum:1,maximum:50,default:25},offset:{type:'integer',minimum:0,default:0},refresh:{type:'boolean',default:false}},additionalProperties:false}, annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:true} },
   {"name": "meli_technical_specs", "title": "Ficha tecnica completa y campos vacios", "description": "Consulta autenticada de solo lectura. Trae los atributos de la categoria y technical_specs/input, compara con los valores de la publicacion y sus variantes. Devuelve principales, secundarias y campos sin valor, formatos, unidades, opciones y requisitos. No inventa datos ni modifica la publicacion. No equivale a los objetivos de calidad del panel. schema_complete=false indica consulta parcial. Usar antes de proponer cambios con meli_update_publication.", "inputSchema": {"type": "object", "properties": {"cuenta": {"type": "string", "enum": ["tlc", "topshop"]}, "id": {"type": "string", "pattern": "^MLU[0-9]+$"}}, "required": ["cuenta", "id"], "additionalProperties": false}, "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true}},
   { name:'meli_account', title:'Cuenta de Mercado Libre', description:'Obtiene datos basicos de la cuenta vendedora de Mercado Libre de TELOCONSIGO o TOP SHOP.', inputSchema:{type:'object',properties:{cuenta:{type:'string',enum:['tlc','topshop']}},required:['cuenta'],additionalProperties:false}, annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:true} },
   { name:'meli_questions', title:'Preguntas de Mercado Libre', description:'Lista preguntas de Mercado Libre. Por defecto devuelve preguntas sin responder.', inputSchema:{type:'object',properties:{cuenta:{type:'string',enum:['tlc','topshop']},status:{type:'string',default:'UNANSWERED'},limit:{type:'integer',minimum:1,maximum:100,default:50},offset:{type:'integer',minimum:0,default:0}},required:['cuenta'],additionalProperties:false}, annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:true} },
@@ -4404,7 +4567,7 @@ async function mcpTextResult(data) {
       if (structured?.item && !/^(?:[a-z0-9-]+\.)*mlstatic\.com$/i.test(url.hostname)) throw new Error('Host de imagen no permitido');
       if (url.protocol === 'http:') url.protocol = 'https:';
       if (url.protocol !== 'https:' || url.username || url.password) throw new Error('URL de imagen no permitida');
-      const r = await fetch(url.href, {headers:{'User-Agent':'TELOCONSIGO-MCP/5.3.2'}, redirect:'error', signal:AbortSignal.timeout(12000)});
+      const r = await fetch(url.href, {headers:{'User-Agent':'TELOCONSIGO-MCP/5.4.0'}, redirect:'error', signal:AbortSignal.timeout(12000)});
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const ct = String(r.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
       if (!['image/jpeg','image/png','image/webp','image/gif'].includes(ct)) { await r.body?.cancel(); throw new Error('Formato de imagen no admitido'); }
@@ -4789,6 +4952,7 @@ async function mcpCallTool(name, args={}) {
   if (name==='meli_ads_update_ad') return mcpAdsUpdateAd(args);
   if (name==='meli_ads_add_items') return mcpAdsAddItems(args);
   if (['meli_ads_campaign_detail','meli_ads_update_campaign'].includes(name)) return mcpAdsCampaignTool(name,args);
+  if (name==='meli_quality_audit') return mcpQualityAudit(args);
   const cuenta = agentAccount(args.cuenta || 'tlc');
   const limit = Math.max(1, Math.min(Number(args.limit || 50), 100));
   const offset = Math.max(0, Number(args.offset || 0));
@@ -4811,6 +4975,7 @@ async function mcpCallTool(name, args={}) {
     const id=String(args.id||'').trim(); if(!id) throw new Error('Falta id de venta.');
     return {ok:true,cuenta,order:await meliApi(cuenta, `/orders/${encodeURIComponent(id)}`)};
   }
+  if (name === 'meli_quality_objectives') return mcpQualityObjectives(cuenta, args);
   if (name === 'meli_technical_specs') return mcpTechnicalSpecs(cuenta, args);
   if (name === 'meli_item') {
     const id=String(args.id||'').trim(); if(!id) throw new Error('Falta id de publicacion.');
