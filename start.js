@@ -1537,6 +1537,7 @@ function buildPublicadorPayload(data) {
     currency_id: data.currency || 'UYU',
     available_quantity: Number(data.stock) || 50,
     buying_mode: 'buy_it_now',
+    shipping: { mode: 'not_specified', local_pick_up: false, free_shipping: false },
     listing_type_id: data.tipo_publicacion || 'gold_special',
     condition: data.condicion || 'new',
     description: { plain_text: String(data.descripcion_meli || '').replace(/<[^>]+>/g, '').substring(0, 5000) || 'Producto importado automaticamente' },
@@ -2404,8 +2405,9 @@ function choosePublicadorShippingMode(userPreferences, categoryPreferences) {
   const userModes = Array.isArray(userPreferences?.modes) ? userPreferences.modes : [];
   const categoryModes = Array.isArray(categoryPreferences?.logistics)
     ? categoryPreferences.logistics.map(x => x.mode) : [];
-  const mode = ['me2', 'me1', 'not_specified'].find(x => userModes.includes(x) && categoryModes.includes(x));
-  if (!mode) throw new Error('ENVIO_NO_COMPATIBLE: no hay modalidad sin costos manuales habilitada para cuenta y categoria.');
+  // Default requested by merchant: buyer and seller coordinate delivery.
+  const mode = ['not_specified'].find(x => userModes.includes(x) && categoryModes.includes(x));
+  if (!mode) throw new Error('ENVIO_A_COORDINAR_NO_PERMITIDO: cuenta o categoria no admite not_specified. No se cambia automaticamente a Mercado Envios.');
   return mode;
 }
 
