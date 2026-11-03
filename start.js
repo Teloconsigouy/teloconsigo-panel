@@ -648,7 +648,7 @@ function normalizePublicadorImageUrl(src, pageUrl) {
 function isUsefulPublicadorImage(src) {
   const low = String(src || '').toLowerCase();
   if (!low.startsWith('http')) return false;
-  if (low.includes('logo') || low.includes('icon') || low.includes('sprite') || low.includes('banner') || low.includes('avatar') || low.includes('favicon')) return false;
+  if (low.includes('logo') || low.includes('icon') || low.includes('sprite') || low.includes('banner') || low.includes('avatar') || low.includes('favicon') || low.includes('android-chrome') || low.includes('/artworks/') || low.includes('/representaciones/')) return false;
   if (low.includes('mlstatic.com')) return true;
   if (low.includes('makerworld') || low.includes('bambulab') || low.includes('bblmw.com') || low.includes('makerworld.bblmw.com')) return true;
   if (low.includes('image') || low.includes('picture') || low.includes('photo') || low.includes('thumb') || low.includes('cover')) return true;
@@ -789,6 +789,16 @@ function extractPublicadorImages(htmlStr, pageUrl) {
   const ordered = isMeli
     ? [...images.filter(x => /mlstatic\.com/i.test(x)), ...images.filter(x => !/mlstatic\.com/i.test(x))]
     : images;
+  // INGCO lists related products on the same page. Keep only the main image's
+  // product identity, including alternate resolutions of that exact photo.
+  if (/(^|\.)ingcotools\.com\.uy$/i.test((() => { try { return new URL(pageUrl).hostname; } catch { return ''; } })())) {
+    const main = normalizePublicadorImageUrl(ogImg, pageUrl);
+    const productImageId = u => String(u).match(/\/imgs\/productos\/(?:_original|productos\d*)_(\d+)\./i)?.[1];
+    const productId = productImageId(main);
+    if (productId) return ordered.filter(u => productImageId(u) === productId).slice(0, 8);
+    // Without an identified gallery, do not use the page-wide recommendations.
+    return isUsefulPublicadorImage(main) ? [main] : [];
+  }
   return Array.from(new Set(ordered)).slice(0, 12);
 }
 
@@ -1145,7 +1155,7 @@ function buildFallbackPublicadorContent(input) {
     condicion: 'new',
     tipo_publicacion: 'gold_special',
     brand: facts.brand || 'Generica',
-    model: facts.model || '',
+    model: String(product.sku || product.mpn || '').trim() || facts.model || '',
     productType: facts.productType || '',
     powerSource: facts.powerSource || '',
     voltage: facts.voltage || '',
@@ -1382,6 +1392,32 @@ function publicadorMissingAttributes(draft) {
   return missing.map(a => ({id:a.id,name:a.name||a.id,value_type:a.value_type||'string',allowed_values:Array.isArray(a.values)?a.values.slice(0,20):[]}));
 }
 
+function mergeVerifiedDraftAttributes(draft, input) {
+  if (!Array.isArray(input) || input.length > 100) throw new Error('Lista de atributos invalida.');
+  const definitions=[...(draft.requiredAttributes||[]),...(draft.allAttributes||[])];
+  const merged={...(draft.attributeValues||{})};
+  const seen=new Set();
+  for (const attr of input) {
+    const id=String(attr?.id||'').trim();
+    const def=definitions.find(a=>String(a.id)===id);
+    if (!def || seen.has(id)) throw new Error('Atributo desconocido o repetido: '+id);
+    if (['GTIN','EMPTY_GTIN_REASON','BRAND','MODEL'].includes(id)) throw new Error('Usar el campo especifico para '+id);
+    seen.add(id);
+    const value_id=String(attr.value_id??'').trim(), value_name=String(attr.value_name??'').trim();
+    if (!value_id && !value_name) { delete merged[id]; continue; }
+    if (value_id) {
+      const option=(def.values||[]).find(v=>String(v.id)===value_id);
+      if (!option) throw new Error('Valor no permitido para '+id);
+      if (value_name && value_name!==String(option.name)) throw new Error('ID y nombre no coinciden para '+id);
+      merged[id]={value_id,value_name:String(option.name)};
+    } else {
+      if (id==='UNITS_PER_PACK' && (!/^\d+$/.test(value_name) || Number(value_name)<1)) throw new Error('Cantidad de filtros debe ser un entero mayor que cero.');
+      merged[id]={value_name};
+    }
+  }
+  return merged;
+}
+
 function buildPublicadorPayload(data) {
   let familyName = String(data.titulo_meli || data.scrapedTitle || 'Producto').replace(/\s+/g, ' ').trim().substring(0, 60);
   const requiredAttrs = Array.isArray(data.requiredAttributes) ? data.requiredAttributes : [];
@@ -1445,7 +1481,8 @@ function buildPublicadorPayload(data) {
       continue;
     }
     if (manual !== undefined && String(manual).trim()) {
-      pushAttr(id, manual);
+      if (manual && typeof manual === 'object') pushAttrObj({ ...manual, id });
+      else pushAttr(id, manual);
     } else if (attrDefaults[id]) {
       pushAttr(id, attrDefaults[id]);
     }
@@ -1456,15 +1493,21 @@ function buildPublicadorPayload(data) {
   pushAttr('GTIN', data.gtin || data.GTIN || editedValues.GTIN);
   const hasGtinValue = attributes.some(a => a.id === 'GTIN');
   const definitions = [...requiredAttrs, ...allAttrsForPayload];
-  // Merchant policy: products without GTIN are declared as not registered.
-  // Only send the reason when the category explicitly offers it.
-  const defaultReason = !hasGtinValue && pickEmptyGtinReasonFromAttributes(definitions, '17055160');
-  const preferredReason = data.emptyGtinReasonId || data.EMPTY_GTIN_REASON_ID || data.emptyGtinReason || data.EMPTY_GTIN_REASON || editedValues.EMPTY_GTIN_REASON || (defaultReason && defaultReason.value_id);
+  // Absence on the supplier page does not prove that no GTIN is registered.
+  const preferredReason = data.emptyGtinReasonId || data.EMPTY_GTIN_REASON_ID || data.emptyGtinReason || data.EMPTY_GTIN_REASON || editedValues.EMPTY_GTIN_REASON;
   if (hasGtinValue && preferredReason) throw new Error('GTIN y motivo de ausencia son excluyentes.');
   if (preferredReason) {
     const reason = pickEmptyGtinReasonFromAttributes([...requiredAttrs, ...allAttrsForPayload], preferredReason);
     if (!reason) throw new Error('El motivo de ausencia de GTIN no esta permitido por la categoria.');
     pushAttrObj(reason);
+  }
+
+  // Include verified optional category attributes, preserving value IDs and units.
+  for (const [id, value] of Object.entries(editedValues)) {
+    if (['GTIN', 'EMPTY_GTIN_REASON', 'BRAND', 'MODEL'].includes(id)) continue;
+    if (!definitions.some(a => String(a.id) === id)) throw new Error('Atributo ajeno a la categoria: ' + id);
+    if (value && typeof value === 'object') pushAttrObj({ ...value, id });
+    else pushAttr(id, value);
   }
 
   // Si el producto es de moda/calzado y la IA puso SIZE = "Único" pero el título/descrición trae talles reales,
@@ -1474,7 +1517,7 @@ function buildPublicadorPayload(data) {
     const currentSize = sizeIdx >= 0 ? String(attributes[sizeIdx].value_name || attributes[sizeIdx].value_id || '').trim() : '';
     const textForSizes = [familyName, data.descripcion_meli, data.scrapedTitle, data.scrapedDescription].filter(Boolean).join(' ');
     const detectedSizes = extractAllNumericSizes(textForSizes).filter(x => /^\d{2}$/.test(String(x)));
-    if (detectedSizes.length && (!currentSize || /^(único|unico|a medida)$/i.test(currentSize))) {
+    if (definitions.some(a => String(a.id) === 'SIZE') && detectedSizes.length && (!currentSize || /^(único|unico|a medida)$/i.test(currentSize))) {
       if (sizeIdx >= 0) attributes[sizeIdx] = { id: 'SIZE', value_name: detectedSizes[0] };
       else attributes.push({ id: 'SIZE', value_name: detectedSizes[0] });
       data.sizeGuideRows = Array.isArray(data.sizeGuideRows) && data.sizeGuideRows.length ? data.sizeGuideRows : detectedSizes.slice(0, 12).map((n, i) => {
@@ -4548,7 +4591,7 @@ const MCP_TOOLS = [
   {"name":"meli_ads_update_ad","title":"Gestionar un anuncio o grupo Product Ads","description":"AGREGA, QUITA, PAUSA o ACTIVA un anuncio publicitario usando MLU o Ad Group. No pausa ni modifica la publicacion de Mercado Libre. confirm=false devuelve vista previa con before, after=null, fields, IDs y todos los MLU hermanos. confirm=true solo con orden explicita para la accion y todo el alcance. Si item_id afecta hermanos, mostrar y autorizar esos MLU antes de allow_group_effects=true. add desde otra campana requiere allow_move=true autorizado. pause/activate requieren que ya pertenezca a la campana indicada. remove solo desvincula el grupo de esa campana. Comprueba cuenta, grupo, publicaciones y estado previo; consulta nuevamente campana y grupo despues; registra auditoria y devuelve verified por campo. Nunca reintenta una escritura incierta.","inputSchema":{"type":"object","properties":{"cuenta":{"type":"string","enum":["tlc","topshop"]},"campaign_id":{"type":["string","number"]},"item_id":{"type":"string","pattern":"^MLU[1-9][0-9]*$"},"ad_group_id":{"type":["string","number"]},"action":{"type":"string","enum":["add","remove","pause","activate"]},"confirm":{"type":"boolean"},"expected":{"type":"object","description":"Objeto expected devuelto por la vista previa."},"allow_move":{"type":"boolean","default":false},"allow_group_effects":{"type":"boolean","default":false}},"required":["cuenta","campaign_id","action","confirm"],"anyOf":[{"required":["item_id"]},{"required":["ad_group_id"]}],"additionalProperties":false},"annotations":{"readOnlyHint":false,"destructiveHint":true,"idempotentHint":true,"openWorldHint":true}},
   { name:'meli_catalog_competition', title:'Competencia de Catalogo', description:'Revisa publicaciones de Catalogo y consulta price_to_win v2 para identificar cuales estan ganando, compartiendo primer lugar, perdiendo o listadas sin competir. Antes de filtrar Catalogo hidrata cada publicacion candidata con GET /items/{MLU}, porque el cache resumido puede no incluir catalog_listing/catalog_product_id. Puede filtrar por texto, por ejemplo INGCO. Solo lectura.', inputSchema:{type:'object',properties:{cuenta:{type:'string',enum:['tlc','topshop','both'],default:'both'},q:{type:'string',default:'',description:'Filtro opcional por titulo, MLU o SKU antes de consultar el estado real. Ejemplo: INGCO.'},only_losing:{type:'boolean',default:true,description:'Si true devuelve detalle solo de competing y listed; el resumen siempre incluye todos los estados.'},refresh:{type:'boolean',default:true,description:'Actualiza la lista de publicaciones antes del analisis.'},max_items:{type:'integer',minimum:1,maximum:5000,default:5000}},additionalProperties:false}, annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:true} },
   { name:'meli_prepare_publication', title:'Preparar publicacion desde link', description:'Prepara una publicacion desde un link de proveedor siguiendo el flujo de Mercado Libre: extrae producto/precio/moneda, consulta categorias candidatas en MLU, selecciona la mejor candidata, consulta los atributos/requisitos de esa categoria y muestra exactamente que falta antes de publicar. Precio y moneda son opcionales; stock SIEMPRE 50. Busca posibles duplicados y guarda borrador. NO publica.', inputSchema:{type:'object',properties:{url:{type:'string',minLength:8},currency:{type:'string',enum:['UYU','USD']},price:{type:'number',exclusiveMinimum:0},accounts:{type:'array',items:{type:'string',enum:['tlc','topshop']},minItems:1,maxItems:2}},required:['url'],additionalProperties:false}, annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:false,openWorldHint:true} },
-  { name:'meli_update_draft', title:'Corregir borrador con datos verificados', description:'Corrige un borrador antes de publicar usando valores verificados de la planilla. Nunca publica. supplier_available=true exige una comprobacion actual del proveedor; EMPTY_GTIN_REASON solo se envia con el motivo explicito permitido por la categoria.', inputSchema:{type:'object',properties:{draft_id:{type:'string'},title:{type:'string',minLength:8,maxLength:60},description:{type:'string',minLength:1,maxLength:5000},brand:{type:'string',minLength:1},model:{type:'string',minLength:1},sku:{type:'string'},images:{type:'array',items:{type:'string',pattern:'^https?://'},minItems:1,maxItems:8},gtin:{type:'string'},empty_gtin_reason_id:{type:'string'},supplier_available:{type:'boolean'},listing_type_id:{type:'string'},price:{type:'number',exclusiveMinimum:0},currency:{type:'string',enum:['USD','UYU']}},required:['draft_id'],additionalProperties:false},annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:true,openWorldHint:false} },
+  { name:'meli_update_draft', title:'Corregir borrador con datos verificados', description:'Corrige un borrador antes de publicar usando valores verificados de la planilla. Nunca publica. supplier_available=true exige una comprobacion actual del proveedor; EMPTY_GTIN_REASON solo se envia con el motivo explicito permitido por la categoria.', inputSchema:{type:'object',properties:{draft_id:{type:'string'},title:{type:'string',minLength:8,maxLength:60},description:{type:'string',minLength:1,maxLength:5000},brand:{type:'string',minLength:1},model:{type:'string',minLength:1},sku:{type:'string'},images:{type:'array',items:{type:'string',minLength:8},minItems:1,maxItems:8},attributes:{type:'array',maxItems:100,items:{type:'object',properties:{id:{type:'string',minLength:1},value_id:{type:'string'},value_name:{type:'string'}},required:['id'],additionalProperties:false}},gtin:{type:'string'},empty_gtin_reason_id:{type:'string'},supplier_available:{type:'boolean'},listing_type_id:{type:'string'},price:{type:'number',exclusiveMinimum:0},currency:{type:'string',enum:['USD','UYU']}},required:['draft_id'],additionalProperties:false},annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:true,openWorldHint:false} },
   { name:'meli_publish_draft', title:'Publicar borrador preparado', description:'CREA la publicacion preparada en TELOCONSIGO, TOP SHOP o ambas. Stock siempre 50. Solo ejecuta con confirm=true despues de mostrar al usuario titulo, precio, moneda, fotos, categoria, cuentas y datos faltantes.', inputSchema:{type:'object',properties:{draft_id:{type:'string'},accounts:{type:'array',items:{type:'string',enum:['tlc','topshop']},minItems:1,maxItems:2},confirm:{type:'boolean'}},required:['draft_id','confirm'],additionalProperties:false}, annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:false,openWorldHint:true} },
   { name:'meli_update_publication', title:'Modificar publicacion', description:'Modifica campos permitidos de una publicacion: precio, stock, estado, titulo, descripcion, fotos y atributos (por ejemplo COLOR). Primero consulta la publicacion actual y devuelve el resultado campo por campo. Solo ejecuta si confirm=true. Mercado Libre puede bloquear ciertos cambios segun la publicacion/categoria/historial de ventas.', inputSchema:{type:'object',properties:{cuenta:{type:'string',enum:['tlc','topshop']},id:{type:'string'},price:{type:'number',minimum:0},stock:{type:'integer',minimum:0},status:{type:'string',enum:['active','paused']},sku:{type:'string'},title:{type:'string',minLength:1,maxLength:60},description:{type:'string',minLength:1,maxLength:50000},pictures:{type:'array',items:{type:'string',minLength:5},minItems:1,maxItems:12},attributes:{type:'array',items:{type:'object',properties:{id:{type:'string',minLength:1},value_id:{type:['string','number']},value_name:{type:'string'}},required:['id'],additionalProperties:false}},color:{type:'string',minLength:1,description:'Atajo para actualizar el atributo COLOR; por ejemplo Beige.'},confirm:{type:'boolean',description:'Debe ser true despues de confirmacion explicita del usuario.'}},required:['cuenta','id','confirm'],additionalProperties:false}, annotations:{readOnlyHint:false,destructiveHint:true,idempotentHint:true,openWorldHint:true} }
 ];
@@ -5358,12 +5401,25 @@ async function mcpCallTool(name, args={}) {
     if(draft.status==='published') throw new Error('El borrador ya fue publicado; no crear otra publicacion.');
     const fields={title:'titulo_meli',description:'descripcion_meli',brand:'brand',model:'model',sku:'sku',listing_type_id:'tipo_publicacion',price:'price',currency:'currency'};
     for(const [from,to] of Object.entries(fields)) if(Object.prototype.hasOwnProperty.call(args,from)) draft[to]=args[from];
-    if(Object.prototype.hasOwnProperty.call(args,'images')) draft.images=[...args.images];
+    if(Object.prototype.hasOwnProperty.call(args,'images')) {
+      if (!Array.isArray(args.images) || args.images.length < 1 || args.images.length > 8) throw new Error('Se requieren entre 1 y 8 fotos.');
+      draft.images=args.images.map(src => {
+        let u; try { u=new URL(String(src).trim()); } catch { throw new Error('URL de foto invalida.'); }
+        if (!['http:', 'https:'].includes(u.protocol) || u.username || u.password) throw new Error('URL de foto invalida.');
+        return u.href;
+      });
+    }
+    if (Object.prototype.hasOwnProperty.call(args,'attributes')) {
+      draft.attributeValues=mergeVerifiedDraftAttributes(draft,args.attributes);
+    }
     if(Object.prototype.hasOwnProperty.call(args,'supplier_available')) draft.supplierAvailable=args.supplier_available===true;
-    if(Object.prototype.hasOwnProperty.call(args,'gtin')) draft.gtin=String(args.gtin||'').trim();
+    if(Object.prototype.hasOwnProperty.call(args,'gtin')) {
+      draft.gtin=String(args.gtin||'').trim();
+      if (draft.gtin) { draft.emptyGtinReasonId=''; draft.EMPTY_GTIN_REASON_ID=''; draft.emptyGtinReason=''; draft.EMPTY_GTIN_REASON=''; if(draft.attributeValues) delete draft.attributeValues.EMPTY_GTIN_REASON; }
+    }
     if(Object.prototype.hasOwnProperty.call(args,'empty_gtin_reason_id')) {
       const reason=String(args.empty_gtin_reason_id||'').trim();
-      if(reason && !pickEmptyGtinReasonFromAttributes(draft.requiredAttributes,reason)) throw new Error('Motivo GTIN no permitido por los atributos devueltos para esta categoria.');
+      if(reason && !pickEmptyGtinReasonFromAttributes([...(draft.requiredAttributes||[]),...(draft.allAttributes||[])],reason)) throw new Error('Motivo GTIN no permitido por los atributos devueltos para esta categoria.');
       draft.emptyGtinReasonId=reason;
     }
     if(draft.gtin && draft.emptyGtinReasonId) throw new Error('GTIN y EMPTY_GTIN_REASON son excluyentes.');
