@@ -2428,7 +2428,7 @@ async function preparePublicadorShipping(payload, token) {
 function isPublicadorShippingWarningOnly(status, detail) {
   const causes=detail?.cause;
   return status===400 && Array.isArray(causes) && causes.length>0 && causes.every(c =>
-    c.type==='warning' && ['shipping.lost_me1_by_user','shipping.lost_me2_by_catalog'].includes(c.code));
+    c.type==='warning' && ['shipping.lost_me1_by_user','shipping.lost_me2_by_catalog','item.shipping.mandatory_free_shipping'].includes(c.code));
 }
 
 function cleanMeliCreatePayload(payload) {
@@ -5478,7 +5478,7 @@ async function mcpCallTool(name, args={}) {
       }
       const token=await getMeliAccessToken(c); let p=await preparePublicadorPicturesForAccount(payload,token); p=await preparePublicadorShipping(p,token); p.available_quantity=50;
       const validation=await fetch('https://api.mercadolibre.com/items/validate',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(cleanMeliCreatePayload(p))});
-      if(!validation.ok){const raw=await validation.text();let detail;try{detail=JSON.parse(raw)}catch{detail={raw}};if(!isPublicadorShippingWarningOnly(validation.status,detail)){results.push({cuenta:c,ok:false,stage:'validation',status:validation.status,error:detail.message||detail.error||'Validacion rechazada',detail});continue;}}
+      if(!validation.ok){const raw=await validation.text();let detail;try{detail=JSON.parse(raw)}catch{detail={raw}};if(!isPublicadorShippingWarningOnly(validation.status,detail)){results.push({cuenta:c,ok:false,stage:'validation',status:validation.status,error:detail.message||detail.error||'Validacion rechazada',detail});continue;} if((detail.cause||[]).some(x=>x.code==='item.shipping.mandatory_free_shipping')){p.shipping={...(p.shipping||{}),mode:'me2',free_shipping:true};}}
       let r=await fetch('https://api.mercadolibre.com/items',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(cleanMeliCreatePayload(p))}); let raw=await r.text(); let response={};try{response=raw?JSON.parse(raw):{};}catch{response={raw};}
       if((!r.ok||!response?.id)&&errorNeedsFashionGridRetry(response)){try{const grid=await createFashionSizeChartForPayload(c,token,p,draft);if(grid?.payload){grid.payload.available_quantity=50;r=await fetch('https://api.mercadolibre.com/items',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(cleanMeliCreatePayload(grid.payload))});raw=await r.text();try{response=raw?JSON.parse(raw):{};}catch{response={raw};}p=grid.payload;}}catch(gridErr){response._grid_error=gridErr.message;}}
       if(r.ok&&response?.id){
