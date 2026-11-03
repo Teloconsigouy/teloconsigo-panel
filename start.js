@@ -1155,7 +1155,7 @@ function buildFallbackPublicadorContent(input) {
     condicion: 'new',
     tipo_publicacion: 'gold_special',
     brand: facts.brand || 'Generica',
-    model: String(product.sku || product.mpn || '').trim() || facts.model || '',
+    model: facts.model || '',
     productType: facts.productType || '',
     powerSource: facts.powerSource || '',
     voltage: facts.voltage || '',
