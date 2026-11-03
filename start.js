@@ -2400,6 +2400,35 @@ async function preparePublicadorPicturesForAccount(payload, token) {
   return out;
 }
 
+function choosePublicadorShippingMode(userPreferences, categoryPreferences) {
+  const userModes = Array.isArray(userPreferences?.modes) ? userPreferences.modes : [];
+  const categoryModes = Array.isArray(categoryPreferences?.logistics)
+    ? categoryPreferences.logistics.map(x => x.mode) : [];
+  const mode = ['me2', 'me1', 'not_specified'].find(x => userModes.includes(x) && categoryModes.includes(x));
+  if (!mode) throw new Error('ENVIO_NO_COMPATIBLE: no hay modalidad sin costos manuales habilitada para cuenta y categoria.');
+  return mode;
+}
+
+async function preparePublicadorShipping(payload, token) {
+  async function read(path) {
+    const response=await fetch('https://api.mercadolibre.com'+path,{headers:{Authorization:`Bearer ${token}`,Accept:'application/json'}});
+    if(!response.ok) throw new Error('No se pudo consultar configuracion de envios: '+response.status);
+    return response.json();
+  }
+  const user=await read('/users/me');
+  if(!user.id) throw new Error('No se pudo identificar vendedor para envios.');
+  const userPrefs=await read('/users/'+encodeURIComponent(user.id)+'/shipping_preferences');
+  const categoryPrefs=await read('/categories/'+encodeURIComponent(payload.category_id)+'/shipping_preferences');
+  const mode=choosePublicadorShippingMode(userPrefs,categoryPrefs);
+  return {...payload,shipping:{mode,local_pick_up:userPrefs.local_pick_up===true,free_shipping:false}};
+}
+
+function isPublicadorShippingWarningOnly(status, detail) {
+  const causes=detail?.cause;
+  return status===400 && Array.isArray(causes) && causes.length>0 && causes.every(c =>
+    c.type==='warning' && ['shipping.lost_me1_by_user','shipping.lost_me2_by_catalog'].includes(c.code));
+}
+
 function cleanMeliCreatePayload(payload) {
   const clean = JSON.parse(JSON.stringify(payload || {}));
   // Nunca enviar campos internos del panel a Mercado Libre.
@@ -5444,9 +5473,9 @@ async function mcpCallTool(name, args={}) {
         if(prior.descriptionResult?.ok===false){const token=await getMeliAccessToken(c);prior.descriptionResult=await postMeliItemDescription(token,prior.itemId,payload.description?.plain_text);savePublicadorDrafts(data);}
         results.push({...prior,reused:true});continue;
       }
-      const token=await getMeliAccessToken(c); let p=await preparePublicadorPicturesForAccount(payload,token); p.available_quantity=50;
+      const token=await getMeliAccessToken(c); let p=await preparePublicadorPicturesForAccount(payload,token); p=await preparePublicadorShipping(p,token); p.available_quantity=50;
       const validation=await fetch('https://api.mercadolibre.com/items/validate',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(cleanMeliCreatePayload(p))});
-      if(!validation.ok){const raw=await validation.text();let detail;try{detail=JSON.parse(raw)}catch{detail={raw}};results.push({cuenta:c,ok:false,stage:'validation',status:validation.status,error:detail.message||detail.error||'Validacion rechazada',detail});continue;}
+      if(!validation.ok){const raw=await validation.text();let detail;try{detail=JSON.parse(raw)}catch{detail={raw}};if(!isPublicadorShippingWarningOnly(validation.status,detail)){results.push({cuenta:c,ok:false,stage:'validation',status:validation.status,error:detail.message||detail.error||'Validacion rechazada',detail});continue;}}
       let r=await fetch('https://api.mercadolibre.com/items',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(cleanMeliCreatePayload(p))}); let raw=await r.text(); let response={};try{response=raw?JSON.parse(raw):{};}catch{response={raw};}
       if((!r.ok||!response?.id)&&errorNeedsFashionGridRetry(response)){try{const grid=await createFashionSizeChartForPayload(c,token,p,draft);if(grid?.payload){grid.payload.available_quantity=50;r=await fetch('https://api.mercadolibre.com/items',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(cleanMeliCreatePayload(grid.payload))});raw=await r.text();try{response=raw?JSON.parse(raw):{};}catch{response={raw};}p=grid.payload;}}catch(gridErr){response._grid_error=gridErr.message;}}
       if(r.ok&&response?.id){
