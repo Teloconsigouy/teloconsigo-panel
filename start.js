@@ -2391,7 +2391,12 @@ async function preparePublicadorPicturesForAccount(payload, token) {
     const source = String(pic && (pic.source || pic.url || '') || '').trim();
     const id = String(pic && pic.id || '').trim();
     if (id) { prepared.push({ id }); continue; }
-    if (/^data:image\//i.test(source)) {
+    if(source.startsWith('tlc-photo:')){
+      const m=source.match(/^tlc-photo:([a-zA-Z0-9-]+):([1-5])$/);
+      if(!m)throw new Error('Referencia de foto original invalida.');
+      const png=readPublicationPhoto(m[1],Number(m[2]));
+      prepared.push({id:await uploadDataImageToMeliPicture(token,'data:image/png;base64,'+png.toString('base64'))});
+    } else if (/^data:image\//i.test(source)) {
       const uploadedId = await uploadDataImageToMeliPicture(token, source);
       prepared.push({ id: uploadedId });
     } else if (source) {
@@ -2476,9 +2481,44 @@ function updatePublicationPhotoSlot(id,slot,entry){
   draft.photosReviewedSignature=null;
   savePublicadorDrafts(data);
 }
-async function generatePublicationPhoto(id,slot){
+function publicationPhotoCache(id,slot){
+  if(!/^[a-zA-Z0-9-]+$/.test(String(id))||!Number.isInteger(slot)||slot<1||slot>5)throw new Error('Foto invalida.');
+  const dir=path.join(DATA_DIR,'publicador-fotos',String(id));
+  return {dir,png:path.join(dir,slot+'.png'),meta:path.join(dir,slot+'.json')};
+}
+function readPublicationPhoto(id,slot){
+  const file=publicationPhotoCache(id,slot),png=fs.readFileSync(file.png);
+  if(png.length<24||png.subarray(0,8).toString('hex')!=='89504e470d0a1a0a'||png.readUInt32BE(16)!==1200||png.readUInt32BE(20)!==1200)throw new Error('Original guardado no es PNG 1200x1200.');
+  return png;
+}
+async function finishPublicationPhoto(id,slot,draft){
+  const file=publicationPhotoCache(id,slot),png=readPublicationPhoto(id,slot);
+  let meta={};try{meta=JSON.parse(fs.readFileSync(file.meta,'utf8'));}catch{}
+  const token=await getMeliAccessToken((draft.accounts||[])[0]||'tlc');
+  if(!meta.pictureId){
+    meta.pictureId=await uploadDataImageToMeliPicture(token,'data:image/png;base64,'+png.toString('base64'));
+    fs.writeFileSync(file.meta,JSON.stringify(meta));
+  }
+  const r=await fetch('https://api.mercadolibre.com/pictures/'+encodeURIComponent(meta.pictureId),{headers:{Authorization:`Bearer ${token}`}});
+  if(!r.ok)throw new Error('Foto original y pictureId guardados. Reintentar consulta sin regenerar: HTTP '+r.status);
+  const picture=await r.json();
+  // ML may label the original differently or return resized preview variants.
+  // Preview dimensions never replace the independently verified original PNG.
+  const variants=Array.isArray(picture.variations)?picture.variations:[];
+  const rank=v=>{const m=String(v.size||'').match(/(\d+)\s*x\s*(\d+)/i);return m?Number(m[1])*Number(m[2]):0;};
+  const best=variants.filter(v=>/^https?:\/\//i.test(v.secure_url||v.url||'')).sort((a,b)=>rank(b)-rank(a))[0];
+  const previewUrl=best?.secure_url||best?.url||picture.secure_url||picture.url;
+  if(!/^https?:\/\//i.test(previewUrl||'')||/processing-image/.test(previewUrl))throw new Error('Foto guardada; Mercado Libre sigue procesando la vista previa. Reconsultar sin regenerar.');
+  const entry={slot,kind:slot<=3?'catalog':'context',width:1200,height:1200,source:'tlc-photo:'+id+':'+slot,pictureId:meta.pictureId,preview_url:previewUrl,original_saved:true};
+  updatePublicationPhotoSlot(id,slot,entry);return entry;
+}
+
+async function generatePublicationPhoto(id,slot,regenerate=false){
   const data=loadPublicadorDrafts(),draft=(data.drafts||[]).find(d=>d.id===id);
   if(!draft||draft.status==='published')throw new Error('Borrador no editable.');
+  const cached=publicationPhotoCache(id,slot);
+  if(regenerate){for(const f of [cached.png,cached.meta]){if(fs.existsSync(f))fs.unlinkSync(f);}}
+  if(fs.existsSync(cached.png))return finishPublicationPhoto(id,slot,draft);
   const key=process.env.OPENAI_API_KEY||process.env.OPENAI_APIKEY;
   if(!key)throw new Error('Falta OPENAI_API_KEY para editar fotos.');
   const refs=draft.supplierPhotoReferences||draft.images||[];
@@ -2501,17 +2541,9 @@ async function generatePublicationPhoto(id,slot){
   const b64=result.data?.[0]?.b64_json;if(!b64)throw new Error('La API no devolvio PNG.');
   const png=Buffer.from(b64,'base64');
   if(png.length<24||png.subarray(0,8).toString('hex')!=='89504e470d0a1a0a'||png.readUInt32BE(16)!==1200||png.readUInt32BE(20)!==1200)throw new Error('La imagen generada no es PNG de 1200x1200; no se acepta.');
-  const account=(draft.accounts||[])[0]||'tlc',token=await getMeliAccessToken(account);
-  const pictureId=await uploadDataImageToMeliPicture(token,'data:image/png;base64,'+b64);
-  const r=await fetch('https://api.mercadolibre.com/pictures/'+encodeURIComponent(pictureId),{headers:{Authorization:`Bearer ${token}`}});
-  if(!r.ok)throw new Error('No se pudo consultar foto subida.');
-  const picture=await r.json();
-  const variants=picture.variations||[];
-  const full=variants.find(v=>v.size==='1200x1200');
-  const source=full?.secure_url||full?.url;
-  if(!source)throw new Error('Mercado Libre no devolvio la variante 1200x1200.');
-  const entry={slot,kind:slot<=3?'catalog':'context',width:1200,height:1200,source,pictureId};
-  updatePublicationPhotoSlot(id,slot,entry);return entry;
+  fs.mkdirSync(cached.dir,{recursive:true});
+  fs.writeFileSync(cached.png,png);
+  return finishPublicationPhoto(id,slot,draft);
 }
 
 function choosePublicadorShippingMode(userPreferences, categoryPreferences) {
@@ -5653,7 +5685,7 @@ async function mcpCallTool(name, args={}) {
     if(!draft.supplierPhotoReferences){draft.supplierPhotoReferences=[...(draft.images||[])];savePublicadorDrafts(data);}
     const job={job_id:crypto.randomUUID(),draft_id:id,slot,status:'running'};
     publicationPhotoJobs.set(job.job_id,job);
-    generatePublicationPhoto(id,slot).then(photo=>{job.status='completed';job.photo=photo;}).catch(e=>{job.status='failed';job.error=e.message;});
+    generatePublicationPhoto(id,slot,args.regenerate===true).then(photo=>{job.status='completed';job.photo=photo;}).catch(e=>{job.status='failed';job.error=e.message;});
     return {...job};
   }
   if (name === 'meli_prepare_publication') {
