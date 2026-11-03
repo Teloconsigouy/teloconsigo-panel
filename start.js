@@ -2401,6 +2401,41 @@ async function preparePublicadorPicturesForAccount(payload, token) {
   return out;
 }
 
+function buildCreatedPublicationSku(itemId, draft) {
+  const id=String(itemId||'').trim();
+  const code=String(draft.supplierCode||draft.codigo_proveedor||draft.sku||'').trim().replace(/^MLU?\d+\s*-\s*/i,'').replace(/^\d{8,}\s*-\s*/,'').replace('ING_','ING');
+  if(!/^MLU[0-9]+$/.test(id) || !code) throw new Error('Falta ID MLU o codigo del proveedor para generar SKU.');
+  return id.slice(3)+'-'+code;
+}
+
+function syncCreatedPublicationSku(token,itemId,draft) {
+  return (async()=>{
+    let sku;
+    try {
+      sku=buildCreatedPublicationSku(itemId,draft);
+      const url='https://api.mercadolibre.com/items/'+encodeURIComponent(itemId);
+      const headers={Authorization:`Bearer ${token}`,'Content-Type':'application/json',Accept:'application/json'};
+      async function currentSku(){
+        const r=await fetch(url,{headers});
+        if(!r.ok) throw new Error('No se pudo verificar SKU: HTTP '+r.status);
+        const item=await r.json();
+        return (item.attributes||[]).find(a=>a.id==='SELLER_SKU')?.value_name||'';
+      }
+      const before=await currentSku();
+      if(before===sku)return {ok:true,verified:true,sku,reused:true};
+      if(before)return {ok:false,verified:false,sku,error:'SKU existente distinto; no se sobrescribe automaticamente.',before};
+      // One write only. A later retry reads the current SKU before writing again.
+      let writeError='';
+      try {
+        const r=await fetch(url,{method:'PUT',headers,body:JSON.stringify({attributes:[{id:'SELLER_SKU',value_name:sku}]})});
+        if(!r.ok)writeError='HTTP '+r.status;
+      }catch(e){writeError=e.message;}
+      const after=await currentSku();
+      return {ok:after===sku,verified:after===sku,sku,after,error:after===sku?null:writeError||'SKU no confirmado por Mercado Libre.'};
+    }catch(e){return {ok:false,verified:false,sku:sku||null,error:e.message};}
+  })();
+}
+
 function choosePublicadorShippingMode(userPreferences, categoryPreferences) {
   const userModes = Array.isArray(userPreferences?.modes) ? userPreferences.modes : [];
   const categoryModes = Array.isArray(categoryPreferences?.logistics)
@@ -5473,6 +5508,7 @@ async function mcpCallTool(name, args={}) {
     for(const c of draft.accounts){try{
       const prior=(draft.publishResults||[]).find(x=>x.cuenta===c&&x.ok&&x.itemId);
       if(prior){
+        if(prior.skuResult?.verified!==true){const token=await getMeliAccessToken(c);prior.skuResult=await syncCreatedPublicationSku(token,prior.itemId,draft);savePublicadorDrafts(data);}
         if(prior.descriptionResult?.ok===false){const token=await getMeliAccessToken(c);prior.descriptionResult=await postMeliItemDescription(token,prior.itemId,payload.description?.plain_text);savePublicadorDrafts(data);}
         results.push({...prior,reused:true});continue;
       }
@@ -5484,12 +5520,14 @@ async function mcpCallTool(name, args={}) {
       if(r.ok&&response?.id){
         const created={cuenta:c,ok:true,itemId:response.id,permalink:response.permalink||null,descriptionResult:{ok:false,skipped:true}};
         draft.publishResults=[...(draft.publishResults||[]).filter(x=>x.cuenta!==c),created];savePublicadorDrafts(data);
+        created.skuResult=await syncCreatedPublicationSku(token,response.id,draft);savePublicadorDrafts(data);
         try{created.descriptionResult=await postMeliItemDescription(token,response.id,p?.description?.plain_text||payload?.description?.plain_text);}catch(e){created.descriptionResult={ok:false,error:e.message};}
         savePublicadorDrafts(data);results.push(created);
       }else{const causes=Array.isArray(response?.cause)?response.cause.map(x=>[x.code,x.message].filter(Boolean).join(': ')):[];results.push({cuenta:c,ok:false,status:r.status,error:response?.message||response?.error||'Mercado Libre rechazo la publicacion',detail:causes.join(' | '),response});}
     }catch(e){results.push({cuenta:c,ok:false,error:e.message});}}
     const okCount=results.filter(x=>x.ok).length; draft.status=okCount===draft.accounts.length?'published':(okCount?'partial_error':'publish_error'); draft.updatedAt=new Date().toISOString(); draft.publishedAt=okCount?new Date().toISOString():draft.publishedAt||null; draft.publishResults=results; const di=(data.drafts||[]).findIndex(d=>String(d.id)===id); if(di>=0)data.drafts[di]=draft; savePublicadorDrafts(data);
-    return {ok:okCount>0,complete:okCount===draft.accounts.length,draft_id:id,stock:50,okCount,total:draft.accounts.length,results};
+    const metadataComplete=results.every(x=>x.ok&&x.skuResult?.verified===true&&x.descriptionResult?.ok===true);
+    return {ok:okCount>0,complete:okCount===draft.accounts.length&&metadataComplete,created_all:okCount===draft.accounts.length,draft_id:id,stock:50,okCount,total:draft.accounts.length,results};
   }
   if (name === 'meli_recent_orders') {
     const sellerId=await fetchMeliSellerId(cuenta);
