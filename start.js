@@ -5091,7 +5091,197 @@ async function catalogOptIn(args={}) {
   } finally {catalogOptinLocks.delete(lock);if(productLock)catalogOptinLocks.delete(productLock);}
 }
 
+// BEGIN MCP SELLER PROMOTIONS
+// API local v2: https://developers.mercadolibre.com.uy/es_ar/central-de-promociones
+// Escritura inicial: DEAL, SELLER_CAMPAIGN flexible y MARKETPLACE_CAMPAIGN.
+const sellerPromotionLocks = new Set();
+function promotionIdentity(args) {
+  const cuenta = catalogAccount(args.cuenta);
+  const id = String(args.promotion_id || '').trim();
+  const type = String(args.promotion_type || '').trim();
+  if (!/^[A-Za-z0-9_-]{1,100}$/.test(id)) throw new Error('promotion_id invalido.');
+  if (!/^[A-Z_]{2,60}$/.test(type)) throw new Error('promotion_type invalido.');
+  return {cuenta,id,type};
+}
+function promotionRows(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.results)) return data.results;
+  throw new Error('Respuesta de promociones inesperada; no se interpreta como lista vacia.');
+}
+function promotionState(value) {
+  return String(typeof value === 'object' ? value?.id || '' : value || '').toLowerCase();
+}
+function promotionCursor(data) {
+  return data?.paging?.search_after || data?.paging?.searchAfter || data?.search_after || data?.searchAfter || null;
+}
+function promotionPage(data, limit, offset=0, cursor=null) {
+  const results=promotionRows(data), next=promotionCursor(data), total=Number(data?.paging?.total);
+  const hasMore=!!next || (Number.isFinite(total) && offset+results.length<total);
+  return {results,paging:data?.paging||null,next_search_after:next,
+    next_offset:!next && !cursor && hasMore ? offset+results.length : null,
+    complete:!hasMore,pagination_warning:!next && cursor && hasMore ? 'Falta cursor; no asumir lectura completa.' : null};
+}
+async function promotionDetail(args) {
+  const {cuenta,id,type}=promotionIdentity(args);
+  const qs=new URLSearchParams({promotion_type:type,app_version:'v2'});
+  const promotion=await meliApi(cuenta,`/seller-promotions/promotions/${encodeURIComponent(id)}?${qs}`);
+  if (String(promotion?.id)!==id || promotion?.type!==type) throw new Error('La promocion no coincide con el ID y tipo solicitados.');
+  return promotion;
+}
+async function ownedPromotionItem(cuenta,id) {
+  const seller=await fetchMeliSellerId(cuenta);
+  const item=await meliApi(cuenta,`/items/${encodeURIComponent(catalogItemId(id))}`);
+  if (item?.id!==id || String(item?.seller_id)!==String(seller)) throw new Error('La publicacion no pertenece a esta cuenta.');
+  return item;
+}
+async function promotionItemRows(cuenta,id) {
+  return promotionRows(await meliApi(cuenta,`/seller-promotions/items/${encodeURIComponent(id)}?app_version=v2`));
+}
+async function promotionCampaignItem(args) {
+  const {cuenta,id,type}=promotionIdentity(args);
+  const qs=new URLSearchParams({promotion_type:type,app_version:'v2',item_id:catalogItemId(args.id),limit:'50'});
+  // El endpoint sin status_item solo devuelve activos. La escritura exige activo.
+  const raw=await meliApi(cuenta,`/seller-promotions/promotions/${encodeURIComponent(id)}/items?${qs}`);
+  const rows=promotionRows(raw).filter(x=>String(x.item_id||x.id)===args.id);
+  if (promotionCursor(raw)) throw new Error('Respuesta por item incompleta; revisar antes de escribir.');
+  if (rows.length>1) throw new Error('Varias ofertas para el mismo articulo; no elegir automaticamente.');
+  return rows[0] || null;
+}
+function promotionJournal() {
+  const file=path.join(DATA_DIR,'seller-promotion-attempts.json');
+  if (!fs.existsSync(file)) return {};
+  const data=JSON.parse(fs.readFileSync(file,'utf8'));
+  if (!data || typeof data!=='object' || Array.isArray(data)) throw new Error('Registro de promociones invalido.');
+  return data;
+}
+function savePromotionJournal(data) {
+  ensureDataDir(); const file=path.join(DATA_DIR,'seller-promotion-attempts.json');
+  fs.writeFileSync(file+'.tmp',JSON.stringify(data,null,2));fs.renameSync(file+'.tmp',file);
+}
+function promotionMoney(value) {
+  return value!==null && value!==undefined && value!=='' && Number.isFinite(Number(value)) ? Number(value) : null;
+}
+async function promotionAddContext(args) {
+  const {cuenta,id:promotionId,type}=promotionIdentity(args),id=catalogItemId(args.id);
+  const item=await ownedPromotionItem(cuenta,id);
+  const promotion=await promotionDetail(args);
+  const offers=await promotionItemRows(cuenta,id);
+  const matches=offers.filter(x=>String(x.id||x.promotion_id)===promotionId && (x.type||x.promotion_type)===type);
+  if (matches.length>1) throw new Error('Varias ofertas de esta campana; se requiere revisar el caso.');
+  const campaignItem=await promotionCampaignItem(args);
+  const offer=matches[0] || null;
+  const status=promotionState(offer?.status || campaignItem?.status);
+  const alreadyIncluded=['pending','started','active','programmed'].includes(status);
+  const data={...(offer||{}),...(campaignItem||{})};
+  const blockers=[];
+  if (!['DEAL','SELLER_CAMPAIGN','MARKETPLACE_CAMPAIGN'].includes(type)) blockers.push('Tipo consultable pero no habilitado para incorporacion en esta version.');
+  if (type==='SELLER_CAMPAIGN' && promotion.sub_type!=='FLEXIBLE_PERCENTAGE') blockers.push('Solo se admite campana del vendedor FLEXIBLE_PERCENTAGE.');
+  if (!['pending','started'].includes(promotionState(promotion.status))) blockers.push('La campana no esta pendiente ni activa.');
+  for (const field of ['finish_date','deadline_date']) {
+    if (promotion[field] && Number.isFinite(Date.parse(promotion[field])) && Date.parse(promotion[field])<=Date.now()) blockers.push('Vencio '+field+' de la campana.');
+  }
+  if (item.status!=='active') blockers.push('La publicacion debe estar activa.');
+  if (!alreadyIncluded && status!=='candidate') blockers.push('Mercado Libre no confirma que el articulo sea candidato.');
+  if (!['USD','UYU'].includes(args.currency) || args.currency!==item.currency_id) blockers.push('Indicar la moneda exacta de la publicacion (sin conversion automatica).');
+  const rowCurrency=data.currency_id || data.currency;
+  if (rowCurrency && rowCurrency!==item.currency_id) blockers.push('La moneda de la oferta difiere de la publicacion.');
+  const requested=promotionMoney(args.deal_price);
+  const original=promotionMoney(data.original_price) ?? promotionMoney(item.original_price) ?? promotionMoney(item.price);
+  const min=promotionMoney(data.min_discounted_price),max=promotionMoney(data.max_discounted_price);
+  const body={promotion_id:promotionId,promotion_type:type};
+  let target=requested;
+  if (type==='MARKETPLACE_CAMPAIGN') {
+    target=promotionMoney(data.price);
+    if (!(target>0)) blockers.push('No hay precio co-fondeado verificable.');
+    if (requested===null || requested!==target) blockers.push('Confirmar deal_price igual al precio fijado por Mercado Libre; no se envia precio en esta modalidad.');
+  } else {
+    if (!(requested>0)) blockers.push('Falta precio promocional explicito.');
+    else body.deal_price=requested;
+    if (original!==null && requested>=original && !alreadyIncluded) blockers.push('El precio promocional debe ser menor que el precio original.');
+    if (min!==null && requested<min) blockers.push('Precio inferior al minimo permitido por ML.');
+    if (max!==null && requested>max) blockers.push('Precio superior al maximo permitido por ML.');
+  }
+  // No se genera un top_deal_price ni otro descuento adicional implicitamente.
+  const snapshot={cuenta,id,promotion_id:promotionId,promotion_type:type,currency:item.currency_id,
+    item:{status:item.status,price:item.price,original_price:item.original_price,stock:item.available_quantity},
+    promotion:{status:promotion.status,start_date:promotion.start_date,finish_date:promotion.finish_date,deadline_date:promotion.deadline_date,sub_type:promotion.sub_type,benefits:promotion.benefits},
+    offer:offer||null,campaign_item:campaignItem||null,body,target};
+  const expected=crypto.createHash('sha256').update(JSON.stringify(snapshot)).digest('hex');
+  return {cuenta,id,promotion,item,offers,offer,campaignItem,status,alreadyIncluded,target,body,blockers,expected};
+}
+async function mcpPromotionAdd(args) {
+  const identity=promotionIdentity(args), id=catalogItemId(args.id),lock=identity.cuenta+':'+id;
+  if (sellerPromotionLocks.has(lock)) throw new Error('Hay una operacion de promociones en curso para este articulo.');
+  sellerPromotionLocks.add(lock);
+  try {
+    const c=await promotionAddContext(args);
+    const preview={ok:!c.blockers.length,read_only:true,preview:true,cuenta:c.cuenta,id,
+      promotion:c.promotion,item:{id,title:c.item.title,sku:(c.item.attributes||[]).find(a=>a.id==='SELLER_SKU')?.value_name,price:c.item.price,currency_id:c.item.currency_id,status:c.item.status},
+      offer:c.offer,campaign_item:c.campaignItem,other_promotions:c.offers.filter(x=>String(x.id||x.promotion_id)!==identity.id),
+      target_price:c.target,request:{method:'POST',path:`/seller-promotions/items/${id}?app_version=v2`,body:c.body},
+      expected:c.expected,blockers:c.blockers,can_execute:!c.blockers.length&&!c.alreadyIncluded,already_included:c.alreadyIncluded};
+    if (c.alreadyIncluded) return {...preview,ok:true,can_execute:false,verified:c.target!==null && promotionMoney((c.campaignItem||c.offer)?.price)===c.target,
+      note:'Ya participa; no se realizo otra escritura ni se modifico su descuento.'};
+    if (args.confirm!==true || c.blockers.length) return preview;
+    if (!args.expected || args.expected!==c.expected) throw new Error('Vista previa ausente o desactualizada. Consultar confirm=false con los mismos datos.');
+    const key=[c.cuenta,id,identity.id,identity.type].join(':');
+    let journal=promotionJournal();
+    if (journal[key]) return {...preview,ok:false,can_execute:false,uncertain:true,previous_attempt:journal[key],note:'Intento anterior registrado. Consultar promociones del articulo; no repetir automaticamente.'};
+    journal[key]={state:'attempted',at:new Date().toISOString(),body:c.body,expected:c.expected};savePromotionJournal(journal);
+    let response=null,error=null;
+    try {response=await meliApi(c.cuenta,preview.request.path,{method:'POST',body:c.body});}
+    catch(e) {error={message:e.message,status:e.status||null,detail:e.detail||null};}
+    let after=null,verificationError=null;
+    try {
+      const rows=await promotionItemRows(c.cuenta,id);
+      after=rows.find(x=>String(x.id||x.promotion_id)===identity.id && (x.type||x.promotion_type)===identity.type)||null;
+    } catch(e) {verificationError=e.message;}
+    const verified=!!after && ['pending','started','active','programmed'].includes(promotionState(after.status)) && promotionMoney(after.price)===c.target;
+    journal=promotionJournal();journal[key]={...journal[key],state:verified?'verified':'uncertain',response,error,after,verificationError};savePromotionJournal(journal);
+    audit({username:'chatgpt-agent',name:'Agente MCP',role:'agent'},'mcp_promotion_add',{cuenta:c.cuenta,id,promotion_id:identity.id,promotion_type:identity.type,target_price:c.target,verified});
+    return {...preview,ok:verified,read_only:false,preview:false,can_execute:false,verified,uncertain:!verified,response,error,after,verification_error:verificationError,
+      note:verified?'Participacion y precio verificados por consulta posterior.':'No se pudo verificar la incorporacion. Consultar el articulo antes de cualquier nuevo intento.'};
+  } finally {sellerPromotionLocks.delete(lock);}
+}
+async function mcpPromotionRead(name,args) {
+  const cuenta=catalogAccount(args.cuenta),limit=Math.max(1,Math.min(50,Number(args.limit)||50));
+  if (name==='meli_promotions') {
+    const seller=await fetchMeliSellerId(cuenta);
+    const qs=new URLSearchParams({app_version:'v2',limit:String(limit)});
+    const offset=Math.max(0,Number(args.offset)||0);
+    if (args.search_after) qs.set('search_after',String(args.search_after));else qs.set('offset',String(offset));
+    const raw=await meliApi(cuenta,`/seller-promotions/users/${seller}?${qs}`);
+    return {ok:true,read_only:true,cuenta,...promotionPage(raw,limit,offset,args.search_after)};
+  }
+  if (name==='meli_promotion_detail') return {ok:true,read_only:true,cuenta,promotion:await promotionDetail(args)};
+  if (name==='meli_item_promotions') {
+    const id=catalogItemId(args.id),item=await ownedPromotionItem(cuenta,id);
+    return {ok:true,read_only:true,cuenta,item:{id,title:item.title,price:item.price,currency_id:item.currency_id,status:item.status},promotions:await promotionItemRows(cuenta,id)};
+  }
+  const identity=promotionIdentity(args),promotion=await promotionDetail(args);
+  const qs=new URLSearchParams({promotion_type:identity.type,app_version:'v2',limit:String(limit)});
+  if (args.search_after) qs.set('search_after',String(args.search_after));
+  if (args.id) {await ownedPromotionItem(cuenta,catalogItemId(args.id));qs.set('item_id',args.id);}
+  if (args.status) qs.set('status',args.status);
+  if (args.status_item) qs.set('status_item',args.status_item);
+  const raw=await meliApi(cuenta,`/seller-promotions/promotions/${encodeURIComponent(identity.id)}/items?${qs}`);
+  const page=promotionPage(raw,limit,0,args.search_after);
+  // En campana-items solo se pagina por el cursor oficial, nunca por offset.
+  page.next_offset=null;
+  page.complete=!page.next_search_after;
+  page.pagination_warning=null;
+  return {ok:true,read_only:true,cuenta,promotion,...page,
+    scope:args.status_item||'active (por defecto de ML)',note:'Conservar el cursor next_search_after y consultar tambien status_item=paused si se necesita todo el inventario.'};
+}
+// END MCP SELLER PROMOTIONS
+
 const MCP_TOOLS = [
+  {"name": "meli_promotions", "title": "Consultar promociones disponibles", "description": "Lista promociones e invitaciones de la cuenta, incluidas Ciberlunes, con estados, fechas y beneficios. Solo lectura. Paginar usando next_search_after o next_offset; no asumir completa una pagina parcial. No son campanas Product Ads.", "inputSchema": {"type": "object", "properties": {"cuenta": {"type": "string", "enum": ["tlc", "topshop"]}, "limit": {"type": "integer", "minimum": 1, "maximum": 50}, "search_after": {"type": "string", "maxLength": 4000}, "offset": {"type": "integer", "minimum": 0}}, "required": ["cuenta"], "additionalProperties": false}, "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true}},
+  {"name": "meli_promotion_detail", "title": "Consultar detalle de una promocion", "description": "Consulta detalle oficial del ID y tipo exactos: nombre, fechas, estado y beneficios.", "inputSchema": {"type": "object", "properties": {"cuenta": {"type": "string", "enum": ["tlc", "topshop"]}, "promotion_id": {"type": "string", "minLength": 1, "maxLength": 100}, "promotion_type": {"type": "string", "minLength": 2, "maxLength": 60}}, "required": ["cuenta", "promotion_id", "promotion_type"], "additionalProperties": false}, "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true}},
+  {"name": "meli_promotion_items", "title": "Consultar articulos de una promocion", "description": "Lista candidatos o participantes y precios permitidos/sugeridos. Devuelve datos originales de ML. Paginar con next_search_after, hasta complete=true. ML devuelve activos por defecto; status_item=paused consulta pausados. id filtra un MLU propio.", "inputSchema": {"type": "object", "properties": {"cuenta": {"type": "string", "enum": ["tlc", "topshop"]}, "promotion_id": {"type": "string", "minLength": 1, "maxLength": 100}, "promotion_type": {"type": "string", "minLength": 2, "maxLength": 60}, "limit": {"type": "integer", "minimum": 1, "maximum": 50}, "search_after": {"type": "string", "maxLength": 4000}, "id": {"type": "string", "pattern": "^MLU[1-9][0-9]*$"}, "status": {"type": "string", "enum": ["candidate", "pending", "started", "finished"]}, "status_item": {"type": "string", "enum": ["active", "paused"]}}, "required": ["cuenta", "promotion_id", "promotion_type"], "additionalProperties": false}, "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true}},
+  {"name": "meli_item_promotions", "title": "Consultar promociones de una publicacion", "description": "Consulta promociones candidatas, programadas y activas de un MLU propio con precio, moneda y aportes de ML/vendedor cuando la API los devuelve.", "inputSchema": {"type": "object", "properties": {"cuenta": {"type": "string", "enum": ["tlc", "topshop"]}, "id": {"type": "string", "pattern": "^MLU[1-9][0-9]*$"}}, "required": ["cuenta", "id"], "additionalProperties": false}, "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true}},
+  {"name": "meli_promotion_add_item", "title": "Incorporar una publicacion a una promocion", "description": "confirm=false verifica pertenencia, campana, elegibilidad, moneda y limites de precio y devuelve expected. confirm=true incorpora solo el MLU y campana autorizados, con precio explicito y expected vigente. Soporta DEAL, SELLER_CAMPAIGN FLEXIBLE_PERCENTAGE y MARKETPLACE_CAMPAIGN (acepta precio fijo ML sin enviar deal_price). No elige descuentos, no modifica precio base ni stock por PUT, no elimina otras promos. Verifica participacion y precio por GET; bloquea reintentos inciertos. No confundir precio visible, boost ML y aporte vendedor.", "inputSchema": {"type": "object", "properties": {"cuenta": {"type": "string", "enum": ["tlc", "topshop"]}, "promotion_id": {"type": "string", "minLength": 1, "maxLength": 100}, "promotion_type": {"type": "string", "minLength": 2, "maxLength": 60}, "id": {"type": "string", "pattern": "^MLU[1-9][0-9]*$"}, "currency": {"type": "string", "enum": ["UYU", "USD"]}, "deal_price": {"type": "number", "exclusiveMinimum": 0}, "confirm": {"type": "boolean"}, "expected": {"type": "string", "pattern": "^[a-f0-9]{64}$"}}, "required": ["cuenta", "promotion_id", "promotion_type", "id", "currency", "deal_price", "confirm"], "additionalProperties": false}, "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": true}},
+
   {name:'meli_ads_access_diagnostic',title:'Diagnosticar acceso a Product Ads',description:'Solo lectura. Comprueba identidad de cuenta, aplicacion OAuth configurada, autorizacion del vendedor, scopes devueltos por Mercado Libre y anunciante PADS. No devuelve tokens ni secretos, ni cambia anuncios/campanas. Los permisos declarados no prueban que la API permita escribir; si falla una consulta, informa desconocido. Usar para investigar errores de permisos de publicidad antes de nuevas pruebas.',inputSchema:{type:'object',properties:{cuenta:{type:'string',enum:['tlc','topshop']}},required:['cuenta'],additionalProperties:false},annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:true}},
 {"name": "meli_catalog_eligibility", "title": "Elegibilidad para catalogo", "description": "Consulta elegibilidad oficial y producto indicado por ML. Distingue publicaciones ya en catalogo de READY_FOR_OPTIN. Solo lectura, paginar por cuenta usando next_offset hasta has_more=false. No inventar catalogos ni confundir catalog_product_id con catalog_listing.", "inputSchema": {"type": "object", "properties": {"cuenta": {"type": "string", "enum": ["tlc", "topshop", "both"], "default": "both"}, "q": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 25}, "offset": {"type": "integer", "minimum": 0, "default": 0}, "refresh": {"type": "boolean", "default": false}}, "additionalProperties": false}, "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true}},
 {"name": "meli_catalog_opt_in", "title": "Incorporar al catalogo indicado por Mercado Libre", "description": "confirm=false consulta y muestra articulo, catalogo oficial, requisitos, expected y cuerpo exacto. confirm=true exige autorizacion del usuario para cuenta, MLU y catalogo exactos, expected vigente y catalog_product_id. Solo READY_FOR_OPTIN sin variantes; bloquea discrepancias, duplicados e intentos inciertos. Crea publicacion relacionada, verifica por GET. No reintentar escrituras inciertas.", "inputSchema": {"type": "object", "properties": {"cuenta": {"type": "string", "enum": ["tlc", "topshop"]}, "id": {"type": "string", "pattern": "^MLU[1-9][0-9]*$"}, "catalog_product_id": {"type": "string", "pattern": "^MLU[1-9][0-9]*$"}, "confirm": {"type": "boolean"}, "expected": {"type": "string"}}, "required": ["cuenta", "id", "confirm"], "additionalProperties": false}, "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": true}},
@@ -5601,6 +5791,8 @@ async function mcpAdsUpdateAd(args) {
 }
 
 async function mcpCallTool(name, args={}) {
+  if (name==='meli_promotion_add_item') return mcpPromotionAdd(args);
+  if (['meli_promotions','meli_promotion_detail','meli_promotion_items','meli_item_promotions'].includes(name)) return mcpPromotionRead(name,args);
   if (name==='meli_ads_access_diagnostic') return mcpAdsAccessDiagnostic(args);
   if (name==='meli_delete_publication') return mcpDeletePublication(args);
   if (name==='meli_ads_update_ad') return mcpAdsUpdateAd(args);
@@ -6280,7 +6472,7 @@ async function mcpProcessMessage(req, body) {
       protocolVersion:protocol,
       capabilities:{tools:{listChanged:true}},
       serverInfo:{name:MCP_SERVER_NAME,version:MCP_SERVER_VERSION},
-      instructions:'Servidor MCP V5 de TELOCONSIGO y TOP SHOP. Para elegir categorias usar meli_categories: recorrer categorias raiz y subcategorias o consultar predicciones; verificar la ruta y usar una categoria final que corresponda al producto. meli_prepare_publication y meli_update_draft admiten category_id verificado, recalculan requisitos y nunca publican por cambiar la categoria. Para nuevas publicaciones por chat: usar fotos originales del proveedor. Generacion de imagenes temporalmente desactivada: no generar fotos, no exigir cinco imagenes ni photos_reviewed para publicar. Consultar garantia al usuario y guardar warranty_confirmed. Se ofrece retiro en persona. Para crear publicaciones desde un link usar meli_prepare_publication: primero extrae el producto y precio/moneda, luego consulta a Mercado Libre las categorias candidatas y los requisitos de la categoria seleccionada; nunca publicar si faltan requisitos obligatorios. Precio y moneda son opcionales y, si no se indican, se extraen de la pagina del proveedor; stock siempre 50; revisar fotos y si conviene mejorarlas antes de publicar. meli_publish_draft crea la publicacion solo con confirmacion explicita. Para ventas usar meli_sales; para publicidad usar meli_ads_campaigns y meli_ads_adgroups; consultar configuracion y moneda con meli_ads_campaign_detail. Ante errores de permisos en publicidad, consultar meli_ads_access_diagnostic en cada cuenta. Distinguir scopes declarados de escritura realmente verificada; no asumir que permisos de la web equivalen a permisos OAuth ni cambiar a rutas de Global Selling para una cuenta local. Para modificar publicidad usar meli_ads_update_campaign: budget, status active/paused, roas_target (o acos_target convertido), name y strategy. Para gestionar un anuncio individual o Ad Group usar meli_ads_update_ad con action add/remove/pause/activate, item_id o ad_group_id y confirm=false para vista previa. Nunca usar meli_update_publication para pausar un anuncio ni para quitarlo de publicidad. Mostrar todos los MLU hermanos afectados y pedir autorizacion si exceden el alcance indicado. confirm=true solo con orden autorizada, expected de la vista previa y permisos de alcance. Verificar fields, verified, before y after; una respuesta de API no prueba exito sin consulta posterior. Para incorporar varios MLU tambien esta disponible meli_ads_add_items. Primero consultar confirm=false: identifica grupos y variantes afectadas. Una orden exacta del usuario autoriza confirm=true. No mover desde otra campana sin autorizacion explicita (allow_move=true); no afectar otros MLU del grupo sin mostrar y autorizar ese alcance (allow_group_effects=true). Enviar expected de la vista previa; verificar resultados por MLU. Las metricas pueden ser del grupo completo, no atribuirlas exclusivamente a un MLU cuando hay variantes. No cambiar precios ni stock al gestionar anuncios. confirm=false devuelve vista previa. Una orden explicita del usuario que identifique cuenta, campana y valores exactos autoriza confirm=true sin pedir otra confirmacion; una recomendacion del agente requiere mostrar cambios y recibir aprobacion. Si existe vista previa, enviar expected para comprobar que sigue vigente. Revisar verified y fields; si falla la verificacion, consultar detalle antes de reintentar. Para revisar publicaciones que ganan o pierden en Catalogo usar meli_catalog_competition. Para elegibles usar meli_catalog_eligibility y paginar ambas cuentas completamente. Para incorporarlas usar meli_catalog_opt_in con vista previa confirm=false; mostrar MLU y catalogo exacto, obtener autorizacion y luego confirm=true con expected. No elegir catalogos por similitud ni reintentar un intento incierto. No confundir producto asociado con publicacion de catalogo.  Para cerrar o eliminar publicaciones usar exclusivamente meli_delete_publication: confirm=false devuelve vista previa y expected; close es cierre irreversible y delete cierra y marca eliminada. Una orden explicita previa del usuario que identifique cuenta y MLU exactos autoriza confirm=true sin pedir nuevamente permiso. Si la baja es recomendacion nueva, mostrarla y recibir autorizacion. Enviar expected si existe vista previa. Revisar verified, partial, errors y warnings; consultar el MLU antes de reintentar cualquier escritura incierta. No extender la baja a hermanos, variantes ni otra cuenta sin autorizacion. Para una revision general usar meli_support_summary. Para mensajes posventa usar meli_messages_unread y meli_message_thread sin marcar como leido; meli_send_message solo con confirmacion explicita. Para reclamos usar meli_claim_context; meli_send_claim_message solo con confirmacion explicita y nunca implica reembolso o disputa. Para responder preguntas, usar meli_question_context. PRIMERO interpretar la intencion real de la pregunta del cliente; no limitarse a buscar coincidencias literales. Revisar titulo, atributos, descripcion, fotos y preguntas/respuestas anteriores. Las fotos son evidencia valida cuando la respuesta sea claramente observable visualmente (por ejemplo geometria/forma del cuadro, color visible, componentes o accesorios visibles), aunque el dato no figure escrito. No inferir desde fotos medidas exactas, potencia, autonomia, capacidad de carga, material interno, compatibilidad tecnica u otros datos no verificables visualmente. Solo decir que falta informacion despues de revisar tambien las fotos. Si foto y texto se contradicen, informar la contradiccion y no afirmar el dato. No inventar informacion. Firma de TLC: TELOCONSIGO, siempre una sola palabra. Firma de TOP SHOP: TOP SHOP. Las herramientas que modifican Mercado Libre exigen confirm=true y deben usarse solo despues de mostrar el cambio exacto y recibir confirmacion explicita del usuario, salvo meli_ads_update_campaign, meli_ads_add_items, meli_ads_update_ad y meli_delete_publication cuando el usuario ya dio la orden exacta y autorizo todo el alcance conforme al flujo correspondiente indicado.'
+      instructions:'Servidor MCP V5 de TELOCONSIGO y TOP SHOP. Para promociones de Ciberlunes usar meli_promotions y paginar toda la cuenta; consultar detalle y candidatos con meli_promotion_detail y meli_promotion_items, usando el cursor oficial. meli_item_promotions muestra participaciones y elegibilidad por MLU. Incorporar con meli_promotion_add_item: confirm=false muestra campana, MLU, moneda, precio y aportes cuando existen; confirm=true requiere precio autorizado y expected vigente. Una orden previa que identifique cuenta, articulos, campana y precios autoriza ejecutar sin otra pregunta; si falta precio, consultarlo, nunca elegir automaticamente el descuento. No confundir promociones de venta con Product Ads. Verificar verified y after; ante uncertain no repetir POST. Los tipos no soportados son de solo lectura. Para elegir categorias usar meli_categories: recorrer categorias raiz y subcategorias o consultar predicciones; verificar la ruta y usar una categoria final que corresponda al producto. meli_prepare_publication y meli_update_draft admiten category_id verificado, recalculan requisitos y nunca publican por cambiar la categoria. Para nuevas publicaciones por chat: usar fotos originales del proveedor. Generacion de imagenes temporalmente desactivada: no generar fotos, no exigir cinco imagenes ni photos_reviewed para publicar. Consultar garantia al usuario y guardar warranty_confirmed. Se ofrece retiro en persona. Para crear publicaciones desde un link usar meli_prepare_publication: primero extrae el producto y precio/moneda, luego consulta a Mercado Libre las categorias candidatas y los requisitos de la categoria seleccionada; nunca publicar si faltan requisitos obligatorios. Precio y moneda son opcionales y, si no se indican, se extraen de la pagina del proveedor; stock siempre 50; revisar fotos y si conviene mejorarlas antes de publicar. meli_publish_draft crea la publicacion solo con confirmacion explicita. Para ventas usar meli_sales; para publicidad usar meli_ads_campaigns y meli_ads_adgroups; consultar configuracion y moneda con meli_ads_campaign_detail. Ante errores de permisos en publicidad, consultar meli_ads_access_diagnostic en cada cuenta. Distinguir scopes declarados de escritura realmente verificada; no asumir que permisos de la web equivalen a permisos OAuth ni cambiar a rutas de Global Selling para una cuenta local. Para modificar publicidad usar meli_ads_update_campaign: budget, status active/paused, roas_target (o acos_target convertido), name y strategy. Para gestionar un anuncio individual o Ad Group usar meli_ads_update_ad con action add/remove/pause/activate, item_id o ad_group_id y confirm=false para vista previa. Nunca usar meli_update_publication para pausar un anuncio ni para quitarlo de publicidad. Mostrar todos los MLU hermanos afectados y pedir autorizacion si exceden el alcance indicado. confirm=true solo con orden autorizada, expected de la vista previa y permisos de alcance. Verificar fields, verified, before y after; una respuesta de API no prueba exito sin consulta posterior. Para incorporar varios MLU tambien esta disponible meli_ads_add_items. Primero consultar confirm=false: identifica grupos y variantes afectadas. Una orden exacta del usuario autoriza confirm=true. No mover desde otra campana sin autorizacion explicita (allow_move=true); no afectar otros MLU del grupo sin mostrar y autorizar ese alcance (allow_group_effects=true). Enviar expected de la vista previa; verificar resultados por MLU. Las metricas pueden ser del grupo completo, no atribuirlas exclusivamente a un MLU cuando hay variantes. No cambiar precios ni stock al gestionar anuncios. confirm=false devuelve vista previa. Una orden explicita del usuario que identifique cuenta, campana y valores exactos autoriza confirm=true sin pedir otra confirmacion; una recomendacion del agente requiere mostrar cambios y recibir aprobacion. Si existe vista previa, enviar expected para comprobar que sigue vigente. Revisar verified y fields; si falla la verificacion, consultar detalle antes de reintentar. Para revisar publicaciones que ganan o pierden en Catalogo usar meli_catalog_competition. Para elegibles usar meli_catalog_eligibility y paginar ambas cuentas completamente. Para incorporarlas usar meli_catalog_opt_in con vista previa confirm=false; mostrar MLU y catalogo exacto, obtener autorizacion y luego confirm=true con expected. No elegir catalogos por similitud ni reintentar un intento incierto. No confundir producto asociado con publicacion de catalogo.  Para cerrar o eliminar publicaciones usar exclusivamente meli_delete_publication: confirm=false devuelve vista previa y expected; close es cierre irreversible y delete cierra y marca eliminada. Una orden explicita previa del usuario que identifique cuenta y MLU exactos autoriza confirm=true sin pedir nuevamente permiso. Si la baja es recomendacion nueva, mostrarla y recibir autorizacion. Enviar expected si existe vista previa. Revisar verified, partial, errors y warnings; consultar el MLU antes de reintentar cualquier escritura incierta. No extender la baja a hermanos, variantes ni otra cuenta sin autorizacion. Para una revision general usar meli_support_summary. Para mensajes posventa usar meli_messages_unread y meli_message_thread sin marcar como leido; meli_send_message solo con confirmacion explicita. Para reclamos usar meli_claim_context; meli_send_claim_message solo con confirmacion explicita y nunca implica reembolso o disputa. Para responder preguntas, usar meli_question_context. PRIMERO interpretar la intencion real de la pregunta del cliente; no limitarse a buscar coincidencias literales. Revisar titulo, atributos, descripcion, fotos y preguntas/respuestas anteriores. Las fotos son evidencia valida cuando la respuesta sea claramente observable visualmente (por ejemplo geometria/forma del cuadro, color visible, componentes o accesorios visibles), aunque el dato no figure escrito. No inferir desde fotos medidas exactas, potencia, autonomia, capacidad de carga, material interno, compatibilidad tecnica u otros datos no verificables visualmente. Solo decir que falta informacion despues de revisar tambien las fotos. Si foto y texto se contradicen, informar la contradiccion y no afirmar el dato. No inventar informacion. Firma de TLC: TELOCONSIGO, siempre una sola palabra. Firma de TOP SHOP: TOP SHOP. Las herramientas que modifican Mercado Libre exigen confirm=true y deben usarse solo despues de mostrar el cambio exacto y recibir confirmacion explicita del usuario, salvo meli_ads_update_campaign, meli_ads_add_items, meli_ads_update_ad y meli_delete_publication cuando el usuario ya dio la orden exacta y autorizo todo el alcance conforme al flujo correspondiente indicado.'
     }}};
   }
   if (method === 'notifications/initialized' || method === 'notifications/cancelled') {
