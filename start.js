@@ -2457,6 +2457,43 @@ function publicationWarrantyTerms(warranty) {
   }
   return terms;
 }
+// Garantia de publicaciones existentes: conservar el plazo si no se indica otro.
+function existingPublicationWarrantyTerms(item, args) {
+  if (args.warranty_type !== undefined && args.warranty_type !== 'seller') throw new Error('Usar warranty_type=seller para garantia del vendedor.');
+  const hasDuration = args.warranty_duration !== undefined;
+  const hasUnit = args.warranty_unit !== undefined;
+  if (hasDuration !== hasUnit) throw new Error('Indicar plazo y unidad juntos, o ninguno para conservar el plazo actual.');
+  let time;
+  if (hasDuration) {
+    time = publicationWarrantyTerms({type:'seller', duration:args.warranty_duration, unit:args.warranty_unit, confirmed:true}).find(t=>t.id==='WARRANTY_TIME');
+  } else {
+    const current = (item.sale_terms || []).find(t=>t.id==='WARRANTY_TIME');
+    const struct = current?.value_struct || current?.values?.[0]?.struct;
+    const value = current?.value_name || (struct ? String(struct.number)+' '+struct.unit : '');
+    if (!value) throw new Error('Falta plazo de garantia: indicar warranty_duration y warranty_unit.');
+    time = {id:'WARRANTY_TIME', value_name:value};
+  }
+  return [{id:'WARRANTY_TYPE',value_id:'2230280'},time];
+}
+function publicationWarrantyMatches(item, expected) {
+  const terms = item?.sale_terms || [];
+  const type = terms.find(t=>t.id==='WARRANTY_TYPE');
+  const normalize = s=>String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+  const durationKey = term=>{
+    const struct = term?.value_struct || term?.values?.[0]?.struct;
+    const match = String(term?.value_name || '').match(/^(\d+(?:[.,]\d+)?)\s*(.+)$/);
+    const number = Number(struct?.number ?? (match ? match[1].replace(',','.') : NaN));
+    const unit = normalize(struct?.unit || (match && match[2]));
+    if (!(number>0)) return null;
+    if (/^ano/.test(unit)) return 'months:'+number*12;
+    if (/^mes/.test(unit)) return 'months:'+number;
+    if (/^dia/.test(unit)) return 'days:'+number;
+    return null;
+  };
+  const currentTime = durationKey(terms.find(t=>t.id==='WARRANTY_TIME'));
+  const expectedTime = durationKey(expected.find(t=>t.id==='WARRANTY_TIME'));
+  return !!type && (String(type.value_id)==='2230280' || normalize(type.value_name)==='garantia del vendedor') && currentTime!==null && currentTime===expectedTime;
+}
 function publicationPhotoSignature(draft){return crypto.createHash('sha256').update(JSON.stringify(draft.images||[])).digest('hex');}
 function publicationPhotoPlan(){return [
   'Catálogo: fondo blanco puro, producto completo centrado, sin texto.',
@@ -3029,7 +3066,7 @@ async function getMeliItemForSmartUpdate(cuenta, itemId) {
   const attrs = [
     'id','title','price','currency_id','available_quantity','status','sold_quantity',
     'variations','user_product_id','inventory_id','catalog_listing','catalog_product_id','seller_id',
-    'seller_custom_field','attributes','shipping','tags','pictures','permalink','category_id'
+    'seller_custom_field','attributes','shipping','tags','pictures','permalink','category_id','sale_terms','warranty'
   ].join(',');
   return await meliApi(cuenta, `/items/${encodeURIComponent(itemId)}?attributes=${encodeURIComponent(attrs)}`);
 }
@@ -5072,7 +5109,7 @@ const MCP_TOOLS = [
   {name:'meli_draft_photo_status',description:'Consulta estado y URL de foto generada. Revisar imagen contra proveedor antes de photos_reviewed=true. No publica.',inputSchema:{type:'object',properties:{job_id:{type:'string'}},required:['job_id'],additionalProperties:false}},
   { name:'meli_update_draft', title:'Corregir borrador con datos verificados', description:'Corrige un borrador antes de publicar usando valores verificados de la planilla. Nunca publica. supplier_available=true exige una comprobacion actual del proveedor; EMPTY_GTIN_REASON solo se envia con el motivo explicito permitido por la categoria.', inputSchema:{type:'object',properties:{draft_id:{type:'string'},photos_reviewed:{type:'boolean'},warranty_type:{type:'string',enum:['seller','manufacturer','none']},warranty_duration:{type:'integer',minimum:1},warranty_unit:{type:'string',enum:['días','meses','años']},warranty_confirmed:{type:'boolean',description:'Solo true despues de respuesta explicita del usuario sobre la garantia.'},title:{type:'string',minLength:8,maxLength:60},description:{type:'string',minLength:1,maxLength:5000},brand:{type:'string',minLength:1},model:{type:'string',minLength:1},sku:{type:'string'},images:{type:'array',items:{type:'string',minLength:8},minItems:1,maxItems:8},attributes:{type:'array',maxItems:100,items:{type:'object',properties:{id:{type:'string',minLength:1},value_id:{type:'string'},value_name:{type:'string'}},required:['id'],additionalProperties:false}},gtin:{type:'string'},empty_gtin_reason_id:{type:'string'},supplier_available:{type:'boolean'},listing_type_id:{type:'string'},price:{type:'number',exclusiveMinimum:0},currency:{type:'string',enum:['USD','UYU']}},required:['draft_id'],additionalProperties:false},annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:true,openWorldHint:false} },
   { name:'meli_publish_draft', title:'Publicar borrador preparado', description:'CREA la publicacion preparada en TELOCONSIGO, TOP SHOP o ambas. Stock siempre 50. Solo ejecuta con confirm=true despues de mostrar al usuario titulo, precio, moneda, fotos, categoria, cuentas y datos faltantes.', inputSchema:{type:'object',properties:{draft_id:{type:'string'},accounts:{type:'array',items:{type:'string',enum:['tlc','topshop']},minItems:1,maxItems:2},confirm:{type:'boolean'}},required:['draft_id','confirm'],additionalProperties:false}, annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:false,openWorldHint:true} },
-  { name:'meli_update_publication', title:'Modificar publicacion', description:'Modifica campos permitidos de una publicacion: precio, stock, estado, titulo, descripcion, fotos y atributos (por ejemplo COLOR). Primero consulta la publicacion actual y devuelve el resultado campo por campo. Solo ejecuta si confirm=true. Mercado Libre puede bloquear ciertos cambios segun la publicacion/categoria/historial de ventas.', inputSchema:{type:'object',properties:{cuenta:{type:'string',enum:['tlc','topshop']},id:{type:'string'},price:{type:'number',minimum:0},stock:{type:'integer',minimum:0},status:{type:'string',enum:['active','paused']},sku:{type:'string'},title:{type:'string',minLength:1,maxLength:60},description:{type:'string',minLength:1,maxLength:50000},pictures:{type:'array',items:{type:'string',minLength:5},minItems:1,maxItems:12},attributes:{type:'array',items:{type:'object',properties:{id:{type:'string',minLength:1},value_id:{type:['string','number']},value_name:{type:'string'}},required:['id'],additionalProperties:false}},color:{type:'string',minLength:1,description:'Atajo para actualizar el atributo COLOR; por ejemplo Beige.'},confirm:{type:'boolean',description:'Debe ser true despues de confirmacion explicita del usuario.'}},required:['cuenta','id','confirm'],additionalProperties:false}, annotations:{readOnlyHint:false,destructiveHint:true,idempotentHint:true,openWorldHint:true} }
+  { name:'meli_update_publication', title:'Modificar publicacion', description:'Modifica campos permitidos de una publicacion: precio, stock, estado, titulo, descripcion, fotos, atributos y garantia del vendedor (warranty_type=seller). Conserva el plazo si no se indica otro y verifica la garantia por GET. Primero consulta la publicacion actual y devuelve el resultado campo por campo. Solo ejecuta si confirm=true. Mercado Libre puede bloquear ciertos cambios segun la publicacion/categoria/historial de ventas.', inputSchema:{type:'object',properties:{cuenta:{type:'string',enum:['tlc','topshop']},id:{type:'string'},price:{type:'number',minimum:0},stock:{type:'integer',minimum:0},status:{type:'string',enum:['active','paused']},sku:{type:'string'},title:{type:'string',minLength:1,maxLength:60},description:{type:'string',minLength:1,maxLength:50000},pictures:{type:'array',items:{type:'string',minLength:5},minItems:1,maxItems:12},attributes:{type:'array',items:{type:'object',properties:{id:{type:'string',minLength:1},value_id:{type:['string','number']},value_name:{type:'string'}},required:['id'],additionalProperties:false}},color:{type:'string',minLength:1,description:'Atajo para actualizar el atributo COLOR; por ejemplo Beige.'},warranty_type:{type:'string',enum:['seller'],description:'Cambiar a garantia del vendedor conservando el plazo actual si no se indica otro.'},warranty_duration:{type:'integer',minimum:1},warranty_unit:{type:'string',enum:['días','meses','años']},confirm:{type:'boolean',description:'Debe ser true despues de confirmacion explicita del usuario.'}},required:['cuenta','id','confirm'],additionalProperties:false}, annotations:{readOnlyHint:false,destructiveHint:true,idempotentHint:true,openWorldHint:true} }
 ];
 
 async function mcpTextResult(data) {
@@ -6016,9 +6053,11 @@ async function mcpCallTool(name, args={}) {
     const hasDescription=args.description!==undefined && String(args.description||'').trim();
     const hasPictures=Array.isArray(args.pictures) && args.pictures.length>0;
     const hasAttributes=(Array.isArray(args.attributes) && args.attributes.length>0) || (args.color!==undefined && String(args.color||'').trim());
-    if(!hasPrice && !hasStock && !hasStatus && !hasTitle && !hasDescription && !hasPictures && !hasAttributes) throw new Error('Indica al menos un campo para modificar.');
+    const hasWarranty=['warranty_type','warranty_duration','warranty_unit'].some(k=>args[k]!==undefined);
+    if(!hasWarranty && !hasPrice && !hasStock && !hasStatus && !hasTitle && !hasDescription && !hasPictures && !hasAttributes) throw new Error('Indica al menos un campo para modificar.');
 
     const before=await getMeliItemForSmartUpdate(cuenta,id);
+    const warrantyTerms=hasWarranty?existingPublicationWarrantyTerms(before,args):null;
     let beforeDescription=null;
     if(hasDescription) { try { beforeDescription=await meliApi(cuenta, `/items/${encodeURIComponent(id)}/description`); } catch(e) { beforeDescription={error:e.message}; } }
     const results={};
@@ -6029,6 +6068,8 @@ async function mcpCallTool(name, args={}) {
     if(hasPrice || hasStock) await tryField('price_stock', ()=>smartUpdateLinkedPublication(cuenta,id,{price:hasPrice?args.price:undefined,stock:hasStock?args.stock:undefined,sku:args.sku}));
     if(hasStatus) await tryField('status', ()=>meliApi(cuenta, `/items/${encodeURIComponent(id)}`, {method:'PUT',body:{status:String(args.status)}}));
     if(hasTitle) await tryField('title', ()=>meliApi(cuenta, `/items/${encodeURIComponent(id)}`, {method:'PUT',body:{title:String(args.title).trim()}}));
+
+    if(hasWarranty) await tryField('warranty', ()=>meliApi(cuenta, `/items/${encodeURIComponent(id)}`, {method:'PUT',body:{sale_terms:warrantyTerms}}));
 
     if(hasAttributes) {
       const requestedAttrs=[];
@@ -6056,10 +6097,12 @@ async function mcpCallTool(name, args={}) {
     if(hasDescription) await tryField('description', ()=>meliApi(cuenta, `/items/${encodeURIComponent(id)}/description`, {method:'PUT',body:{plain_text:String(args.description)}}));
 
     const after=await getMeliItemForSmartUpdate(cuenta,id);
+    const warrantyVerified=hasWarranty?publicationWarrantyMatches(after,warrantyTerms):undefined;
+    if(hasWarranty && !errors.warranty && !warrantyVerified) errors.warranty='GARANTIA_NO_VERIFICADA: consultar la publicacion antes de reintentar.';
     let afterDescription=null;
     if(hasDescription) { try { afterDescription=await meliApi(cuenta, `/items/${encodeURIComponent(id)}/description`); } catch(e) { afterDescription={error:e.message}; } }
-    const requested={price:hasPrice?args.price:undefined,stock:hasStock?args.stock:undefined,status:hasStatus?String(args.status):undefined,sku:args.sku||undefined,title:hasTitle?String(args.title).trim():undefined,description:hasDescription?String(args.description):undefined,pictures:hasPictures?args.pictures:undefined,attributes:Array.isArray(args.attributes)?args.attributes:undefined,color:args.color||undefined};
-    return {ok:Object.keys(errors).length===0,partial:Object.keys(results).length>0 && Object.keys(errors).length>0,cuenta,action:'update_publication',item_id:id,before:{title:before?.title,price:before?.price,available_quantity:before?.available_quantity,status:before?.status,attributes:before?.attributes,pictures:before?.pictures,description:beforeDescription},requested,results,errors,after:{title:after?.title,price:after?.price,available_quantity:after?.available_quantity,status:after?.status,attributes:after?.attributes,pictures:after?.pictures,description:afterDescription}};
+    const requested={sale_terms:warrantyTerms||undefined,price:hasPrice?args.price:undefined,stock:hasStock?args.stock:undefined,status:hasStatus?String(args.status):undefined,sku:args.sku||undefined,title:hasTitle?String(args.title).trim():undefined,description:hasDescription?String(args.description):undefined,pictures:hasPictures?args.pictures:undefined,attributes:Array.isArray(args.attributes)?args.attributes:undefined,color:args.color||undefined};
+    return {ok:Object.keys(errors).length===0,partial:Object.keys(results).length>0 && Object.keys(errors).length>0,cuenta,action:'update_publication',item_id:id,warranty_verified:warrantyVerified,before:{title:before?.title,price:before?.price,available_quantity:before?.available_quantity,status:before?.status,attributes:before?.attributes,pictures:before?.pictures,sale_terms:before?.sale_terms,warranty:before?.warranty,description:beforeDescription},requested,results,errors,after:{title:after?.title,price:after?.price,available_quantity:after?.available_quantity,status:after?.status,attributes:after?.attributes,pictures:after?.pictures,sale_terms:after?.sale_terms,warranty:after?.warranty,description:afterDescription}};
   }
   throw new Error(`Herramienta MCP desconocida: ${name}`);
 }
