@@ -2816,13 +2816,16 @@ async function refreshMeliAccessToken(cuenta) {
   }
 
   const expiresAt = Date.now() + Math.max(60, Number(data.expires_in || 21600) - 120) * 1000;
-  const tokenData = { access_token: data.access_token, refresh_token: data.refresh_token || cfg.refreshToken, expires_at: expiresAt };
+  const tokenData = { access_token: data.access_token, refresh_token: data.refresh_token || cfg.refreshToken, expires_at: expiresAt, scope: data.scope ?? null, app_id: String(cfg.appId) };
   MELI_TOKEN_CACHE[cfg.key] = tokenData;
 
   const store = loadMeliOAuthStore();
   store[cfg.key] = {
     ...(store[cfg.key] || {}),
     refresh_token: tokenData.refresh_token,
+    token_scope: tokenData.scope,
+    token_app_id: tokenData.app_id,
+    token_scope_observed_at: new Date().toISOString(),
     last_access_token_refresh: new Date().toISOString(),
   };
   saveMeliOAuthStore(store);
@@ -2865,11 +2868,14 @@ async function exchangeMeliAuthorizationCode(cuenta, code, req) {
     ...(store[cfg.key] || {}),
     refresh_token: data.refresh_token,
     user_id: seller.id,
+    token_scope: data.scope ?? null,
+    token_app_id: String(cfg.appId),
+    token_scope_observed_at: new Date().toISOString(),
     nickname: seller.nickname || '',
     obtained_at: new Date().toISOString(),
   };
   saveMeliOAuthStore(store);
-  MELI_TOKEN_CACHE[cfg.key] = { access_token: data.access_token, refresh_token: data.refresh_token, expires_at: Date.now() + Math.max(60, Number(data.expires_in || 21600) - 120) * 1000 };
+  MELI_TOKEN_CACHE[cfg.key] = { access_token: data.access_token, refresh_token: data.refresh_token, scope: data.scope ?? null, app_id: String(cfg.appId), expires_at: Date.now() + Math.max(60, Number(data.expires_in || 21600) - 120) * 1000 };
   return { ...data, seller: { id: seller.id, nickname: seller.nickname }, redirect_uri: redirectUri };
 }
 
@@ -2894,6 +2900,7 @@ async function meliApi(cuenta, apiPath, options = {}) {
     const msg = data?.message || data?.error || data?.cause?.[0]?.message || text || `Mercado Libre status ${r.status}`;
     const error = new Error(`Mercado Libre ${options.method || 'GET'} ${new URL(url).pathname}: ${msg}`);
     error.status = r.status; error.api_path = new URL(url).pathname; error.detail = data;
+    error.request_id = r.headers.get('x-request-id') || r.headers.get('x-correlation-id') || null;
     throw error;
   }
   return data;
@@ -5073,6 +5080,7 @@ async function catalogOptIn(args={}) {
 }
 
 const MCP_TOOLS = [
+  {name:'meli_ads_access_diagnostic',title:'Diagnosticar acceso a Product Ads',description:'Solo lectura. Comprueba identidad de cuenta, aplicacion OAuth configurada, autorizacion del vendedor, scopes devueltos por Mercado Libre y anunciante PADS. No devuelve tokens ni secretos, ni cambia anuncios/campanas. Los permisos declarados no prueban que la API permita escribir; si falla una consulta, informa desconocido. Usar para investigar errores de permisos de publicidad antes de nuevas pruebas.',inputSchema:{type:'object',properties:{cuenta:{type:'string',enum:['tlc','topshop']}},required:['cuenta'],additionalProperties:false},annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:true}},
 {"name": "meli_catalog_eligibility", "title": "Elegibilidad para catalogo", "description": "Consulta elegibilidad oficial y producto indicado por ML. Distingue publicaciones ya en catalogo de READY_FOR_OPTIN. Solo lectura, paginar por cuenta usando next_offset hasta has_more=false. No inventar catalogos ni confundir catalog_product_id con catalog_listing.", "inputSchema": {"type": "object", "properties": {"cuenta": {"type": "string", "enum": ["tlc", "topshop", "both"], "default": "both"}, "q": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 25}, "offset": {"type": "integer", "minimum": 0, "default": 0}, "refresh": {"type": "boolean", "default": false}}, "additionalProperties": false}, "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true}},
 {"name": "meli_catalog_opt_in", "title": "Incorporar al catalogo indicado por Mercado Libre", "description": "confirm=false consulta y muestra articulo, catalogo oficial, requisitos, expected y cuerpo exacto. confirm=true exige autorizacion del usuario para cuenta, MLU y catalogo exactos, expected vigente y catalog_product_id. Solo READY_FOR_OPTIN sin variantes; bloquea discrepancias, duplicados e intentos inciertos. Crea publicacion relacionada, verifica por GET. No reintentar escrituras inciertas.", "inputSchema": {"type": "object", "properties": {"cuenta": {"type": "string", "enum": ["tlc", "topshop"]}, "id": {"type": "string", "pattern": "^MLU[1-9][0-9]*$"}, "catalog_product_id": {"type": "string", "pattern": "^MLU[1-9][0-9]*$"}, "confirm": {"type": "boolean"}, "expected": {"type": "string"}}, "required": ["cuenta", "id", "confirm"], "additionalProperties": false}, "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": true}},
   {name:'meli_delete_publication',title:'Cerrar o eliminar una publicacion',description:'Baja irreversible de UN MLU exacto en su cuenta. action=close cierra; action=delete (predeterminado) cierra y elimina. confirm=false solo consulta y devuelve expected y pasos. confirm=true exige autorizacion explicita del usuario para esa cuenta y MLU; una orden previa exacta sigue siendo valida. Verifica pertenencia, estado y resultado con GET posteriores. Enviar expected de la vista previa. No cambia precios, stock, fotos, variantes ni publicaciones hermanas. No reintenta escrituras inciertas. Revisar verified, partial, errors y warnings; un 404 no prueba eliminacion.',inputSchema:{type:'object',properties:{cuenta:{type:'string',enum:['tlc','topshop']},id:{type:'string',pattern:'^MLU[1-9][0-9]*$'},action:{type:'string',enum:['close','delete'],default:'delete'},confirm:{type:'boolean'},expected:{type:'object',description:'Snapshot completo expected devuelto por confirm=false.',properties:{id:{type:'string'},seller_id:{type:'string'},status:{type:'string'},sub_status:{type:'array',items:{type:'string'}},deleted:{type:'boolean'},title:{type:'string'},sku:{type:'string'},model:{type:'string'}},required:['id','seller_id','status','sub_status','deleted','title','sku','model'],additionalProperties:false},reason:{type:'string',maxLength:2000}},required:['cuenta','id','confirm'],additionalProperties:false},annotations:{readOnlyHint:false,destructiveHint:true,idempotentHint:true,openWorldHint:true}},
@@ -5157,6 +5165,78 @@ async function mcpTextResult(data) {
 function mcpErrorResult(message) {
   return { content:[{type:'text', text:String(message)}], isError:true };
 }
+// Evidencia de errores sin exponer tokens, secretos ni respuestas OAuth completas.
+function adsErrorEvidence(error) {
+  const safeCode = value => typeof value === 'string' && /^[a-zA-Z0-9_.:\/-]{1,200}$/.test(value) ? value : null;
+  return {
+    http_status: Number.isInteger(error?.status) ? error.status : null,
+    api_path: typeof error?.api_path === 'string' ? error.api_path.split('?')[0] : null,
+    api_error: safeCode(error?.detail?.error),
+    policy_code: safeCode(error?.detail?.code),
+    blocked_by: safeCode(error?.detail?.blocked_by),
+    request_id: safeCode(error?.request_id),
+  };
+}
+function adsScopeList(value) {
+  if (Array.isArray(value)) return [...new Set(value.filter(v => typeof v === 'string'))];
+  return typeof value === 'string' ? [...new Set(value.split(/[\s,]+/).filter(Boolean))] : null;
+}
+async function mcpAdsAccessDiagnostic(args) {
+  if (!['tlc','topshop'].includes(args.cuenta)) throw new Error('Indica cuenta tlc o topshop.');
+  const cuenta = args.cuenta, cfg = getMeliOAuthConfig(cuenta);
+  // meliApi conserva la comprobacion de identidad existente. Solo GET de negocio.
+  const me = await meliApi(cuenta, '/users/me');
+  const saved = loadMeliOAuthStore()[cuenta] || {};
+  const cached = MELI_TOKEN_CACHE[cuenta];
+  const appId = String(cfg.appId || '');
+  const checks = {}, warnings = [];
+  const inspect = async (key, apiPath, project) => {
+    try { checks[key] = {ok:true, ...project(await meliApi(cuenta, apiPath))}; }
+    catch (error) { checks[key] = {ok:false, evidence:adsErrorEvidence(error)}; }
+  };
+  if (/^[1-9]\d*$/.test(appId)) {
+    await inspect('application', `/applications/${appId}`, data => ({
+      id: String(data?.id ?? ''),
+      matches_configured_app: String(data?.id ?? '') === appId,
+      active: typeof data?.active === 'boolean' ? data.active : null,
+      scopes: adsScopeList(data?.scopes ?? data?.scope),
+    }));
+    await inspect('seller_grant', `/users/${encodeURIComponent(me.id)}/applications`, data => {
+      const rows = Array.isArray(data) ? data : (Array.isArray(data?.results) ? data.results : null);
+      if (!rows) return {response_complete:false, found:null, scopes:null};
+      const matches = rows.filter(row => String(row.app_id ?? row.application_id ?? row.application?.id ?? '') === appId);
+      const grant = matches.length === 1 ? matches[0] : null;
+      const total = Number(data?.paging?.total);
+      const complete = Array.isArray(data) || (Number.isFinite(total) && total === rows.length && Number(data?.paging?.offset || 0) === 0);
+      return {response_complete:complete, found:matches.length === 1 ? true : (complete && !matches.length ? false : null),
+        scopes:grant ? adsScopeList(grant.scopes ?? grant.scope) : null,
+        date_created: typeof grant?.date_created === 'string' ? grant.date_created : null};
+    });
+  } else {
+    warnings.push('No hay app_id configurado verificable; no se infiere desde el contenido del token.');
+  }
+  await inspect('advertiser', '/advertising/advertisers?product_id=PADS', data => {
+    const rows = Array.isArray(data?.advertisers) ? data.advertisers : (Array.isArray(data) ? data : []);
+    return {advertisers:rows.filter(row => String(row.site_id || '').toUpperCase() === 'MLU').map(row => ({
+      advertiser_id:row.advertiser_id ?? row.id ?? null, site_id:row.site_id,
+      account_name:row.account_name || row.advertiser_name || null,
+    }))};
+  });
+  if (saved.token_app_id && appId && String(saved.token_app_id) !== appId) warnings.push('La aplicacion guardada al obtener el token difiere del app_id configurado actualmente.');
+  const currentScopes = cached?.app_id === appId && cached?.expires_at > Date.now() ? adsScopeList(cached.scope) : null;
+  if (!currentScopes) warnings.push('El scope del token en uso no esta registrado; se capturara en la proxima autorizacion o renovacion normal. No se fuerza una renovacion.');
+  if (checks.application?.ok && checks.application.scopes === null) warnings.push('Mercado Libre no expuso scopes privados de la aplicacion; esto no prueba que falten permisos.');
+  const grantScopes = checks.seller_grant?.scopes;
+  if (Array.isArray(grantScopes) && !grantScopes.includes('write')) warnings.push('La autorizacion consultada no declara el scope general write; revisar sus scopes y la aplicacion.');
+  return {ok:true,read_only:true,diagnostic_version:1,cuenta,
+    seller:{id:me.id,nickname:me.nickname || null},
+    oauth:{configured_app_id:appId || null,saved_token_app_id:saved.token_app_id || null,
+      token_source:cached?.app_id ? 'oauth_cache' : (cfg.appId && cfg.clientSecret && cfg.refreshToken ? (saved.refresh_token ? 'saved_refresh_token' : 'environment_refresh_token') : (cfg.fixedAccessToken ? 'fixed_access_token' : 'unknown')),
+      current_token_scopes:currentScopes,saved_scope_observed_at:saved.token_scope_observed_at || null},
+    checks,warnings,write_access_verified:false,
+    note:'Estas consultas verifican configuracion y autorizacion declaradas, no habilitan permisos ni prueban escritura. Un rechazo del servicio Ads puede persistir aun con write. No cambiar rutas por ensayo ni reintentar escrituras fallidas automaticamente.'};
+}
+
 // Product Ads: operaciones puntuales. Nunca modifica publicaciones ni stock.
 function adsCampaignId(value) {
   if (typeof value === 'number' && !Number.isSafeInteger(value)) throw new Error('campaign_id debe ser un entero seguro.');
@@ -5273,7 +5353,7 @@ async function mcpAdsCampaignTool(name, args) {
     response = await meliApi(cuenta, context.apiPath, {method:'PUT',headers:{'api-version':'2'},body});
   } catch (e) {
     audit(actor,'mcp_ads_update_unconfirmed',{cuenta,campaign_id:campaignId,requested:body,error:e.message});
-    return {ok:false,cuenta,campaign_id:campaignId,write_attempted:true,verified:false,retry_safe:false,before,changes,error:e.message,note:'La escritura no quedo confirmada. Consulta el estado actual antes de reintentar; no asumas que no se aplico.'};
+    return {ok:false,cuenta,campaign_id:campaignId,write_attempted:true,verified:false,retry_safe:false,before,changes,error:e.message,error_evidence:adsErrorEvidence(e),note:'La escritura no quedo confirmada. Consulta el estado actual antes de reintentar; no asumas que no se aplico.'};
   }
   let after;
   try {
@@ -5400,7 +5480,7 @@ async function mcpAdsAddItems(args) {
       audit(actor,'mcp_ads_add_items_result',{cuenta,before:current,requested:payload,after,verified});
       if (!verified) stopped=true;
     } catch(e) {
-      results.push({ad_group_id:state.ad_group_id,attempted:true,api_accepted:accepted,verified:false,retry_safe:false,error:e.message,before:current});
+      results.push({ad_group_id:state.ad_group_id,attempted:true,api_accepted:accepted,verified:false,retry_safe:false,error:e.message,error_evidence:adsErrorEvidence(e),before:current});
       audit(actor,'mcp_ads_add_items_unconfirmed',{cuenta,ad_group_id:state.ad_group_id,requested:payload,api_accepted:accepted,error:e.message});
       stopped=true;
     }
@@ -5503,11 +5583,12 @@ async function mcpAdsUpdateAd(args) {
     return {ok:verified,...common,after,verified,fields,no_change:noChange,write_attempted:writeAttempted,api_accepted:accepted,campaign_after:adsCampaignSnapshot(campaignAfter),group_read_error:groupReadError,note:verified?'Resultado publicitario verificado mediante consultas posteriores; publicaciones conservan su estado.':'Uno o mas campos no quedaron verificados. Consulta estado actual antes de reintentar.'};
   } catch(e) {
     audit(actor,'mcp_ads_update_ad_unconfirmed',{cuenta,action,ad_group_id:groupId,write_attempted:writeAttempted,api_accepted:accepted,error:e.message});
-    return {ok:false,...common,after:null,verified:false,fields:previewFields,write_attempted:writeAttempted,api_accepted:accepted,retry_safe:false,error:e.message,note:'Resultado no confirmado. No reintentar automaticamente; consulta la campana y el grupo antes de repetir.'};
+    return {ok:false,...common,after:null,verified:false,fields:previewFields,write_attempted:writeAttempted,api_accepted:accepted,retry_safe:false,error:e.message,error_evidence:adsErrorEvidence(e),note:'Resultado no confirmado. No reintentar automaticamente; consulta la campana y el grupo antes de repetir.'};
   }
 }
 
 async function mcpCallTool(name, args={}) {
+  if (name==='meli_ads_access_diagnostic') return mcpAdsAccessDiagnostic(args);
   if (name==='meli_delete_publication') return mcpDeletePublication(args);
   if (name==='meli_ads_update_ad') return mcpAdsUpdateAd(args);
   if (name==='meli_ads_add_items') return mcpAdsAddItems(args);
@@ -6145,7 +6226,7 @@ async function mcpProcessMessage(req, body) {
       protocolVersion:protocol,
       capabilities:{tools:{listChanged:true}},
       serverInfo:{name:MCP_SERVER_NAME,version:MCP_SERVER_VERSION},
-      instructions:'Servidor MCP V5 de TELOCONSIGO y TOP SHOP. Para nuevas publicaciones por chat: usar fotos originales del proveedor. Generacion de imagenes temporalmente desactivada: no generar fotos, no exigir cinco imagenes ni photos_reviewed para publicar. Consultar garantia al usuario y guardar warranty_confirmed. Se ofrece retiro en persona. Para crear publicaciones desde un link usar meli_prepare_publication: primero extrae el producto y precio/moneda, luego consulta a Mercado Libre las categorias candidatas y los requisitos de la categoria seleccionada; nunca publicar si faltan requisitos obligatorios. Precio y moneda son opcionales y, si no se indican, se extraen de la pagina del proveedor; stock siempre 50; revisar fotos y si conviene mejorarlas antes de publicar. meli_publish_draft crea la publicacion solo con confirmacion explicita. Para ventas usar meli_sales; para publicidad usar meli_ads_campaigns y meli_ads_adgroups; consultar configuracion y moneda con meli_ads_campaign_detail. Para modificar publicidad usar meli_ads_update_campaign: budget, status active/paused, roas_target (o acos_target convertido), name y strategy. Para gestionar un anuncio individual o Ad Group usar meli_ads_update_ad con action add/remove/pause/activate, item_id o ad_group_id y confirm=false para vista previa. Nunca usar meli_update_publication para pausar un anuncio ni para quitarlo de publicidad. Mostrar todos los MLU hermanos afectados y pedir autorizacion si exceden el alcance indicado. confirm=true solo con orden autorizada, expected de la vista previa y permisos de alcance. Verificar fields, verified, before y after; una respuesta de API no prueba exito sin consulta posterior. Para incorporar varios MLU tambien esta disponible meli_ads_add_items. Primero consultar confirm=false: identifica grupos y variantes afectadas. Una orden exacta del usuario autoriza confirm=true. No mover desde otra campana sin autorizacion explicita (allow_move=true); no afectar otros MLU del grupo sin mostrar y autorizar ese alcance (allow_group_effects=true). Enviar expected de la vista previa; verificar resultados por MLU. Las metricas pueden ser del grupo completo, no atribuirlas exclusivamente a un MLU cuando hay variantes. No cambiar precios ni stock al gestionar anuncios. confirm=false devuelve vista previa. Una orden explicita del usuario que identifique cuenta, campana y valores exactos autoriza confirm=true sin pedir otra confirmacion; una recomendacion del agente requiere mostrar cambios y recibir aprobacion. Si existe vista previa, enviar expected para comprobar que sigue vigente. Revisar verified y fields; si falla la verificacion, consultar detalle antes de reintentar. Para revisar publicaciones que ganan o pierden en Catalogo usar meli_catalog_competition. Para elegibles usar meli_catalog_eligibility y paginar ambas cuentas completamente. Para incorporarlas usar meli_catalog_opt_in con vista previa confirm=false; mostrar MLU y catalogo exacto, obtener autorizacion y luego confirm=true con expected. No elegir catalogos por similitud ni reintentar un intento incierto. No confundir producto asociado con publicacion de catalogo.  Para cerrar o eliminar publicaciones usar exclusivamente meli_delete_publication: confirm=false devuelve vista previa y expected; close es cierre irreversible y delete cierra y marca eliminada. Una orden explicita previa del usuario que identifique cuenta y MLU exactos autoriza confirm=true sin pedir nuevamente permiso. Si la baja es recomendacion nueva, mostrarla y recibir autorizacion. Enviar expected si existe vista previa. Revisar verified, partial, errors y warnings; consultar el MLU antes de reintentar cualquier escritura incierta. No extender la baja a hermanos, variantes ni otra cuenta sin autorizacion. Para una revision general usar meli_support_summary. Para mensajes posventa usar meli_messages_unread y meli_message_thread sin marcar como leido; meli_send_message solo con confirmacion explicita. Para reclamos usar meli_claim_context; meli_send_claim_message solo con confirmacion explicita y nunca implica reembolso o disputa. Para responder preguntas, usar meli_question_context. PRIMERO interpretar la intencion real de la pregunta del cliente; no limitarse a buscar coincidencias literales. Revisar titulo, atributos, descripcion, fotos y preguntas/respuestas anteriores. Las fotos son evidencia valida cuando la respuesta sea claramente observable visualmente (por ejemplo geometria/forma del cuadro, color visible, componentes o accesorios visibles), aunque el dato no figure escrito. No inferir desde fotos medidas exactas, potencia, autonomia, capacidad de carga, material interno, compatibilidad tecnica u otros datos no verificables visualmente. Solo decir que falta informacion despues de revisar tambien las fotos. Si foto y texto se contradicen, informar la contradiccion y no afirmar el dato. No inventar informacion. Firma de TLC: TELOCONSIGO, siempre una sola palabra. Firma de TOP SHOP: TOP SHOP. Las herramientas que modifican Mercado Libre exigen confirm=true y deben usarse solo despues de mostrar el cambio exacto y recibir confirmacion explicita del usuario, salvo meli_ads_update_campaign, meli_ads_add_items, meli_ads_update_ad y meli_delete_publication cuando el usuario ya dio la orden exacta y autorizo todo el alcance conforme al flujo correspondiente indicado.'
+      instructions:'Servidor MCP V5 de TELOCONSIGO y TOP SHOP. Para nuevas publicaciones por chat: usar fotos originales del proveedor. Generacion de imagenes temporalmente desactivada: no generar fotos, no exigir cinco imagenes ni photos_reviewed para publicar. Consultar garantia al usuario y guardar warranty_confirmed. Se ofrece retiro en persona. Para crear publicaciones desde un link usar meli_prepare_publication: primero extrae el producto y precio/moneda, luego consulta a Mercado Libre las categorias candidatas y los requisitos de la categoria seleccionada; nunca publicar si faltan requisitos obligatorios. Precio y moneda son opcionales y, si no se indican, se extraen de la pagina del proveedor; stock siempre 50; revisar fotos y si conviene mejorarlas antes de publicar. meli_publish_draft crea la publicacion solo con confirmacion explicita. Para ventas usar meli_sales; para publicidad usar meli_ads_campaigns y meli_ads_adgroups; consultar configuracion y moneda con meli_ads_campaign_detail. Ante errores de permisos en publicidad, consultar meli_ads_access_diagnostic en cada cuenta. Distinguir scopes declarados de escritura realmente verificada; no asumir que permisos de la web equivalen a permisos OAuth ni cambiar a rutas de Global Selling para una cuenta local. Para modificar publicidad usar meli_ads_update_campaign: budget, status active/paused, roas_target (o acos_target convertido), name y strategy. Para gestionar un anuncio individual o Ad Group usar meli_ads_update_ad con action add/remove/pause/activate, item_id o ad_group_id y confirm=false para vista previa. Nunca usar meli_update_publication para pausar un anuncio ni para quitarlo de publicidad. Mostrar todos los MLU hermanos afectados y pedir autorizacion si exceden el alcance indicado. confirm=true solo con orden autorizada, expected de la vista previa y permisos de alcance. Verificar fields, verified, before y after; una respuesta de API no prueba exito sin consulta posterior. Para incorporar varios MLU tambien esta disponible meli_ads_add_items. Primero consultar confirm=false: identifica grupos y variantes afectadas. Una orden exacta del usuario autoriza confirm=true. No mover desde otra campana sin autorizacion explicita (allow_move=true); no afectar otros MLU del grupo sin mostrar y autorizar ese alcance (allow_group_effects=true). Enviar expected de la vista previa; verificar resultados por MLU. Las metricas pueden ser del grupo completo, no atribuirlas exclusivamente a un MLU cuando hay variantes. No cambiar precios ni stock al gestionar anuncios. confirm=false devuelve vista previa. Una orden explicita del usuario que identifique cuenta, campana y valores exactos autoriza confirm=true sin pedir otra confirmacion; una recomendacion del agente requiere mostrar cambios y recibir aprobacion. Si existe vista previa, enviar expected para comprobar que sigue vigente. Revisar verified y fields; si falla la verificacion, consultar detalle antes de reintentar. Para revisar publicaciones que ganan o pierden en Catalogo usar meli_catalog_competition. Para elegibles usar meli_catalog_eligibility y paginar ambas cuentas completamente. Para incorporarlas usar meli_catalog_opt_in con vista previa confirm=false; mostrar MLU y catalogo exacto, obtener autorizacion y luego confirm=true con expected. No elegir catalogos por similitud ni reintentar un intento incierto. No confundir producto asociado con publicacion de catalogo.  Para cerrar o eliminar publicaciones usar exclusivamente meli_delete_publication: confirm=false devuelve vista previa y expected; close es cierre irreversible y delete cierra y marca eliminada. Una orden explicita previa del usuario que identifique cuenta y MLU exactos autoriza confirm=true sin pedir nuevamente permiso. Si la baja es recomendacion nueva, mostrarla y recibir autorizacion. Enviar expected si existe vista previa. Revisar verified, partial, errors y warnings; consultar el MLU antes de reintentar cualquier escritura incierta. No extender la baja a hermanos, variantes ni otra cuenta sin autorizacion. Para una revision general usar meli_support_summary. Para mensajes posventa usar meli_messages_unread y meli_message_thread sin marcar como leido; meli_send_message solo con confirmacion explicita. Para reclamos usar meli_claim_context; meli_send_claim_message solo con confirmacion explicita y nunca implica reembolso o disputa. Para responder preguntas, usar meli_question_context. PRIMERO interpretar la intencion real de la pregunta del cliente; no limitarse a buscar coincidencias literales. Revisar titulo, atributos, descripcion, fotos y preguntas/respuestas anteriores. Las fotos son evidencia valida cuando la respuesta sea claramente observable visualmente (por ejemplo geometria/forma del cuadro, color visible, componentes o accesorios visibles), aunque el dato no figure escrito. No inferir desde fotos medidas exactas, potencia, autonomia, capacidad de carga, material interno, compatibilidad tecnica u otros datos no verificables visualmente. Solo decir que falta informacion despues de revisar tambien las fotos. Si foto y texto se contradicen, informar la contradiccion y no afirmar el dato. No inventar informacion. Firma de TLC: TELOCONSIGO, siempre una sola palabra. Firma de TOP SHOP: TOP SHOP. Las herramientas que modifican Mercado Libre exigen confirm=true y deben usarse solo despues de mostrar el cambio exacto y recibir confirmacion explicita del usuario, salvo meli_ads_update_campaign, meli_ads_add_items, meli_ads_update_ad y meli_delete_publication cuando el usuario ya dio la orden exacta y autorizo todo el alcance conforme al flujo correspondiente indicado.'
     }}};
   }
   if (method === 'notifications/initialized' || method === 'notifications/cancelled') {
