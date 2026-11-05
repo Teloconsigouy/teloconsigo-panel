@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════
 //  TELOCONSIGO + TOP SHOP — Panel de Control
-//  v104 REPARADO — base v50 Bandeja MeLi + Publicador v103
+//  v104 REPARADO + Catalogo: elegibilidad, opt-in verificado y diagnostico de lectura
 // ═══════════════════════════════════════════════
 
 const http   = require('http');
@@ -2855,7 +2855,9 @@ async function meliApi(cuenta, apiPath, options = {}) {
   try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
   if (!r.ok) {
     const msg = data?.message || data?.error || data?.cause?.[0]?.message || text || `Mercado Libre status ${r.status}`;
-    throw new Error(msg);
+    const error = new Error(`Mercado Libre ${options.method || 'GET'} ${new URL(url).pathname}: ${msg}`);
+    error.status = r.status; error.api_path = new URL(url).pathname; error.detail = data;
+    throw error;
   }
   return data;
 }
@@ -2874,13 +2876,24 @@ function extractScrollId(data) {
 async function fetchMeliItemDetails(cuenta, ids = []) {
   const out = [];
   const clean = [...new Set(ids.map(x => String(x || '').trim()).filter(Boolean))];
-  const attributes = 'id,title,price,currency_id,available_quantity,status,permalink,thumbnail,seller_custom_field,attributes,variations,last_updated,date_created';
+  const attributes = 'id,title,price,currency_id,available_quantity,status,permalink,thumbnail,seller_custom_field,attributes,variations,last_updated,date_created,catalog_listing,catalog_product_id,tags,seller_id,item_relations';
   for (let i = 0; i < clean.length; i += 20) {
     const chunk = clean.slice(i, i + 20);
-    const data = await meliApi(cuenta, `/items?ids=${encodeURIComponent(chunk.join(','))}&attributes=${encodeURIComponent(attributes)}`);
-    const arr = Array.isArray(data) ? data : [];
-    for (const row of arr) {
-      if (row && Number(row.code || 200) < 400 && row.body) out.push(row.body);
+    // Algunos clientes ya no pueden consumir el multiget. Solo en ese caso
+    // usar el recurso individual autenticado; nunca ocultar errores de permisos.
+    let data;
+    try {
+      data = await meliApi(cuenta, `/items?ids=${encodeURIComponent(chunk.join(','))}&attributes=${encodeURIComponent(attributes)}`);
+    } catch (e) {
+      if (!/deprecated/i.test(String(e.message))) throw e;
+      data = await Promise.all(chunk.map(async id => ({code:200,body:await meliApi(cuenta, `/items/${encodeURIComponent(id)}?attributes=${encodeURIComponent(attributes)}`)})));
+    }
+    if (!Array.isArray(data)) throw new Error('Respuesta invalida del multiget de publicaciones. No se reemplazo la cache.');
+    for (const id of chunk) {
+      let row = data.find(x => String(x?.body?.id || '') === id);
+      if (!row && data.some(x=>/deprecated/i.test(JSON.stringify(x?.body||{})))) row={code:200,body:await meliApi(cuenta, `/items/${encodeURIComponent(id)}?attributes=${encodeURIComponent(attributes)}`)};
+      if (!row || Number(row.code || 200) >= 400) throw new Error('Listado incompleto: no se pudo leer '+id+'. No se reemplazo la cache.');
+      out.push(row.body);
     }
   }
   return out;
@@ -2892,24 +2905,35 @@ async function fetchAllPublicationsDirect(cuenta, params = {}) {
   const maxPages = Number(process.env.PUBLICATIONS_MAX_PAGES || 120);
   const allIds = [];
   const seen = new Set();
-  let scrollId = '';
-
+  let scrollId = '', offsetMode = false, finished = false, total = null;
   for (let page = 0; page < maxPages; page++) {
-    const qs = new URLSearchParams({ search_type: 'scan', limit: String(limit) });
-    if (scrollId) qs.set('scroll_id', scrollId);
-    const data = await meliApi(cuenta, `/users/${sellerId}/items/search?${qs.toString()}`);
-    const ids = Array.isArray(data?.results) ? data.results : [];
-    for (const id of ids) {
-      const sid = String(id || '').trim();
-      if (!sid || seen.has(sid)) continue;
-      seen.add(sid);
-      allIds.push(sid);
+    const qs = new URLSearchParams({limit:String(limit)});
+    if (offsetMode) qs.set('offset',String(allIds.length));
+    else { qs.set('search_type','scan'); if(scrollId) qs.set('scroll_id',scrollId); }
+    let data;
+    try { data=await meliApi(cuenta, `/users/${sellerId}/items/search?${qs}`); }
+    catch(e) {
+      if(page===0 && /deprecated/i.test(String(e.message))) {
+        offsetMode=true;
+        data=await meliApi(cuenta, `/users/${sellerId}/items/search?limit=${limit}&offset=0`);
+      } else throw e;
     }
-    const nextScrollId = extractScrollId(data);
-    if (nextScrollId) scrollId = nextScrollId;
-    if (!ids.length) break;
-    if (!scrollId) break;
+    if(!Array.isArray(data?.results)) throw new Error('Listado de publicaciones invalido; no se reemplazo la cache.');
+    if(Number.isFinite(data.paging?.total)) total=data.paging.total;
+    const ids=data.results, before=allIds.length;
+    for(const id of ids) { const sid=String(id||'').trim(); if(sid&&!seen.has(sid)){seen.add(sid);allIds.push(sid);} }
+    const next=extractScrollId(data);
+    if(!ids.length || (total!==null && allIds.length>=total)) {finished=true;break;}
+    if(allIds.length===before) throw new Error('Paginacion repetida; listado incompleto. No se reemplazo la cache.');
+    if(offsetMode) {
+      if(total===null) throw new Error('La alternativa por offset no informa total; no se puede garantizar un listado completo.');
+      if(allIds.length>=1000 && allIds.length<total) throw new Error('Scan rechazado y offset limitado a 1000: faltan publicaciones. No se reemplazo la cache.');
+    } else {
+      if(!next || next===scrollId) throw new Error('Scan sin cursor siguiente; listado incompleto. No se reemplazo la cache.');
+      scrollId=next;
+    }
   }
+  if(!finished || (total!==null && allIds.length<total)) throw new Error('Se alcanzo el limite de paginas sin completar las publicaciones. No se reemplazo la cache.');
 
   const details = await fetchMeliItemDetails(cuenta, allIds);
   return details.map(item => normalizePublication(item, normalizeCuentaKey(cuenta)));
@@ -4884,7 +4908,136 @@ async function mcpDeletePublication(args = {}) {
 }
 // END MCP PUBLICATION DELETE
 
+// Catalogo: la elegibilidad y el producto se consultan a ML; no inferir coincidencias por titulo.
+const catalogOptinLocks = new Set();
+function catalogAccount(value) {
+  if(!['tlc','topshop'].includes(value)) throw new Error('Cuenta invalida.');
+  return value;
+}
+function catalogItemId(value) {
+  if(!/^MLU[1-9][0-9]*$/.test(String(value||''))) throw new Error('MLU invalido.');
+  return String(value);
+}
+function catalogSignature(item, eligibility, product) {
+  return crypto.createHash('sha256').update(JSON.stringify({id:item.id,seller_id:item.seller_id,
+    status:item.status,catalog_listing:item.catalog_listing,catalog_product_id:item.catalog_product_id,
+    price:item.price,currency_id:item.currency_id,stock:item.available_quantity,variations:item.variations,
+    attributes:item.attributes,eligibility,product})).digest('hex');
+}
+async function catalogContext(cuenta,id,requestedProduct) {
+  const item=await meliApi(cuenta,`/items/${id}`);
+  const seller=await fetchMeliSellerId(cuenta);
+  if(item.id!==id || String(item.seller_id)!==String(seller)) throw new Error('La publicacion no pertenece a esta cuenta.');
+  if(item.catalog_listing===true) return {item,eligibility:null,product:null,eligible:false,already_catalog:true,blockers:['La publicacion ya es de catalogo.']};
+  const eligibility=await meliApi(cuenta,`/items/${id}/catalog_listing_eligibility`);
+  if(eligibility.item_id && eligibility.item_id!==id) throw new Error('Elegibilidad de otro articulo.');
+  const blockers=[];
+  if(!['active','paused'].includes(item.status)) blockers.push('Estado no publicable: '+item.status);
+  // Variantes requieren seleccion individual y un opt-in especifico; nunca asociar todo el padre.
+  if(item.variations?.length) blockers.push('Tiene variantes: requiere revisar el catalogo indicado para cada variante.');
+  const eligible=eligibility.status==='READY_FOR_OPTIN';
+  if(!eligible) blockers.push('Mercado Libre no indica READY_FOR_OPTIN: '+String(eligibility.status||'sin estado'));
+  const suggested=[...new Set([eligibility.catalog_product_id,item.catalog_product_id].filter(Boolean).map(String))];
+  let product=null;
+  if(suggested.length!==1) blockers.push(suggested.length?'Mercado Libre devuelve productos de catalogo contradictorios.':'Mercado Libre no devolvio un catalog_product_id asociado. No se elige por similitud de titulo.');
+  else {
+    if(requestedProduct && requestedProduct!==suggested[0]) blockers.push('El catalogo solicitado no coincide con el indicado por Mercado Libre.');
+    product=await meliApi(cuenta,`/products/${encodeURIComponent(suggested[0])}`);
+    if(product.id!==suggested[0] || product.status!=='active' || (product.site_id && product.site_id!=='MLU')) blockers.push('Producto de catalogo no activo o de otro sitio.');
+    // Contradicciones visibles se bloquean aun si la API indica elegibilidad.
+    for(const attrId of ['BRAND','MODEL','GTIN']) {
+      const a=item.attributes?.find(a=>a.id===attrId), b=product.attributes?.find(a=>a.id===attrId);
+      if(a?.value_name && b?.value_name && String(a.value_name).trim().toLowerCase()!==String(b.value_name).trim().toLowerCase()) blockers.push('Diferencia en '+attrId+': articulo='+a.value_name+', catalogo='+b.value_name);
+    }
+  }
+  return {item,eligibility,product,eligible,already_catalog:false,blockers};
+}
+async function catalogEligibilityReport(args={}) {
+  const accounts=args.cuenta==='both'||!args.cuenta?['tlc','topshop']:[catalogAccount(args.cuenta)];
+  const q=String(args.q||'').trim().toLowerCase(), offset=Math.max(0,Number(args.offset)||0),limit=Math.min(50,Math.max(1,Number(args.limit)||25));
+  const report={ok:true,read_only:true,checked_at:new Date().toISOString(),accounts:{},items:[],errors:[],partial:false};
+  const cache=loadPublicationsCache();
+  for(const cuenta of accounts) {
+    try {
+      if(args.refresh || !cache[cuenta]?.length){cache[cuenta]=await fetchAllPublicationsDirect(cuenta);cache.updatedAt=new Date().toISOString();savePublicationsCache(cache);}
+      const base=cache[cuenta].filter(x=>x.status!=='closed' && (!q || [x.title,x.id,x.sku].join(' ').toLowerCase().includes(q)));
+      const page=base.slice(offset,offset+limit);
+      report.accounts[cuenta]={total:base.length,offset,returned:page.length,has_more:offset+page.length<base.length,next_offset:offset+page.length<base.length?offset+page.length:null,cache_updated_at:cache.updatedAt};
+      for(let i=0;i<page.length;i+=4) {
+        const rows=await Promise.all(page.slice(i,i+4).map(async x=>{
+          try {
+            const c=await catalogContext(cuenta,catalogItemId(x.id||x.mlu));
+            return {cuenta,id:c.item.id,title:c.item.title,sku:pickSkuFromMeliItem(c.item),already_catalog:c.already_catalog,
+              eligible:c.eligible,can_opt_in:!c.blockers.length,catalog_product_id:c.product?.id||c.item.catalog_product_id||null,
+              product_name:c.product?.name||null,eligibility:c.eligibility,blockers:c.blockers};
+          } catch(e){report.errors.push({cuenta,id:x.id,error:e.message});return {cuenta,id:x.id,title:x.title,error:e.message};}
+        }));report.items.push(...rows);
+      }
+    }catch(e){report.errors.push({cuenta,error:e.message});report.accounts[cuenta]={error:e.message};}
+  }
+  report.ok=!report.errors.length;report.partial=!!report.errors.length;
+  report.summary={checked:report.items.filter(x=>!x.error).length,already_catalog:report.items.filter(x=>x.already_catalog).length,eligible:report.items.filter(x=>x.eligible).length,can_opt_in:report.items.filter(x=>x.can_opt_in).length,errors:report.errors.length};
+  return report;
+}
+function loadCatalogOptins() {
+  const file=path.join(DATA_DIR,'catalog-optins.json');
+  if(!fs.existsSync(file))return {};
+  const data=JSON.parse(fs.readFileSync(file,'utf8'));
+  if(!data || typeof data!=='object' || Array.isArray(data))throw new Error('Registro de incorporaciones invalido. No se escribe en ML.');
+  return data;
+}
+function saveCatalogOptins(data) {
+  ensureDataDir();const file=path.join(DATA_DIR,'catalog-optins.json'),tmp=file+'.tmp';
+  fs.writeFileSync(tmp,JSON.stringify(data,null,2));fs.renameSync(tmp,file);
+}
+async function catalogOptIn(args={}) {
+  const cuenta=catalogAccount(args.cuenta),id=catalogItemId(args.id),lock=cuenta+':'+id;
+  if(catalogOptinLocks.has(lock))throw new Error('Incorporacion en curso para este articulo.');
+  catalogOptinLocks.add(lock);
+  let productLock=null;
+  try {
+    const c=await catalogContext(cuenta,id,args.catalog_product_id), productId=c.product?.id;
+    const expected=catalogSignature(c.item,c.eligibility,c.product);
+    const result={ok:!c.blockers.length,cuenta,id,read_only:true,preview:true,expected,can_execute:!c.blockers.length,
+      before:c.item,eligibility:c.eligibility,product:c.product,blockers:c.blockers,
+      request:productId?{item_id:id,catalog_product_id:productId}:null,
+      note:'Crea una publicacion de catalogo relacionada mediante POST /items/catalog_listings; Mercado Libre controla la sincronizacion de la relacion. No modifica el precio ni el stock desde esta herramienta.'};
+    if(args.confirm!==true || c.blockers.length)return result;
+    if(!args.expected || args.expected!==expected)throw new Error('Falta la vista previa vigente o cambio el articulo/catalogo. Consultar confirm=false.');
+    if(args.catalog_product_id!==productId)throw new Error('Indicar el catalog_product_id exacto de la vista previa.');
+    const proposedLock=cuenta+':product:'+productId;
+    if(catalogOptinLocks.has(proposedLock))throw new Error('Incorporacion en curso para este catalogo.');
+    catalogOptinLocks.add(proposedLock);productLock=proposedLock;
+    // Buscar duplicados en el inventario completo, no en una cache incompleta.
+    const inventory=await fetchAllPublicationsDirect(cuenta);
+    const existing=inventory.filter(x=>x.catalog_listing===true && x.catalog_product_id===productId && x.status!=='closed');
+    if(existing.length)return {...result,ok:true,can_execute:false,already_exists:true,existing,blockers:['Ya existe este catalogo en la cuenta. No se creo un duplicado.']};
+    let journal=loadCatalogOptins();const key=lock+':'+productId;
+    if(journal[key])return {...result,ok:false,can_execute:false,uncertain:journal[key].state!=='verified',previous_attempt:journal[key],blockers:['Existe un intento registrado. Consultar su resultado antes de cualquier nueva escritura.']};
+    // Comprobar nuevamente tras la lectura completa, antes de la unica escritura.
+    const latest=await catalogContext(cuenta,id,productId);
+    if(latest.blockers.length || catalogSignature(latest.item,latest.eligibility,latest.product)!==expected)throw new Error('Cambio la publicacion o el catalogo durante la revision. Consultar nuevamente.');
+    const actor={username:'chatgpt-agent',name:'Agente MCP',role:'agent'};
+    audit(actor,'mcp_catalog_optin_attempt',{cuenta,id,catalog_product_id:productId});
+    journal[key]={state:'attempted',cuenta,item_id:id,catalog_product_id:productId,at:new Date().toISOString()};saveCatalogOptins(journal);
+    let created;
+    try {created=await meliApi(cuenta,'/items/catalog_listings',{method:'POST',body:{item_id:id,catalog_product_id:productId}});}
+    catch(e){journal=loadCatalogOptins();journal[key]={...journal[key],state:'uncertain',error:e.message};saveCatalogOptins(journal);return {...result,ok:false,read_only:false,preview:false,verified:false,uncertain:true,error:e.message,note:'No reintentar: consultar el inventario y el articulo para reconciliar este intento.'};}
+    journal=loadCatalogOptins();journal[key]={...journal[key],state:'accepted',created_id:created?.id||null};saveCatalogOptins(journal);
+    try {
+      const newId=catalogItemId(created?.id);
+      const after=await meliApi(cuenta,`/items/${newId}`),sourceAfter=await meliApi(cuenta,`/items/${id}`);
+      const verified=after.id===newId && String(after.seller_id)===String(c.item.seller_id) && after.catalog_listing===true && after.catalog_product_id===productId;
+      journal=loadCatalogOptins();journal[key]={...journal[key],state:verified?'verified':'uncertain'};saveCatalogOptins(journal);
+      audit(actor,'mcp_catalog_optin_result',{cuenta,id,created_id:newId,verified});
+      return {...result,ok:verified,read_only:false,preview:false,verified,uncertain:!verified,after,source_after:sourceAfter};
+    }catch(e){return {...result,ok:false,read_only:false,preview:false,verified:false,uncertain:true,created_id:created?.id||null,error:e.message,note:'Creacion aceptada; falta verificar. No volver a crear.'};}
+  } finally {catalogOptinLocks.delete(lock);if(productLock)catalogOptinLocks.delete(productLock);}
+}
+
 const MCP_TOOLS = [
+{"name": "meli_catalog_eligibility", "title": "Elegibilidad para catalogo", "description": "Consulta elegibilidad oficial y producto indicado por ML. Distingue publicaciones ya en catalogo de READY_FOR_OPTIN. Solo lectura, paginar por cuenta usando next_offset hasta has_more=false. No inventar catalogos ni confundir catalog_product_id con catalog_listing.", "inputSchema": {"type": "object", "properties": {"cuenta": {"type": "string", "enum": ["tlc", "topshop", "both"], "default": "both"}, "q": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 25}, "offset": {"type": "integer", "minimum": 0, "default": 0}, "refresh": {"type": "boolean", "default": false}}, "additionalProperties": false}, "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true}},
+{"name": "meli_catalog_opt_in", "title": "Incorporar al catalogo indicado por Mercado Libre", "description": "confirm=false consulta y muestra articulo, catalogo oficial, requisitos, expected y cuerpo exacto. confirm=true exige autorizacion del usuario para cuenta, MLU y catalogo exactos, expected vigente y catalog_product_id. Solo READY_FOR_OPTIN sin variantes; bloquea discrepancias, duplicados e intentos inciertos. Crea publicacion relacionada, verifica por GET. No reintentar escrituras inciertas.", "inputSchema": {"type": "object", "properties": {"cuenta": {"type": "string", "enum": ["tlc", "topshop"]}, "id": {"type": "string", "pattern": "^MLU[1-9][0-9]*$"}, "catalog_product_id": {"type": "string", "pattern": "^MLU[1-9][0-9]*$"}, "confirm": {"type": "boolean"}, "expected": {"type": "string"}}, "required": ["cuenta", "id", "confirm"], "additionalProperties": false}, "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": true}},
   {name:'meli_delete_publication',title:'Cerrar o eliminar una publicacion',description:'Baja irreversible de UN MLU exacto en su cuenta. action=close cierra; action=delete (predeterminado) cierra y elimina. confirm=false solo consulta y devuelve expected y pasos. confirm=true exige autorizacion explicita del usuario para esa cuenta y MLU; una orden previa exacta sigue siendo valida. Verifica pertenencia, estado y resultado con GET posteriores. Enviar expected de la vista previa. No cambia precios, stock, fotos, variantes ni publicaciones hermanas. No reintenta escrituras inciertas. Revisar verified, partial, errors y warnings; un 404 no prueba eliminacion.',inputSchema:{type:'object',properties:{cuenta:{type:'string',enum:['tlc','topshop']},id:{type:'string',pattern:'^MLU[1-9][0-9]*$'},action:{type:'string',enum:['close','delete'],default:'delete'},confirm:{type:'boolean'},expected:{type:'object',description:'Snapshot completo expected devuelto por confirm=false.',properties:{id:{type:'string'},seller_id:{type:'string'},status:{type:'string'},sub_status:{type:'array',items:{type:'string'}},deleted:{type:'boolean'},title:{type:'string'},sku:{type:'string'},model:{type:'string'}},required:['id','seller_id','status','sub_status','deleted','title','sku','model'],additionalProperties:false},reason:{type:'string',maxLength:2000}},required:['cuenta','id','confirm'],additionalProperties:false},annotations:{readOnlyHint:false,destructiveHint:true,idempotentHint:true,openWorldHint:true}},
   { name:'meli_quality_objectives', title:'Objetivos de calidad de una publicacion', description:'Consulta oficial de solo lectura usando /performance. Devuelve puntaje de 0 a 100, nivel y objetivos pendientes exactos de Mercado Libre para un MLU; cuando existe, tambien consulta su User Product. No modifica la publicacion y no confunde objetivos con todos los atributos vacios de la categoria.', inputSchema:{type:'object',properties:{cuenta:{type:'string',enum:['tlc','topshop']},id:{type:'string',pattern:'^MLU[0-9]+$'},include_completed:{type:'boolean',default:false}},required:['cuenta','id'],additionalProperties:false}, annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:true} },
   { name:'meli_quality_audit', title:'Auditoria de calidad por lotes', description:'Revisa por lotes publicaciones de TELOCONSIGO, TOP SHOP o ambas con la API oficial /performance. Devuelve puntaje y objetivos pendientes, ordenados por menor puntaje. Solo lectura. Limite maximo 50 por llamada para evitar sobrecargar la API.', inputSchema:{type:'object',properties:{cuenta:{type:'string',enum:['tlc','topshop','both'],default:'both'},q:{type:'string',default:''},status:{type:'string',default:'active'},limit:{type:'integer',minimum:1,maximum:50,default:25},offset:{type:'integer',minimum:0,default:0},refresh:{type:'boolean',default:false}},additionalProperties:false}, annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:true} },
@@ -5623,6 +5776,9 @@ async function mcpCallTool(name, args={}) {
     return {ok:true,cuenta,read_only:true,campaign_id:campaignId,advertiser:{advertiser_id:advertiserId,site_id:site},paging:search?.paging||null,metrics_summary:search?.metrics_summary||null,ad_groups:enriched};
   }
 
+  if (name === 'meli_catalog_eligibility') return catalogEligibilityReport(args);
+  if (name === 'meli_catalog_opt_in') return catalogOptIn(args);
+
   if (name === 'meli_catalog_competition') {
     const requested=String(args.cuenta||'both').toLowerCase();
     const accounts=requested==='both'?['tlc','topshop']:[agentAccount(requested)];
@@ -5646,7 +5802,7 @@ async function mcpCallTool(name, args={}) {
           const rows=await Promise.all(chunk.map(async pub=>{try{const item=await meliApi(c, `/items/${encodeURIComponent(pub.id||pub.mlu)}`);return {...pub,...item,id:item?.id||pub.id||pub.mlu,mlu:item?.id||pub.mlu||pub.id,sku:pub.sku||item?.seller_custom_field||null,catalog_listing:Boolean(item?.catalog_listing),catalog_product_id:item?.catalog_product_id||null};}catch(e){acc.errors++;report.summary.errors++;return null;}}));
           for(const row of rows)if(row){hydrated.push(row);acc.hydrated++;report.summary.hydrated++;}
         }
-        const candidates=hydrated.filter(x=>x.catalog_listing || x.catalog_product_id);
+        const candidates=hydrated.filter(x=>x.catalog_listing === true);
         acc.catalog_found=candidates.length; report.summary.catalog_found+=candidates.length;
         for(let i=0;i<candidates.length;i+=concurrency){
           const chunk=candidates.slice(i,i+concurrency);
@@ -5665,7 +5821,7 @@ async function mcpCallTool(name, args={}) {
       }catch(e){report.accounts[c]={error:String(e?.message||e)};report.summary.errors++;}
     }
     report.items.sort((a,b)=>{const rank={competing:0,listed:1,sharing_first_place:2,winning:3};return (rank[a.status]??9)-(rank[b.status]??9)||(Number(b.price_reduction_percent)||0)-(Number(a.price_reduction_percent)||0);});
-    report.updatedAt=cache.updatedAt||new Date().toISOString(); return report;
+    report.ok=report.summary.errors===0; report.partial=report.summary.errors>0 || report.truncated; report.updatedAt=new Date().toISOString(); return report;
   }
 
   if(name==='meli_draft_photo_status'){
@@ -5946,7 +6102,7 @@ async function mcpProcessMessage(req, body) {
       protocolVersion:protocol,
       capabilities:{tools:{listChanged:true}},
       serverInfo:{name:MCP_SERVER_NAME,version:MCP_SERVER_VERSION},
-      instructions:'Servidor MCP V5 de TELOCONSIGO y TOP SHOP. Para nuevas publicaciones por chat: usar fotos originales del proveedor. Generacion de imagenes temporalmente desactivada: no generar fotos, no exigir cinco imagenes ni photos_reviewed para publicar. Consultar garantia al usuario y guardar warranty_confirmed. Se ofrece retiro en persona. Para crear publicaciones desde un link usar meli_prepare_publication: primero extrae el producto y precio/moneda, luego consulta a Mercado Libre las categorias candidatas y los requisitos de la categoria seleccionada; nunca publicar si faltan requisitos obligatorios. Precio y moneda son opcionales y, si no se indican, se extraen de la pagina del proveedor; stock siempre 50; revisar fotos y si conviene mejorarlas antes de publicar. meli_publish_draft crea la publicacion solo con confirmacion explicita. Para ventas usar meli_sales; para publicidad usar meli_ads_campaigns y meli_ads_adgroups; consultar configuracion y moneda con meli_ads_campaign_detail. Para modificar publicidad usar meli_ads_update_campaign: budget, status active/paused, roas_target (o acos_target convertido), name y strategy. Para gestionar un anuncio individual o Ad Group usar meli_ads_update_ad con action add/remove/pause/activate, item_id o ad_group_id y confirm=false para vista previa. Nunca usar meli_update_publication para pausar un anuncio ni para quitarlo de publicidad. Mostrar todos los MLU hermanos afectados y pedir autorizacion si exceden el alcance indicado. confirm=true solo con orden autorizada, expected de la vista previa y permisos de alcance. Verificar fields, verified, before y after; una respuesta de API no prueba exito sin consulta posterior. Para incorporar varios MLU tambien esta disponible meli_ads_add_items. Primero consultar confirm=false: identifica grupos y variantes afectadas. Una orden exacta del usuario autoriza confirm=true. No mover desde otra campana sin autorizacion explicita (allow_move=true); no afectar otros MLU del grupo sin mostrar y autorizar ese alcance (allow_group_effects=true). Enviar expected de la vista previa; verificar resultados por MLU. Las metricas pueden ser del grupo completo, no atribuirlas exclusivamente a un MLU cuando hay variantes. No cambiar precios ni stock al gestionar anuncios. confirm=false devuelve vista previa. Una orden explicita del usuario que identifique cuenta, campana y valores exactos autoriza confirm=true sin pedir otra confirmacion; una recomendacion del agente requiere mostrar cambios y recibir aprobacion. Si existe vista previa, enviar expected para comprobar que sigue vigente. Revisar verified y fields; si falla la verificacion, consultar detalle antes de reintentar. Para revisar publicaciones que ganan o pierden en Catalogo usar meli_catalog_competition.  Para cerrar o eliminar publicaciones usar exclusivamente meli_delete_publication: confirm=false devuelve vista previa y expected; close es cierre irreversible y delete cierra y marca eliminada. Una orden explicita previa del usuario que identifique cuenta y MLU exactos autoriza confirm=true sin pedir nuevamente permiso. Si la baja es recomendacion nueva, mostrarla y recibir autorizacion. Enviar expected si existe vista previa. Revisar verified, partial, errors y warnings; consultar el MLU antes de reintentar cualquier escritura incierta. No extender la baja a hermanos, variantes ni otra cuenta sin autorizacion. Para una revision general usar meli_support_summary. Para mensajes posventa usar meli_messages_unread y meli_message_thread sin marcar como leido; meli_send_message solo con confirmacion explicita. Para reclamos usar meli_claim_context; meli_send_claim_message solo con confirmacion explicita y nunca implica reembolso o disputa. Para responder preguntas, usar meli_question_context. PRIMERO interpretar la intencion real de la pregunta del cliente; no limitarse a buscar coincidencias literales. Revisar titulo, atributos, descripcion, fotos y preguntas/respuestas anteriores. Las fotos son evidencia valida cuando la respuesta sea claramente observable visualmente (por ejemplo geometria/forma del cuadro, color visible, componentes o accesorios visibles), aunque el dato no figure escrito. No inferir desde fotos medidas exactas, potencia, autonomia, capacidad de carga, material interno, compatibilidad tecnica u otros datos no verificables visualmente. Solo decir que falta informacion despues de revisar tambien las fotos. Si foto y texto se contradicen, informar la contradiccion y no afirmar el dato. No inventar informacion. Firma de TLC: TELOCONSIGO, siempre una sola palabra. Firma de TOP SHOP: TOP SHOP. Las herramientas que modifican Mercado Libre exigen confirm=true y deben usarse solo despues de mostrar el cambio exacto y recibir confirmacion explicita del usuario, salvo meli_ads_update_campaign, meli_ads_add_items, meli_ads_update_ad y meli_delete_publication cuando el usuario ya dio la orden exacta y autorizo todo el alcance conforme al flujo correspondiente indicado.'
+      instructions:'Servidor MCP V5 de TELOCONSIGO y TOP SHOP. Para nuevas publicaciones por chat: usar fotos originales del proveedor. Generacion de imagenes temporalmente desactivada: no generar fotos, no exigir cinco imagenes ni photos_reviewed para publicar. Consultar garantia al usuario y guardar warranty_confirmed. Se ofrece retiro en persona. Para crear publicaciones desde un link usar meli_prepare_publication: primero extrae el producto y precio/moneda, luego consulta a Mercado Libre las categorias candidatas y los requisitos de la categoria seleccionada; nunca publicar si faltan requisitos obligatorios. Precio y moneda son opcionales y, si no se indican, se extraen de la pagina del proveedor; stock siempre 50; revisar fotos y si conviene mejorarlas antes de publicar. meli_publish_draft crea la publicacion solo con confirmacion explicita. Para ventas usar meli_sales; para publicidad usar meli_ads_campaigns y meli_ads_adgroups; consultar configuracion y moneda con meli_ads_campaign_detail. Para modificar publicidad usar meli_ads_update_campaign: budget, status active/paused, roas_target (o acos_target convertido), name y strategy. Para gestionar un anuncio individual o Ad Group usar meli_ads_update_ad con action add/remove/pause/activate, item_id o ad_group_id y confirm=false para vista previa. Nunca usar meli_update_publication para pausar un anuncio ni para quitarlo de publicidad. Mostrar todos los MLU hermanos afectados y pedir autorizacion si exceden el alcance indicado. confirm=true solo con orden autorizada, expected de la vista previa y permisos de alcance. Verificar fields, verified, before y after; una respuesta de API no prueba exito sin consulta posterior. Para incorporar varios MLU tambien esta disponible meli_ads_add_items. Primero consultar confirm=false: identifica grupos y variantes afectadas. Una orden exacta del usuario autoriza confirm=true. No mover desde otra campana sin autorizacion explicita (allow_move=true); no afectar otros MLU del grupo sin mostrar y autorizar ese alcance (allow_group_effects=true). Enviar expected de la vista previa; verificar resultados por MLU. Las metricas pueden ser del grupo completo, no atribuirlas exclusivamente a un MLU cuando hay variantes. No cambiar precios ni stock al gestionar anuncios. confirm=false devuelve vista previa. Una orden explicita del usuario que identifique cuenta, campana y valores exactos autoriza confirm=true sin pedir otra confirmacion; una recomendacion del agente requiere mostrar cambios y recibir aprobacion. Si existe vista previa, enviar expected para comprobar que sigue vigente. Revisar verified y fields; si falla la verificacion, consultar detalle antes de reintentar. Para revisar publicaciones que ganan o pierden en Catalogo usar meli_catalog_competition. Para elegibles usar meli_catalog_eligibility y paginar ambas cuentas completamente. Para incorporarlas usar meli_catalog_opt_in con vista previa confirm=false; mostrar MLU y catalogo exacto, obtener autorizacion y luego confirm=true con expected. No elegir catalogos por similitud ni reintentar un intento incierto. No confundir producto asociado con publicacion de catalogo.  Para cerrar o eliminar publicaciones usar exclusivamente meli_delete_publication: confirm=false devuelve vista previa y expected; close es cierre irreversible y delete cierra y marca eliminada. Una orden explicita previa del usuario que identifique cuenta y MLU exactos autoriza confirm=true sin pedir nuevamente permiso. Si la baja es recomendacion nueva, mostrarla y recibir autorizacion. Enviar expected si existe vista previa. Revisar verified, partial, errors y warnings; consultar el MLU antes de reintentar cualquier escritura incierta. No extender la baja a hermanos, variantes ni otra cuenta sin autorizacion. Para una revision general usar meli_support_summary. Para mensajes posventa usar meli_messages_unread y meli_message_thread sin marcar como leido; meli_send_message solo con confirmacion explicita. Para reclamos usar meli_claim_context; meli_send_claim_message solo con confirmacion explicita y nunca implica reembolso o disputa. Para responder preguntas, usar meli_question_context. PRIMERO interpretar la intencion real de la pregunta del cliente; no limitarse a buscar coincidencias literales. Revisar titulo, atributos, descripcion, fotos y preguntas/respuestas anteriores. Las fotos son evidencia valida cuando la respuesta sea claramente observable visualmente (por ejemplo geometria/forma del cuadro, color visible, componentes o accesorios visibles), aunque el dato no figure escrito. No inferir desde fotos medidas exactas, potencia, autonomia, capacidad de carga, material interno, compatibilidad tecnica u otros datos no verificables visualmente. Solo decir que falta informacion despues de revisar tambien las fotos. Si foto y texto se contradicen, informar la contradiccion y no afirmar el dato. No inventar informacion. Firma de TLC: TELOCONSIGO, siempre una sola palabra. Firma de TOP SHOP: TOP SHOP. Las herramientas que modifican Mercado Libre exigen confirm=true y deben usarse solo despues de mostrar el cambio exacto y recibir confirmacion explicita del usuario, salvo meli_ads_update_campaign, meli_ads_add_items, meli_ads_update_ad y meli_delete_publication cuando el usuario ya dio la orden exacta y autorizo todo el alcance conforme al flujo correspondiente indicado.'
     }}};
   }
   if (method === 'notifications/initialized' || method === 'notifications/cancelled') {
