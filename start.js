@@ -1342,7 +1342,8 @@ function isPublicadorRequiredAttr(attr) {
   const id = String(attr?.id || '').toUpperCase();
   const mandatory = t.required === true || t.catalog_required === true || t.new_required === true;
   if (id === 'GTIN' || id === 'EMPTY_GTIN_REASON') return mandatory;
-  return mandatory || t.conditional_required === true;
+  // Los condicionales los decide /items/validate para cada cuenta y producto.
+  return mandatory;
 }
 
 function addSyntheticSpecialRequirements(attrs, category = {}) {
@@ -1387,6 +1388,10 @@ function publicadorMissingAttributes(draft) {
   const missing = [];
   for (const a of attrs) {
     const id = String(a.id || '').toUpperCase();
+    // Recalcular tambien los borradores guardados con requisitos condicionales.
+    // Preferir la definicion completa actual a la copia de requiredAttributes.
+    const definition = (draft.allAttributes || []).find(d => String(d.id || '').toUpperCase() === id) || a;
+    if (definition.tags?.conditional_required === true && !isPublicadorRequiredAttr(definition)) continue;
     // GTIN y su motivo alternativo no son obligatorios solo por existir en la ficha.
     // Los borradores anteriores conservaron ambos en requiredAttributes, por eso
     // evaluamos los tags originales tambien aqui, sin borrar datos del borrador.
@@ -4602,7 +4607,7 @@ async function handleAgentApi(req, res, u, pathName) {
 //  Lectura amplia + escrituras que exigen confirm:true para evitar cambios accidentales.
 // ═══════════════════════════════════════════════
 const MCP_SERVER_NAME = 'teloconsigo-mercadolibre';
-const MCP_SERVER_VERSION = '5.4.3-direct-photo-upload';
+const MCP_SERVER_VERSION = '5.4.4-conditional-attributes';
 const MCP_PROTOCOLS = ['2025-11-25', '2025-06-18', '2025-03-26'];
 
 // Consulta exclusivamente de lectura; reutiliza OAuth y meliApi del panel.
