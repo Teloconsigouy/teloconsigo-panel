@@ -4602,7 +4602,7 @@ async function handleAgentApi(req, res, u, pathName) {
 //  Lectura amplia + escrituras que exigen confirm:true para evitar cambios accidentales.
 // ═══════════════════════════════════════════════
 const MCP_SERVER_NAME = 'teloconsigo-mercadolibre';
-const MCP_SERVER_VERSION = '5.4.2-currency-change';
+const MCP_SERVER_VERSION = '5.4.3-direct-photo-upload';
 const MCP_PROTOCOLS = ['2025-11-25', '2025-06-18', '2025-03-26'];
 
 // Consulta exclusivamente de lectura; reutiliza OAuth y meliApi del panel.
@@ -5334,7 +5334,7 @@ const MCP_TOOLS = [
   { name:'meli_update_draft', title:'Corregir borrador con datos verificados', description:'Corrige un borrador antes de publicar usando valores verificados de la planilla. Nunca publica. supplier_available=true exige una comprobacion actual del proveedor; EMPTY_GTIN_REASON solo se envia con el motivo explicito permitido por la categoria.', inputSchema:{type:'object',properties:{category_id:{type:'string',pattern:'^MLU[0-9]+$',description:'Categoria final verificada mediante meli_categories. Se consultan ruta y atributos oficiales antes de guardar.'},draft_id:{type:'string'},photos_reviewed:{type:'boolean'},warranty_type:{type:'string',enum:['seller','manufacturer','none']},warranty_duration:{type:'integer',minimum:1},warranty_unit:{type:'string',enum:['días','meses','años']},warranty_confirmed:{type:'boolean',description:'Solo true despues de respuesta explicita del usuario sobre la garantia.'},title:{type:'string',minLength:8,maxLength:60},description:{type:'string',minLength:1,maxLength:5000},brand:{type:'string',minLength:1},model:{type:'string',minLength:1},sku:{type:'string'},images:{type:'array',items:{type:'string',minLength:8},minItems:1,maxItems:8},attributes:{type:'array',maxItems:100,items:{type:'object',properties:{id:{type:'string',minLength:1},value_id:{type:'string'},value_name:{type:'string'}},required:['id'],additionalProperties:false}},gtin:{type:'string'},empty_gtin_reason_id:{type:'string'},supplier_available:{type:'boolean'},listing_type_id:{type:'string'},price:{type:'number',exclusiveMinimum:0},currency:{type:'string',enum:['USD','UYU']}},required:['draft_id'],additionalProperties:false},annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:true,openWorldHint:false} },
   { name:'meli_publish_draft', title:'Publicar borrador preparado', description:'CREA la publicacion preparada en TELOCONSIGO, TOP SHOP o ambas. Stock siempre 50. Solo ejecuta con confirm=true despues de mostrar al usuario titulo, precio, moneda, fotos, categoria, cuentas y datos faltantes.', inputSchema:{type:'object',properties:{draft_id:{type:'string'},accounts:{type:'array',items:{type:'string',enum:['tlc','topshop']},minItems:1,maxItems:2},confirm:{type:'boolean'}},required:['draft_id','confirm'],additionalProperties:false}, annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:false,openWorldHint:true} },
   { name:'meli_change_currency', title:'Cambiar moneda y precio de publicacion', description:'Cambia currency_id y precio final juntos en un unico MLU propio, con confirm=true y valores autorizados. No convierte importes automaticamente ni propaga cambios a vinculadas. Verifica moneda y precio por GET. Revisar currency_verified, price_verified, errors y after; no reintentar escrituras no verificadas. Consultar promociones nuevamente despues del cambio.', inputSchema:{type:'object',properties:{cuenta:{type:'string',enum:['tlc','topshop']},id:{type:'string',pattern:'^MLU[0-9]+$'},currency_id:{type:'string',enum:['USD','UYU']},price:{type:'number',exclusiveMinimum:0},confirm:{type:'boolean'}},required:['cuenta','id','currency_id','price','confirm'],additionalProperties:false}, annotations:{readOnlyHint:false,destructiveHint:true,idempotentHint:true,openWorldHint:true} },
-  { name:'meli_update_publication', title:'Modificar publicacion', description:'Modifica campos permitidos de una publicacion: precio, moneda (currency_id USD/UYU junto con precio final explicito), stock, estado, titulo, descripcion, fotos, atributos y garantia del vendedor (warranty_type=seller). Conserva el plazo si no se indica otro y verifica la garantia por GET. Primero consulta la publicacion actual y devuelve el resultado campo por campo. Solo ejecuta si confirm=true. Mercado Libre puede bloquear ciertos cambios segun la publicacion/categoria/historial de ventas.', inputSchema:{type:'object',properties:{cuenta:{type:'string',enum:['tlc','topshop']},id:{type:'string'},currency_id:{type:'string',enum:['USD','UYU'],description:'Moneda destino. Exige price positivo en esa moneda; enviar precio y moneda juntos. No convierte automaticamente ni replica a vinculadas.'},price:{type:'number',minimum:0},stock:{type:'integer',minimum:0},status:{type:'string',enum:['active','paused']},sku:{type:'string'},title:{type:'string',minLength:1,maxLength:60},description:{type:'string',minLength:1,maxLength:50000},pictures:{type:'array',items:{type:'string',minLength:5},minItems:1,maxItems:12},attributes:{type:'array',items:{type:'object',properties:{id:{type:'string',minLength:1},value_id:{type:['string','number']},value_name:{type:'string'}},required:['id'],additionalProperties:false}},color:{type:'string',minLength:1,description:'Atajo para actualizar el atributo COLOR; por ejemplo Beige.'},warranty_type:{type:'string',enum:['seller'],description:'Cambiar a garantia del vendedor conservando el plazo actual si no se indica otro.'},warranty_duration:{type:'integer',minimum:1},warranty_unit:{type:'string',enum:['días','meses','años']},confirm:{type:'boolean',description:'Debe ser true despues de confirmacion explicita del usuario.'}},required:['cuenta','id','confirm'],additionalProperties:false}, annotations:{readOnlyHint:false,destructiveHint:true,idempotentHint:true,openWorldHint:true} }
+  { name:'meli_update_publication', title:'Modificar publicacion', description:'Modifica campos permitidos de una publicacion: precio, moneda (currency_id USD/UYU junto con precio final explicito), stock, estado, titulo, descripcion, fotos, atributos y garantia del vendedor (warranty_type=seller). Conserva el plazo si no se indica otro y verifica la garantia por GET. Primero consulta la publicacion actual y devuelve el resultado campo por campo. Solo ejecuta si confirm=true. Mercado Libre puede bloquear ciertos cambios segun la publicacion/categoria/historial de ventas.', inputSchema:{type:'object',properties:{cuenta:{type:'string',enum:['tlc','topshop']},id:{type:'string'},currency_id:{type:'string',enum:['USD','UYU'],description:'Moneda destino. Exige price positivo en esa moneda; enviar precio y moneda juntos. No convierte automaticamente ni replica a vinculadas.'},price:{type:'number',minimum:0},stock:{type:'integer',minimum:0},status:{type:'string',enum:['active','paused']},sku:{type:'string'},title:{type:'string',minLength:1,maxLength:60},description:{type:'string',minLength:1,maxLength:50000},pictures:{type:'array',description:'Fotos originales: URL HTTPS, ID de Mercado Libre o data:image/jpeg;base64,... para carga directa del archivo cuando el proveedor bloquea descargas. No inventar IDs.',items:{type:'string',minLength:5},minItems:1,maxItems:12},attributes:{type:'array',items:{type:'object',properties:{id:{type:'string',minLength:1},value_id:{type:['string','number']},value_name:{type:'string'}},required:['id'],additionalProperties:false}},color:{type:'string',minLength:1,description:'Atajo para actualizar el atributo COLOR; por ejemplo Beige.'},warranty_type:{type:'string',enum:['seller'],description:'Cambiar a garantia del vendedor conservando el plazo actual si no se indica otro.'},warranty_duration:{type:'integer',minimum:1},warranty_unit:{type:'string',enum:['días','meses','años']},confirm:{type:'boolean',description:'Debe ser true despues de confirmacion explicita del usuario.'}},required:['cuenta','id','confirm'],additionalProperties:false}, annotations:{readOnlyHint:false,destructiveHint:true,idempotentHint:true,openWorldHint:true} }
 ];
 
 async function mcpTextResult(data) {
@@ -6445,8 +6445,26 @@ async function mcpCallTool(name, args={}) {
     }
 
     if(hasPictures) {
-      const pics=args.pictures.map(x=>String(x||'').trim()).filter(Boolean).map(x=>/^https?:\/\//i.test(x)?{source:x}:{id:x});
-      await tryField('pictures', ()=>meliApi(cuenta, `/items/${encodeURIComponent(id)}`, {method:'PUT',body:{pictures:pics}}));
+      // DIRECT_PHOTO_UPLOAD_V1: upload bytes first; replace only after all uploads succeed.
+      await tryField('pictures', async () => {
+        const sources=args.pictures.map(x=>String(x||'').trim()).filter(Boolean);
+        if(!sources.length || sources.length>12) throw new Error('Se requieren entre 1 y 12 fotos.');
+        const pics=[];
+        let pictureUploadToken;
+        for(const source of sources) {
+          if(/^data:image\//i.test(source)) {
+            if(!pictureUploadToken) pictureUploadToken=await getMeliAccessToken(cuenta);
+            pics.push({id:await uploadDataImageToMeliPicture(pictureUploadToken,source)});
+          } else if(/^https?:\/\//i.test(source)) {
+            pics.push({source});
+          } else if(/^[0-9]+-[A-Z0-9]+_[0-9]+$/i.test(source)) {
+            pics.push({id:source});
+          } else {
+            throw new Error('Foto invalida: usar URL, ID de Mercado Libre o data:image con archivo original.');
+          }
+        }
+        return meliApi(cuenta, `/items/${encodeURIComponent(id)}`, {method:'PUT',body:{pictures:pics}});
+      });
     }
     if(hasDescription) await tryField('description', ()=>meliApi(cuenta, `/items/${encodeURIComponent(id)}/description`, {method:'PUT',body:{plain_text:String(args.description)}}));
 
@@ -6458,7 +6476,7 @@ async function mcpCallTool(name, args={}) {
     if(hasWarranty && !errors.warranty && !warrantyVerified) errors.warranty='GARANTIA_NO_VERIFICADA: consultar la publicacion antes de reintentar.';
     let afterDescription=null;
     if(hasDescription) { try { afterDescription=await meliApi(cuenta, `/items/${encodeURIComponent(id)}/description`); } catch(e) { afterDescription={error:e.message}; } }
-    const requested={currency_id:targetCurrency,sale_terms:warrantyTerms||undefined,price:hasPrice?args.price:undefined,stock:hasStock?args.stock:undefined,status:hasStatus?String(args.status):undefined,sku:args.sku||undefined,title:hasTitle?String(args.title).trim():undefined,description:hasDescription?String(args.description):undefined,pictures:hasPictures?args.pictures:undefined,attributes:Array.isArray(args.attributes)?args.attributes:undefined,color:args.color||undefined};
+    const requested={currency_id:targetCurrency,sale_terms:warrantyTerms||undefined,price:hasPrice?args.price:undefined,stock:hasStock?args.stock:undefined,status:hasStatus?String(args.status):undefined,sku:args.sku||undefined,title:hasTitle?String(args.title).trim():undefined,description:hasDescription?String(args.description):undefined,pictures:hasPictures?args.pictures.map(p=>/^data:image\//i.test(String(p))?'[archivo de imagen enviado por carga directa]':p):undefined,attributes:Array.isArray(args.attributes)?args.attributes:undefined,color:args.color||undefined};
     return {ok:Object.keys(errors).length===0,partial:Object.keys(results).length>0 && Object.keys(errors).length>0,cuenta,action:'update_publication',item_id:id,currency_verified:currencyVerified,price_verified:priceVerified,warranty_verified:warrantyVerified,before:{title:before?.title,currency_id:before?.currency_id,price:before?.price,available_quantity:before?.available_quantity,status:before?.status,attributes:before?.attributes,pictures:before?.pictures,sale_terms:before?.sale_terms,warranty:before?.warranty,description:beforeDescription},requested,results,errors,after:{title:after?.title,currency_id:after?.currency_id,price:after?.price,available_quantity:after?.available_quantity,status:after?.status,attributes:after?.attributes,pictures:after?.pictures,sale_terms:after?.sale_terms,warranty:after?.warranty,description:afterDescription}};
   }
   throw new Error(`Herramienta MCP desconocida: ${name}`);
@@ -6637,7 +6655,8 @@ const server = http.createServer((req, res) => {
         currency_change: Boolean(MCP_TOOLS.find(t=>t.name==='meli_update_publication')?.inputSchema?.properties?.currency_id),
         dedicated_currency_tool: MCP_TOOLS.some(t=>t.name==='meli_change_currency'),
         currency_price_atomic: true,
-        currency_price_verified: true
+        currency_price_verified: true,
+        direct_photo_upload: true
       },
       publication_update_schema: MCP_TOOLS.find(t=>t.name==='meli_update_publication')?.inputSchema,
       currency_change_schema: MCP_TOOLS.find(t=>t.name==='meli_change_currency')?.inputSchema,
