@@ -577,7 +577,7 @@ function loadPublicadorDrafts() {
 
 function savePublicadorDrafts(data) {
   ensureDataDir();
-  const clean = { drafts: Array.isArray(data.drafts) ? data.drafts.slice(-300) : [], updatedAt: new Date().toISOString() };
+  const clean = { drafts: Array.isArray(data.drafts) ? data.drafts.slice(0, 300) : [], updatedAt: new Date().toISOString() };
   fs.writeFileSync(PUBLICADOR_DRAFTS_FILE, JSON.stringify(clean, null, 2));
   return clean;
 }
